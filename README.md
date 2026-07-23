@@ -18,7 +18,8 @@ with implementations in C and C++
 * Fast [compile time](#compile-time)
 * IEEE 754 `double` and `float` support
 * Safer API than classic `dtoa`
-* Optional [`std::to_chars`][to-chars]-style API
+* Optional [`std::to_chars`][to-chars]-style API, several times faster than
+  common standard library implementations
 * User-friendly output format similar to Python's default representation
 * Negative zero dependencies
 * Small, clean codebase consisting of one
