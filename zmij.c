@@ -2137,6 +2137,15 @@ static ZMIJ_INLINE char* do_write(
     --dec_exp;
   }
 
+  // Convert the significand to digits once, before the fixed/scientific
+  // branch, so the long-latency conversion overlaps the branch logic.
+  dec_digits_double dig64;
+  dec_digits_float dig32;
+  if (num_bits == 64)
+    dig64 = to_digits_double(d, dec.sig);
+  else
+    dig32 = to_digits_float(d, dec.sig);
+
   // Write significand/fixed.
   char* start = buffer;
   if (dec_exp >= min_fixed_dec_exp && dec_exp <= max_fixed_dec_exp) {
@@ -2154,10 +2163,9 @@ static ZMIJ_INLINE char* do_write(
     buffer += layout->start_pos;
 #if ZMIJ_USE_SSE4_1
     if (num_bits == 64) {
-      dec_digits_double dig = to_digits_double(d, dec.sig);
       const fixed_shuffle_entry* sh =
           &d->fixed_shuffle[dec_exp - double_min_fixed_dec_exp];
-      __m128i digits = dig.digits;
+      __m128i digits = dig64.digits;
       __m128i tbl = _mm_load_si128((const __m128i*)&sh->shuffle[extra_digit]);
       __m128i out = _mm_shuffle_epi8(digits, tbl);
       memcpy(buffer, &out, bcd_size);  // Store the assembled digits in one go.
@@ -2166,19 +2174,17 @@ static ZMIJ_INLINE char* do_write(
       buffer[bcd_size] = (char)_mm_extract_epi8(digits, 15);
       start[layout->point_pos] = '.';
       buffer[sh->last_digit_pos[extra_digit]] = last_digit_char;
-      int num_digits = has_last_digit ? bcd_size : dig.num_digits - 1;
+      int num_digits = has_last_digit ? bcd_size : dig64.num_digits - 1;
       return buffer + layout->end_pos[num_digits + extra_digit - 1];
     }
 #endif  // ZMIJ_USE_SSE4_1
     int num_digits;
     if (num_bits == 64) {
-      dec_digits_double dig = to_digits_double(d, dec.sig);
-      write_digits_double(d, buffer, dig.digits, !extra_digit);
-      num_digits = has_last_digit ? bcd_size : dig.num_digits - 1;
+      write_digits_double(d, buffer, dig64.digits, !extra_digit);
+      num_digits = has_last_digit ? bcd_size : dig64.num_digits - 1;
     } else {
-      dec_digits_float dig = to_digits_float(d, dec.sig);
-      write_digits_float(buffer, dig.digits, !extra_digit);
-      num_digits = has_last_digit ? bcd_size : dig.num_digits - 1;
+      write_digits_float(buffer, dig32.digits, !extra_digit);
+      num_digits = has_last_digit ? bcd_size : dig32.num_digits - 1;
     }
     buffer[bcd_size + extra_digit - 1] = last_digit_char;
     unsigned point_pos = layout->point_pos;
@@ -2190,13 +2196,11 @@ static ZMIJ_INLINE char* do_write(
   buffer += extra_digit;
   int num_digits;
   if (num_bits == 64) {
-    dec_digits_double dig = to_digits_double(d, dec.sig);
-    memcpy(buffer, &dig.digits, bcd_size);
-    num_digits = dig.num_digits;
+    memcpy(buffer, &dig64.digits, bcd_size);
+    num_digits = dig64.num_digits;
   } else {
-    dec_digits_float dig = to_digits_float(d, dec.sig);
-    memcpy(buffer, &dig.digits, bcd_size);
-    num_digits = dig.num_digits;
+    memcpy(buffer, &dig32.digits, bcd_size);
+    num_digits = dig32.num_digits;
   }
   buffer[bcd_size] = (char)('0' + dec.last_digit);
   buffer += has_last_digit ? bcd_size + 1 : num_digits;
