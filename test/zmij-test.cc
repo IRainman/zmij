@@ -1,4 +1,5 @@
 // Tests for https://github.com/vitaut/zmij/.
+//
 // Copyright (c) 2025 - present, Victor Zverovich
 // Distributed under the MIT license (see LICENSE).
 
@@ -53,22 +54,6 @@ auto ftoa(float value) -> std::string {
   auto end = zmij::write(buffer, sizeof(buffer), value);
   return {buffer, end};
 }
-
-// Uses internal helpers only visible when the implementation source is
-// included directly (the C build links the library instead).
-#if !ZMIJ_C
-TEST(zmij_test, utilities) {
-  EXPECT_EQ(clz(1), 63);
-  EXPECT_EQ(clz(~0ull), 0);
-
-  EXPECT_EQ(count_trailing_nonzeros(0x00000000'00000000ull), 0);
-  EXPECT_EQ(count_trailing_nonzeros(0x00000000'00000001ull), 1);
-  EXPECT_EQ(count_trailing_nonzeros(0x00000000'00000009ull), 1);
-  EXPECT_EQ(count_trailing_nonzeros(0x00090000'09000000ull), 7);
-  EXPECT_EQ(count_trailing_nonzeros(0x01000000'00000000ull), 8);
-  EXPECT_EQ(count_trailing_nonzeros(0x09000000'00000000ull), 8);
-}
-#endif  // !ZMIJ_C
 
 TEST(double_test, normal) {
   EXPECT_EQ(dtoa(6.62607015e-34), "6.62607015e-34");

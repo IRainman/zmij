@@ -17,7 +17,7 @@ function (add_zmij_test name)
 endfunction ()
 
 add_zmij_test(zmij-test)
-target_sources(zmij-test PRIVATE pow10-test.cc)
+target_sources(zmij-test PRIVATE zmij-impl-test.cc)
 
 include(CheckCXXCompilerFlag)
 if (ZMIJ_USE_SIMD)
@@ -44,7 +44,7 @@ target_compile_definitions(zmij-no-builtins-test PRIVATE ZMIJ_NO_BUILTINS=1)
 
 add_zmij_test(zmij-optimize-size-test)
 target_compile_definitions(zmij-optimize-size-test PRIVATE ZMIJ_OPTIMIZE_SIZE=1)
-target_sources(zmij-optimize-size-test PRIVATE pow10-test.cc)
+target_sources(zmij-optimize-size-test PRIVATE zmij-impl-test.cc)
 
 set(ZMIJ_CHECK_STANDARD cxx_std_20)
 

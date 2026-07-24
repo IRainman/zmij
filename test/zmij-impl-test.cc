@@ -1,13 +1,13 @@
-// Test that verifies correctness of generated powers of 10.
-// It is separate from zmij-test to avoid polluting those with a large
-// lookup table.
+// Tests for zmij implementation details, kept separate from the public-API
+// tests in zmij-test.
+//
 // Copyright (c) 2025 - present, Victor Zverovich
 // Distributed under the MIT license (see LICENSE).
 
-// Include zmij.cc instead of linking with the library to test internal
-// functions.
 #include <gtest/gtest.h>
 
+// Include zmij.cc instead of linking with the library to test internal
+// functions.
 #include "../zmij.cc"
 
 // 128-bit significands of powers of 10 rounded down.
@@ -664,7 +664,7 @@ const uint128 expected[] = {
     {0xdb68c2ca82ed2a05, 0xa67398db9f6820e1},  //  341
 };
 
-TEST(pow10_test, verify) {
+TEST(zmij_impl_test, pow10) {
   constexpr int dec_exp_min = -307;
   for (int i = 0; i < int(sizeof(expected) / sizeof(*expected)); ++i) {
     auto actual = static_data.pow10_significands[dec_exp_min + i];
@@ -677,4 +677,16 @@ TEST(pow10_test, verify) {
         << "i=" << i << " actual.lo=" << actual.lo
         << " expected.lo=" << expected[i].lo;
   }
+}
+
+TEST(zmij_impl_test, utilities) {
+  EXPECT_EQ(clz(1), 63);
+  EXPECT_EQ(clz(~0ull), 0);
+
+  EXPECT_EQ(count_trailing_nonzeros(0x00000000'00000000ull), 0);
+  EXPECT_EQ(count_trailing_nonzeros(0x00000000'00000001ull), 1);
+  EXPECT_EQ(count_trailing_nonzeros(0x00000000'00000009ull), 1);
+  EXPECT_EQ(count_trailing_nonzeros(0x00090000'09000000ull), 7);
+  EXPECT_EQ(count_trailing_nonzeros(0x01000000'00000000ull), 8);
+  EXPECT_EQ(count_trailing_nonzeros(0x09000000'00000000ull), 8);
 }

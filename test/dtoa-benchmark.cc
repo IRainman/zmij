@@ -1,4 +1,5 @@
 // Benchmark for https://github.com/vitaut/zmij/.
+//
 // Copyright (c) 2025 - present, Victor Zverovich
 // Distributed under the MIT license (see LICENSE).
 

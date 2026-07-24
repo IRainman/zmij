@@ -1,8 +1,8 @@
-// A double-to-string conversion algorithm based on Schubfach and xjb.
+// A double-to-string conversion library: https://github.com/vitaut/zmij/
+//
 // Copyright (c) 2025 - present, Victor Zverovich
 // Distributed under the MIT license (see LICENSE) or alternatively
 // the Boost Software License, Version 1.0.
-// https://github.com/vitaut/zmij/
 
 #if __has_include("zmij.h")
 #  include "zmij.h"
