@@ -1321,7 +1321,6 @@ template <typename Float>
 auto write(Float value, char* buffer) noexcept -> char* {
   using traits = float_traits<Float>;
   auto bits = traits::to_bits(value);
-  // It is beneficial to extract exponent and significand early.
   auto bin_exp = traits::get_exp(bits);  // binary exponent
   auto bin_sig = traits::get_sig(bits);  // binary significand
 
