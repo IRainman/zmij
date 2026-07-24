@@ -95,10 +95,8 @@ static_assert(!ZMIJ_USE_SSE4_1 || ZMIJ_USE_SSE,
 #endif
 
 #if ZMIJ_HAS_BUILTIN(__builtin_expect)
-#  define ZMIJ_LIKELY(x) __builtin_expect(!!(x), 1)
 #  define ZMIJ_UNLIKELY(x) __builtin_expect(!!(x), 0)
 #else
-#  define ZMIJ_LIKELY(x) (x)
 #  define ZMIJ_UNLIKELY(x) (x)
 #endif
 

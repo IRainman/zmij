@@ -104,10 +104,8 @@ static_assert(!ZMIJ_USE_SSE4_1 || ZMIJ_USE_SSE);
 #endif
 
 #if ZMIJ_HAS_CPP_ATTRIBUTE(likely) && ZMIJ_HAS_CPP_ATTRIBUTE(unlikely)
-#  define ZMIJ_LIKELY likely
 #  define ZMIJ_UNLIKELY unlikely
 #else
-#  define ZMIJ_LIKELY
 #  define ZMIJ_UNLIKELY
 #endif
 
@@ -746,12 +744,6 @@ constexpr uint32_t div10_sig = (1 << div10_exp) / 10 + 1;
 constexpr uint32_t neg10 = (1 << 8) - 10;
 
 constexpr uint64_t zeros = 0x0101010101010101u * '0';
-
-inline auto write_if(char* buffer, uint32_t digit, bool condition) noexcept
-    -> char* {
-  *buffer = char('0' + digit);
-  return buffer + condition;
-}
 
 struct data {
   static constexpr auto splat64(uint64_t x) -> uint128 { return {x, x}; }
