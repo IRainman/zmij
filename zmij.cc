@@ -601,9 +601,8 @@ struct exp_float_shuffle_table {
       unsigned char leading_digit_pos = has_extra_digit ? 7 : 6;
       unsigned char length = 0;
       if (has_last_digit) {
-        // Always 8 BCD chars in the significand plus a last-digit char;
-        // for !has_extra_digit the leading '0' of the 8-digit padded BCD is
-        // shown.
+        // Always 8 BCD chars in the significand plus a last-digit char; for
+        // !has_extra_digit the leading '0' of the 8-digit padded BCD is shown.
         out[length++] = leading_digit_pos;
         out[length++] = point_pos;
         for (int i = leading_digit_pos - 1; i >= 0; --i) out[length++] = i;
@@ -776,8 +775,7 @@ struct data {
   int32x4 multipliers32 = {div10k_sig, neg10k, div100_sig << 12, neg100};
   int16x8 multipliers16 = {0xce0, neg10};
 #elif ZMIJ_USE_SSE
-  // Ordered so that the values used to format floats fit in a single cache
-  // line.
+  // Ordered so the values used to format floats fit in a single cache line.
   uint128 div100 = splat32(div100_sig);
   uint128 div10 = splat16((1 << 16) / 10 + 1);
 #  if ZMIJ_USE_SSE4_1
@@ -1084,8 +1082,7 @@ ZMIJ_INLINE auto write_exp_float_simd(char* buffer, const dec_digits<32>& dig,
                                       const data& d) noexcept -> char* {
   // Packed for insertion into lane 1: byte 0 of `tail` lands at register
   // byte exp_pos (8), so the exp string fills exp_pos..exp_pos+3; the prefix
-  // shifts place '0'+last_digit at last_digit_pos (12) and '.' at point_pos
-  // (13).
+  // shifts place '0'+last_digit at last_digit_pos (12), '.' at point_pos (13).
   uint32_t prefix = (uint32_t('.') << 8) + uint32_t('0') + last_digit;
   uint64_t tail = exp_data | (uint64_t(prefix) << 32);
   auto entry = d.exp_float_shuffles.get_entry(dig.num_digits, has_last_digit,

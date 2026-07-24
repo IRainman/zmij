@@ -560,8 +560,7 @@ static const struct zmij_data {
   int32x4_storage multipliers32;
   int16x8_storage multipliers16;
 #elif ZMIJ_USE_SSE
-  // Ordered so that the values used to format floats fit in a single cache
-  // line.
+  // Ordered so the values used to format floats fit in a single cache line.
   m128i div100;
   m128i div10;
 #  if ZMIJ_USE_SSE4_1
