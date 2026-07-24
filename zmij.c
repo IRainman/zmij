@@ -586,9 +586,6 @@ typedef struct {
   m128i neg10k;
   m128i zeros_v;
 #endif    // ZMIJ_USE_SSE
-  // Shuffle indices for SIMD digit shift. Offset 0 = identity, offset 1 =
-  // shift left by 1 (drops the leading '0' of a 16-digit significand).
-  unsigned char shift_shuffle[17];
   // A table of precomputed shifts for the new direct-scaling algorithm.
   // `data[raw_exp] = compute_exp_shift(bin_exp, dec_exp + 1) + extra_shift`
   // where extra_shift = 6 and bin_exp = max(raw_exp, 1) - double_exp_offset.
@@ -604,6 +601,9 @@ typedef struct {
   // 128-bit significands of powers of 10 rounded down.
   ZMIJ_ALIGNAS(64) uint128 pow10_significands[618];
   fixed_layout_entry fixed_layouts[20];
+  // Shuffle indices for SIMD digit shift. Offset 0 = identity, offset 1 =
+  // shift left by 1 (drops the leading '0' of a 16-digit significand).
+  unsigned char shift_shuffle[17];
 } zmij_data;
 
 // Expand to the SSE4.1-only fixed_layout_entry fields (plus a trailing comma
@@ -638,7 +638,6 @@ ZMIJ_ALIGNAS(64) static const zmij_data static_data = {
     ZMIJ_SPLAT64(neg10k),
     ZMIJ_SPLAT64(zeros),
 #endif    // ZMIJ_USE_SSE
-    {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 0},
     // .exp_shifts =
     {
         5, 5, 6, 4, 5, 6, 4, 5, 6, 4, 5, 6, 3, 4, 5, 6, 4, 5, 6, 4, 5, 6, 3, 4,
@@ -1678,6 +1677,8 @@ ZMIJ_ALIGNAS(64) static const zmij_data static_data = {
                      16, 16, 16, 16, 16, 16, 16, 18}},
         // clang-format on
     },
+    // .shift_shuffle =
+    {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 0},
 };
 #undef ZMIJ_FIXED_SSE
 
