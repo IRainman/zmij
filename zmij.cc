@@ -1350,7 +1350,7 @@ auto write(Float value, char* buffer) noexcept -> char* {
       dec_sig *= 10;
       --dec_exp;
     }
-    long long q = ::div10(dec_sig);
+    long long q = div10(dec_sig);
     int last_digit = dec_sig - q * 10;
     dec = {q, dec_exp, last_digit, last_digit != 0};
   } else {
@@ -1444,11 +1444,11 @@ auto write(Float value, char* buffer) noexcept -> char* {
   return buffer + 2;
 }
 
-template auto write(float value, char* buffer) noexcept -> char*;
-template auto write(double value, char* buffer) noexcept -> char*;
-
 template auto to_decimal(float value, int precision) noexcept -> dec_fp;
 template auto to_decimal(double value, int precision) noexcept -> dec_fp;
+
+template auto write(float value, char* buffer) noexcept -> char*;
+template auto write(double value, char* buffer) noexcept -> char*;
 
 }  // namespace detail
 }  // namespace zmij
