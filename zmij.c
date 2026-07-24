@@ -625,6 +625,7 @@ static const struct zmij_data {
     ZMIJ_SPLAT64(zeros),
 #endif    // ZMIJ_USE_SSE
     {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 0},
+    // .exp_shifts =
     {
         5, 5, 6, 4, 5, 6, 4, 5, 6, 4, 5, 6, 3, 4, 5, 6, 4, 5, 6, 4, 5, 6, 3, 4,
         5, 6, 4, 5, 6, 4, 5, 6, 3, 4, 5, 6, 4, 5, 6, 4, 5, 6, 3, 4, 5, 6, 4, 5,
@@ -714,6 +715,7 @@ static const struct zmij_data {
         5, 6, 3, 4, 5, 6, 4, 5,
     },
 #if ZMIJ_USE_EXP_STRING_TABLE
+    // .exp_strings =
     {
         0x05003432332d65, 0x05003332332d65, 0x05003232332d65, 0x05003132332d65,
         0x05003032332d65, 0x05003931332d65, 0x05003831332d65, 0x05003731332d65,
@@ -876,6 +878,7 @@ static const struct zmij_data {
         0x05003830332b65,
     },
 #endif  // ZMIJ_USE_EXP_STRING_TABLE
+    // .pow10_significands =
     {
         {0xcc5fc196fefd7d0c, 0x1e53ed49a96272c8},  // -293
         {0xff77b1fcbebcdc4f, 0x25e8e89c13bb0f7a},  // -292
@@ -1496,6 +1499,7 @@ static const struct zmij_data {
         {0xfcf62c1dee382c42, 0x46729e03dd9ed7b5},  //  323
         {0x9e19db92b4e31ba9, 0x6c07a2c26a8346d1},  //  324
     },
+    // .fixed_layouts =
     {
         // clang-format off
         {5, 1, 1,  // -4
@@ -1541,6 +1545,7 @@ static const struct zmij_data {
         // clang-format on
     },
 #if ZMIJ_USE_SSE4_1
+    // .fixed_shuffle =
     {
         // clang-format off
         {  // -4
