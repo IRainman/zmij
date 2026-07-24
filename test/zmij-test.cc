@@ -10,8 +10,9 @@
 #  include "../zmij-to-chars.h"
 #  include "../zmij.cc"
 #else
-#  define _Alignas(x) alignas(x)
-#  include "../zmij.c"
+extern "C" {
+#  include "../zmij-c.h"
+}
 
 namespace zmij {
 enum {
@@ -53,6 +54,9 @@ auto ftoa(float value) -> std::string {
   return {buffer, end};
 }
 
+// Uses internal helpers only visible when the implementation source is
+// included directly (the C build links the library instead).
+#if !ZMIJ_C
 TEST(zmij_test, utilities) {
   EXPECT_EQ(clz(1), 63);
   EXPECT_EQ(clz(~0ull), 0);
@@ -64,6 +68,7 @@ TEST(zmij_test, utilities) {
   EXPECT_EQ(count_trailing_nonzeros(0x01000000'00000000ull), 8);
   EXPECT_EQ(count_trailing_nonzeros(0x09000000'00000000ull), 8);
 }
+#endif  // !ZMIJ_C
 
 TEST(double_test, normal) {
   EXPECT_EQ(dtoa(6.62607015e-34), "6.62607015e-34");
