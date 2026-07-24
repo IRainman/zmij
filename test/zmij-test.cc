@@ -70,6 +70,20 @@ TEST(float_test, no_overrun) {
   EXPECT_EQ(buffer[zmij::float_buffer_size], '?');
 }
 
+TEST(float_test, no_buffer) {
+  float value = 6.62607e-34;
+  char buffer[zmij::float_buffer_size];
+  auto end = zmij::write(buffer, sizeof(buffer), value);
+  std::string result(buffer, end);
+  EXPECT_EQ(result, "6.62607e-34");
+}
+
+TEST(float_test, fixed_with_zeros) {
+  EXPECT_EQ(ftoa(43210.0f), "43210");
+  EXPECT_EQ(ftoa(43210.1f), "43210.1");
+  EXPECT_EQ(ftoa(10000.f), "10000");
+}
+
 #if !ZMIJ_C
 namespace zmij {
 auto operator==(const dec_fp& a, const dec_fp& b) -> bool {
@@ -100,14 +114,6 @@ static auto expected_decimal(double value, int precision) -> zmij::dec_fp {
   return {sig, atoi(s + i + 1) - (precision - 1), negative};
 }
 
-TEST(float_test, no_buffer) {
-  float value = 6.62607e-34;
-  char buffer[zmij::float_buffer_size];
-  auto end = zmij::write(buffer, sizeof(buffer), value);
-  std::string result(buffer, end);
-  EXPECT_EQ(result, "6.62607e-34");
-}
-
 TEST(float_test, to_chars) {
   char buffer[zmij::float_buffer_size];
   auto result = zmij::to_chars(buffer, buffer + sizeof(buffer), 6.62607e-34f);
@@ -131,16 +137,10 @@ TEST(float_test, to_decimal_precision) {
   EXPECT_EQ(to_decimal(-1.5f, 2), decimal(15, -1, true));  // sign preserved
   EXPECT_EQ(
       to_decimal(std::numeric_limits<float>::denorm_min(), 1), decimal(1, -45)
-  );  // FLT_TRUE_MIN, subnormal path
+  );  // subnormal path
   EXPECT_EQ(
       to_decimal(std::numeric_limits<float>::max(), 9), decimal(340282347, 30)
-  );  // FLT_MAX
-}
-
-TEST(float_test, fixed_with_zeros) {
-  EXPECT_EQ(ftoa(43210.0f), "43210");
-  EXPECT_EQ(ftoa(43210.1f), "43210.1");
-  EXPECT_EQ(ftoa(10000.f), "10000");
+  );
 }
 #endif  // !ZMIJ_C
 
@@ -161,7 +161,7 @@ TEST(double_test, subnormal) {
   EXPECT_EQ(dtoa(2.2250738585072004e-308), "2.2250738585072004e-308");
 }
 
-TEST(double_test, write_irregular) {
+TEST(double_test, irregular) {
   const char* fixed[] = {
       "0.0001220703125",
       "0.000244140625",
@@ -195,7 +195,7 @@ TEST(double_test, write_irregular) {
   }
 }
 
-TEST(double_test, write_exponents) {
+TEST(double_test, exponents) {
   const char* fixed[] = {"0.00012207031250000003", "0.00024414062500000005",
                          "0.0004882812500000001",  "0.0009765625000000002",
                          "0.0019531250000000004",  "0.003906250000000001",
@@ -305,7 +305,6 @@ TEST(double_test, no_overrun) {
 
 TEST(double_test, no_underrun) { dtoa(9.061488e+15); }
 
-#if !ZMIJ_C
 TEST(double_test, no_buffer) {
   double value = 6.62607015e-34;
   char buffer[zmij::double_buffer_size];
@@ -314,6 +313,7 @@ TEST(double_test, no_buffer) {
   EXPECT_EQ(result, "6.62607015e-34");
 }
 
+#if !ZMIJ_C
 TEST(double_test, to_chars) {
   char buffer[zmij::double_buffer_size];
   auto result = zmij::to_chars(buffer, buffer + sizeof(buffer), 6.62607015e-34);
