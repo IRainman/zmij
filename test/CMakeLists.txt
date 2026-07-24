@@ -9,15 +9,22 @@ target_include_directories(fmt PUBLIC .)
 find_package(Threads)
 target_link_libraries(fmt Threads::Threads)
 
-function (add_zmij_test name)
+# Adds a test that exercises only the public API.
+function (add_zmij_api_test name)
   add_executable(${name} zmij-test.cc)
   target_compile_features(${name} PRIVATE ${ZMIJ_STANDARD})
+  target_include_directories(${name} PRIVATE ${PROJECT_SOURCE_DIR})
   target_link_libraries(${name} dragonbox gtest fmt)
   add_test(NAME ${name} COMMAND ${name})
 endfunction ()
 
+# Same as add_zmij_api_test but also runs the implementation-detail tests.
+function (add_zmij_test name)
+  add_zmij_api_test(${name})
+  target_sources(${name} PRIVATE zmij-impl-test.cc)
+endfunction ()
+
 add_zmij_test(zmij-test)
-target_sources(zmij-test PRIVATE zmij-impl-test.cc)
 
 include(CheckCXXCompilerFlag)
 if (ZMIJ_USE_SIMD)
@@ -28,10 +35,6 @@ if (ZMIJ_USE_SIMD)
     target_compile_definitions(zmij-sse4-test PRIVATE ZMIJ_USE_SSE4_1=1)
   endif ()
 endif ()
-
-add_zmij_test(zmij-c-test)
-target_compile_definitions(zmij-c-test PRIVATE ZMIJ_C=1)
-target_sources(zmij-c-test PRIVATE ../zmij.c)
 
 add_zmij_test(zmij-no-int128-test)
 target_compile_definitions(zmij-no-int128-test PRIVATE ZMIJ_USE_INT128=0)
@@ -44,7 +47,10 @@ target_compile_definitions(zmij-no-builtins-test PRIVATE ZMIJ_NO_BUILTINS=1)
 
 add_zmij_test(zmij-optimize-size-test)
 target_compile_definitions(zmij-optimize-size-test PRIVATE ZMIJ_OPTIMIZE_SIZE=1)
-target_sources(zmij-optimize-size-test PRIVATE zmij-impl-test.cc)
+
+add_zmij_api_test(zmij-c-test)
+target_compile_definitions(zmij-c-test PRIVATE ZMIJ_C=1)
+target_sources(zmij-c-test PRIVATE ../zmij.c)
 
 set(ZMIJ_CHECK_STANDARD cxx_std_20)
 

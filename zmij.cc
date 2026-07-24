@@ -1229,7 +1229,7 @@ ZMIJ_INLINE auto to_decimal(UInt bin_sig, int64_t raw_exp, bool regular,
 
 namespace zmij {
 
-inline auto to_decimal(double value) noexcept -> dec_fp {
+auto to_decimal(double value) noexcept -> dec_fp {
   using traits = float_traits<double>;
   auto bits = traits::to_bits(value);
   auto bin_exp = traits::get_exp(bits);  // binary exponent

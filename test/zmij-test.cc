@@ -3,16 +3,13 @@
 // Copyright (c) 2025 - present, Victor Zverovich
 // Distributed under the MIT license (see LICENSE).
 
-// Include zmij.cc instead of linking with the library to test multiple
-// configurations without building multiple versions of the library and to test
-// internal functions.
 #ifndef ZMIJ_C
+#  include "zmij.h"
+#  include "zmij-to-chars.h"
 #  define ZMIJ_C 0
-#  include "../zmij-to-chars.h"
-#  include "../zmij.cc"
 #else
 extern "C" {
-#  include "../zmij-c.h"
+#  include "zmij-c.h"
 }
 
 namespace zmij {
@@ -216,7 +213,6 @@ TEST(double_test, no_overrun) {
 
 TEST(double_test, no_underrun) { dtoa(9.061488e+15); }
 
-// Tests below use internal APIs (to_decimal, dec_fp) absent from the C port.
 #if !ZMIJ_C
 TEST(double_test, no_buffer) {
   double value = 6.62607015e-34;

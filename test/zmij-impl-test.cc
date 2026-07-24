@@ -8,7 +8,7 @@
 
 // Include zmij.cc instead of linking with the library to test internal
 // functions.
-#include "../zmij.cc"
+#include "zmij.cc"
 
 // 128-bit significands of powers of 10 rounded down.
 // Generated with gen-pow10.py.
