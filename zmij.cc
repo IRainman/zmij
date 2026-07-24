@@ -62,9 +62,6 @@ static_assert(!ZMIJ_USE_SSE4_1 || ZMIJ_USE_SSE);
 #  define ZMIJ_USE_SSE4_1 0
 #endif
 
-#define ZMIJ_USE_SIMD_SHUFFLE \
-  ((ZMIJ_USE_NEON || ZMIJ_USE_SSE4_1) && !ZMIJ_OPTIMIZE_SIZE)
-
 #ifdef __aarch64__
 #  define ZMIJ_AARCH64 1
 #else

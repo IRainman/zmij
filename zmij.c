@@ -113,9 +113,6 @@ static_assert(!ZMIJ_USE_SSE4_1 || ZMIJ_USE_SSE,
 #  define ZMIJ_USE_EXP_STRING_TABLE (ZMIJ_OPTIMIZE_SIZE == 0)
 #endif
 
-#define ZMIJ_USE_SIMD_SHUFFLE \
-  ((ZMIJ_USE_NEON || ZMIJ_USE_SSE4_1) && !ZMIJ_OPTIMIZE_SIZE)
-
 #if ZMIJ_HAS_ATTRIBUTE(always_inline) && !ZMIJ_OPTIMIZE_SIZE
 #  define ZMIJ_INLINE __attribute__((always_inline)) inline
 #elif ZMIJ_MSC_VER
