@@ -32,8 +32,6 @@ endif ()
 add_zmij_test(zmij-c-test)
 target_compile_definitions(zmij-c-test PRIVATE ZMIJ_C=1)
 target_sources(zmij-c-test PRIVATE ../zmij.c)
-set_target_properties(zmij-c-test PROPERTIES
-  C_STANDARD 11 C_STANDARD_REQUIRED YES C_EXTENSIONS YES)
 
 add_zmij_test(zmij-no-int128-test)
 target_compile_definitions(zmij-no-int128-test PRIVATE ZMIJ_USE_INT128=0)
