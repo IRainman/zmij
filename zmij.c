@@ -509,12 +509,37 @@ typedef int16x8_t int16x8_storage;
 #endif
 
 // Per-decimal-exponent buffer layout for branchless fixed-notation output.
+// The SSE4.1 shuffle data lives in the same entry, so both are one aligned
+// lookup (matches the C++ fixed_layout_table::entry).
+#if ZMIJ_USE_SSE4_1
+#  define ZMIJ_FIXED_ENTRY_ALIGN 64  // Align each entry to a cache line.
+#elif ZMIJ_AARCH64 && !ZMIJ_OPTIMIZE_SIZE
+// Align entry to 32 bytes so indexing uses `lsl #5` not `umaddl`.
+#  define ZMIJ_FIXED_ENTRY_ALIGN 32
+#else
+#  define ZMIJ_FIXED_ENTRY_ALIGN 1
+#endif
+
 typedef struct {
+#if ZMIJ_USE_SSE4_1
+  // pshufb table mapping BCD bytes to their output slots; the decimal-point
+  // slot (if any) holds a zero-marker (high bit set). Indexed by extra_digit.
+  // Read via aligned load (_mm_load_si128); the entry alignment keeps it
+  // 16-byte aligned.
+  ZMIJ_ALIGNAS(ZMIJ_FIXED_ENTRY_ALIGN) unsigned char shuffle[2][16];
+#else
+  ZMIJ_ALIGNAS(ZMIJ_FIXED_ENTRY_ALIGN)
+#endif
   // Byte offset past leading "0.00..." before first significant digit.
   unsigned char start_pos;
   unsigned char point_pos;
   // Start position for shifting digits right by one to insert the point.
   unsigned char shift_pos;
+#if ZMIJ_USE_SSE4_1
+  // Buffer-relative position of the last_digit byte, indexed by
+  // has_extra_digit. Only used for bcd_size == 16 (doubles).
+  unsigned char last_digit_pos[2];
+#endif
   // Offset past end of fixed-notation output, indexed by sig length - 1.
   unsigned char end_pos[17];
 } fixed_layout_entry;
@@ -526,19 +551,6 @@ enum {
   float_max_fixed_dec_exp = 6,
 };
 
-#if ZMIJ_USE_SSE4_1
-// SSE4.1-only companion to fixed_layout_table for doubles.
-typedef struct {
-  // pshufb table mapping BCD bytes to their output slots; the decimal-point
-  // slot (if any) holds a zero-marker (high bit set). Indexed by extra_digit.
-  // Read via aligned load (_mm_load_si128), so must be 16-byte aligned.
-  ZMIJ_ALIGNAS(16) unsigned char shuffle[2][16];
-  // Buffer-relative position of the last_digit byte, indexed by
-  // has_extra_digit. Only used for bcd_size == 16 (doubles).
-  unsigned char last_digit_pos[2];
-} fixed_shuffle_entry;
-#endif  // ZMIJ_USE_SSE4_1
-
 #if ZMIJ_USE_EXP_STRING_TABLE
 enum {
   exp_string_offset = 324,
@@ -549,8 +561,7 @@ enum {
   exp_shift_extra_shift = 6,
 };
 
-ZMIJ_ALIGNAS(64)
-static const struct zmij_data {
+typedef struct {
   uint64_t threshold;
   // +6 is needed for boundary cases found by verify.py.
   uint64_t biased_half;
@@ -592,15 +603,18 @@ static const struct zmij_data {
 #endif
   // 128-bit significands of powers of 10 rounded down.
   ZMIJ_ALIGNAS(64) uint128 pow10_significands[618];
-#if ZMIJ_AARCH64 && !ZMIJ_OPTIMIZE_SIZE
-  // Align to 32 bytes so indexing uses `lsl #5` not `umaddl`.
-  ZMIJ_ALIGNAS(32)
-#endif
   fixed_layout_entry fixed_layouts[20];
+} zmij_data;
+
+// Expand to the SSE4.1-only fixed_layout_entry fields (plus a trailing comma
+// separating them from the following initializers), or to nothing.
 #if ZMIJ_USE_SSE4_1
-  fixed_shuffle_entry fixed_shuffle[20];
+#  define ZMIJ_FIXED_SSE(...) __VA_ARGS__,
+#else
+#  define ZMIJ_FIXED_SSE(...)
 #endif
-} static_data = {
+
+ZMIJ_ALIGNAS(64) static const zmij_data static_data = {
     (uint64_t)1e15,
     ((uint64_t)1 << 63) + 6,
 #if ZMIJ_USE_NEON
@@ -1502,138 +1516,170 @@ static const struct zmij_data {
     // .fixed_layouts =
     {
         // clang-format off
-        {5, 1, 1,  // -4
-         {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17}},
-        {4, 1, 1,  // -3
-         {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17}},
-        {3, 1, 1,  // -2
-         {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17}},
-        {2, 1, 1,  // -1
-         {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17}},
-        {0, 1, 2,  //  0
-         {1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18}},
-        {0, 2, 3,  //  1
-         {2, 2, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18}},
-        {0, 3, 4,  //  2
-         {3, 3, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18}},
-        {0, 4, 5,  //  3
-         {4, 4, 4, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18}},
-        {0, 5, 6,  //  4
-         {5, 5, 5, 5, 5, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18}},
-        {0, 6, 7,  //  5
-         {6, 6, 6, 6, 6, 6, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18}},
-        {0, 7, 8,  //  6
-         {7, 7, 7, 7, 7, 7, 7, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18}},
-        {0, 8, 9,  //  7
-         {8, 8, 8, 8, 8, 8, 8, 8, 10, 11, 12, 13, 14, 15, 16, 17, 18}},
-        {0, 9, 10,  //  8
-         {9, 9, 9, 9, 9, 9, 9, 9, 9, 11, 12, 13, 14, 15, 16, 17, 18}},
-        {0, 10, 11,  //  9
-         {10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 12, 13, 14, 15, 16, 17, 18}},
-        {0, 11, 12,  // 10
-         {11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 13, 14, 15, 16, 17, 18}},
-        {0, 12, 13,  // 11
-         {12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 14, 15, 16, 17, 18}},
-        {0, 13, 14,  // 12
-         {13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 15, 16, 17, 18}},
-        {0, 14, 15,  // 13
-         {14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 16, 17, 18}},
-        {0, 15, 16,  // 14
-         {15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 17, 18}},
-        {0, 16, 17,  // 15
-         {16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 18}},
+        // dec_exp = -4
+        {ZMIJ_FIXED_SSE(
+           .shuffle = {{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16},
+                       {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}},
+           .last_digit_pos = {15, 16})
+         .start_pos = 5, .point_pos = 1, .shift_pos = 1,
+         .end_pos = {1, 2, 3, 4, 5, 6, 7, 8, 9,
+                     10, 11, 12, 13, 14, 15, 16, 17}},
+        // dec_exp = -3
+        {ZMIJ_FIXED_SSE(
+           .shuffle = {{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16},
+                       {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}},
+           .last_digit_pos = {15, 16})
+         .start_pos = 4, .point_pos = 1, .shift_pos = 1,
+         .end_pos = {1, 2, 3, 4, 5, 6, 7, 8, 9,
+                     10, 11, 12, 13, 14, 15, 16, 17}},
+        // dec_exp = -2
+        {ZMIJ_FIXED_SSE(
+           .shuffle = {{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16},
+                       {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}},
+           .last_digit_pos = {15, 16})
+         .start_pos = 3, .point_pos = 1, .shift_pos = 1,
+         .end_pos = {1, 2, 3, 4, 5, 6, 7, 8, 9,
+                     10, 11, 12, 13, 14, 15, 16, 17}},
+        // dec_exp = -1
+        {ZMIJ_FIXED_SSE(
+           .shuffle = {{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16},
+                       {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}},
+           .last_digit_pos = {15, 16})
+         .start_pos = 2, .point_pos = 1, .shift_pos = 1,
+         .end_pos = {1, 2, 3, 4, 5, 6, 7, 8, 9,
+                     10, 11, 12, 13, 14, 15, 16, 17}},
+        // dec_exp = 0
+        {ZMIJ_FIXED_SSE(
+           .shuffle = {{1, ~0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15},
+                       {0, ~0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14}},
+           .last_digit_pos = {16, 17})
+         .start_pos = 0, .point_pos = 1, .shift_pos = 2,
+         .end_pos = {1, 3, 4, 5, 6, 7, 8, 9, 10,
+                     11, 12, 13, 14, 15, 16, 17, 18}},
+        // dec_exp = 1
+        {ZMIJ_FIXED_SSE(
+           .shuffle = {{1, 2, ~0, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15},
+                       {0, 1, ~0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14}},
+           .last_digit_pos = {16, 17})
+         .start_pos = 0, .point_pos = 2, .shift_pos = 3,
+         .end_pos = {2, 2, 4, 5, 6, 7, 8, 9, 10,
+                     11, 12, 13, 14, 15, 16, 17, 18}},
+        // dec_exp = 2
+        {ZMIJ_FIXED_SSE(
+           .shuffle = {{1, 2, 3, ~0, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15},
+                       {0, 1, 2, ~0, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14}},
+           .last_digit_pos = {16, 17})
+         .start_pos = 0, .point_pos = 3, .shift_pos = 4,
+         .end_pos = {3, 3, 3, 5, 6, 7, 8, 9, 10,
+                     11, 12, 13, 14, 15, 16, 17, 18}},
+        // dec_exp = 3
+        {ZMIJ_FIXED_SSE(
+           .shuffle = {{1, 2, 3, 4, ~0, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15},
+                       {0, 1, 2, 3, ~0, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14}},
+           .last_digit_pos = {16, 17})
+         .start_pos = 0, .point_pos = 4, .shift_pos = 5,
+         .end_pos = {4, 4, 4, 4, 6, 7, 8, 9, 10,
+                     11, 12, 13, 14, 15, 16, 17, 18}},
+        // dec_exp = 4
+        {ZMIJ_FIXED_SSE(
+           .shuffle = {{1, 2, 3, 4, 5, ~0, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15},
+                       {0, 1, 2, 3, 4, ~0, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14}},
+           .last_digit_pos = {16, 17})
+         .start_pos = 0, .point_pos = 5, .shift_pos = 6,
+         .end_pos = {5, 5, 5, 5, 5, 7, 8, 9, 10,
+                     11, 12, 13, 14, 15, 16, 17, 18}},
+        // dec_exp = 5
+        {ZMIJ_FIXED_SSE(
+           .shuffle = {{1, 2, 3, 4, 5, 6, ~0, 7, 8, 9, 10, 11, 12, 13, 14, 15},
+                       {0, 1, 2, 3, 4, 5, ~0, 6, 7, 8, 9, 10, 11, 12, 13, 14}},
+           .last_digit_pos = {16, 17})
+         .start_pos = 0, .point_pos = 6, .shift_pos = 7,
+         .end_pos = {6, 6, 6, 6, 6, 6, 8, 9, 10,
+                     11, 12, 13, 14, 15, 16, 17, 18}},
+        // dec_exp = 6
+        {ZMIJ_FIXED_SSE(
+           .shuffle = {{1, 2, 3, 4, 5, 6, 7, ~0, 8, 9, 10, 11, 12, 13, 14, 15},
+                       {0, 1, 2, 3, 4, 5, 6, ~0, 7, 8, 9, 10, 11, 12, 13, 14}},
+           .last_digit_pos = {16, 17})
+         .start_pos = 0, .point_pos = 7, .shift_pos = 8,
+         .end_pos = {7, 7, 7, 7, 7, 7, 7, 9, 10,
+                     11, 12, 13, 14, 15, 16, 17, 18}},
+        // dec_exp = 7
+        {ZMIJ_FIXED_SSE(
+           .shuffle = {{1, 2, 3, 4, 5, 6, 7, 8, ~0, 9, 10, 11, 12, 13, 14, 15},
+                       {0, 1, 2, 3, 4, 5, 6, 7, ~0, 8, 9, 10, 11, 12, 13, 14}},
+           .last_digit_pos = {16, 17})
+         .start_pos = 0, .point_pos = 8, .shift_pos = 9,
+         .end_pos = {8, 8, 8, 8, 8, 8, 8, 8, 10,
+                     11, 12, 13, 14, 15, 16, 17, 18}},
+        // dec_exp = 8
+        {ZMIJ_FIXED_SSE(
+           .shuffle = {{1, 2, 3, 4, 5, 6, 7, 8, 9, ~0, 10, 11, 12, 13, 14, 15},
+                       {0, 1, 2, 3, 4, 5, 6, 7, 8, ~0, 9, 10, 11, 12, 13, 14}},
+           .last_digit_pos = {16, 17})
+         .start_pos = 0, .point_pos = 9, .shift_pos = 10,
+         .end_pos = {9, 9, 9, 9, 9, 9, 9, 9, 9,
+                     11, 12, 13, 14, 15, 16, 17, 18}},
+        // dec_exp = 9
+        {ZMIJ_FIXED_SSE(
+           .shuffle = {{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, ~0, 11, 12, 13, 14, 15},
+                       {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, ~0, 10, 11, 12, 13, 14}},
+           .last_digit_pos = {16, 17})
+         .start_pos = 0, .point_pos = 10, .shift_pos = 11,
+         .end_pos = {10, 10, 10, 10, 10, 10, 10, 10, 10,
+                     10, 12, 13, 14, 15, 16, 17, 18}},
+        // dec_exp = 10
+        {ZMIJ_FIXED_SSE(
+           .shuffle = {{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, ~0, 12, 13, 14, 15},
+                       {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, ~0, 11, 12, 13, 14}},
+           .last_digit_pos = {16, 17})
+         .start_pos = 0, .point_pos = 11, .shift_pos = 12,
+         .end_pos = {11, 11, 11, 11, 11, 11, 11, 11, 11,
+                     11, 11, 13, 14, 15, 16, 17, 18}},
+        // dec_exp = 11
+        {ZMIJ_FIXED_SSE(
+           .shuffle = {{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, ~0, 13, 14, 15},
+                       {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, ~0, 12, 13, 14}},
+           .last_digit_pos = {16, 17})
+         .start_pos = 0, .point_pos = 12, .shift_pos = 13,
+         .end_pos = {12, 12, 12, 12, 12, 12, 12, 12, 12,
+                     12, 12, 12, 14, 15, 16, 17, 18}},
+        // dec_exp = 12
+        {ZMIJ_FIXED_SSE(
+           .shuffle = {{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, ~0, 14, 15},
+                       {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, ~0, 13, 14}},
+           .last_digit_pos = {16, 17})
+         .start_pos = 0, .point_pos = 13, .shift_pos = 14,
+         .end_pos = {13, 13, 13, 13, 13, 13, 13, 13, 13,
+                     13, 13, 13, 13, 15, 16, 17, 18}},
+        // dec_exp = 13
+        {ZMIJ_FIXED_SSE(
+           .shuffle = {{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, ~0, 15},
+                       {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, ~0, 14}},
+           .last_digit_pos = {16, 17})
+         .start_pos = 0, .point_pos = 14, .shift_pos = 15,
+         .end_pos = {14, 14, 14, 14, 14, 14, 14, 14, 14,
+                     14, 14, 14, 14, 14, 16, 17, 18}},
+        // dec_exp = 14
+        {ZMIJ_FIXED_SSE(
+           .shuffle = {{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, ~0},
+                       {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, ~0}},
+           .last_digit_pos = {16, 17})
+         .start_pos = 0, .point_pos = 15, .shift_pos = 16,
+         .end_pos = {15, 15, 15, 15, 15, 15, 15, 15, 15,
+                     15, 15, 15, 15, 15, 15, 17, 18}},
+        // dec_exp = 15
+        {ZMIJ_FIXED_SSE(
+           .shuffle = {{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16},
+                       {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}},
+           .last_digit_pos = {15, 17})
+         .start_pos = 0, .point_pos = 16, .shift_pos = 17,
+         .end_pos = {16, 16, 16, 16, 16, 16, 16, 16, 16,
+                     16, 16, 16, 16, 16, 16, 16, 18}},
         // clang-format on
     },
-#if ZMIJ_USE_SSE4_1
-    // .fixed_shuffle =
-    {
-        // clang-format off
-        {  // -4
-         {{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16},
-          {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}},
-         {15, 16}},
-        {  // -3
-         {{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16},
-          {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}},
-         {15, 16}},
-        {  // -2
-         {{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16},
-          {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}},
-         {15, 16}},
-        {  // -1
-         {{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16},
-          {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}},
-         {15, 16}},
-        {  //  0
-         {{1, ~0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15},
-          {0, ~0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14}},
-         {16, 17}},
-        {  //  1
-         {{1, 2, ~0, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15},
-          {0, 1, ~0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14}},
-         {16, 17}},
-        {  //  2
-         {{1, 2, 3, ~0, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15},
-          {0, 1, 2, ~0, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14}},
-         {16, 17}},
-        {  //  3
-         {{1, 2, 3, 4, ~0, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15},
-          {0, 1, 2, 3, ~0, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14}},
-         {16, 17}},
-        {  //  4
-         {{1, 2, 3, 4, 5, ~0, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15},
-          {0, 1, 2, 3, 4, ~0, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14}},
-         {16, 17}},
-        {  //  5
-         {{1, 2, 3, 4, 5, 6, ~0, 7, 8, 9, 10, 11, 12, 13, 14, 15},
-          {0, 1, 2, 3, 4, 5, ~0, 6, 7, 8, 9, 10, 11, 12, 13, 14}},
-         {16, 17}},
-        {  //  6
-         {{1, 2, 3, 4, 5, 6, 7, ~0, 8, 9, 10, 11, 12, 13, 14, 15},
-          {0, 1, 2, 3, 4, 5, 6, ~0, 7, 8, 9, 10, 11, 12, 13, 14}},
-         {16, 17}},
-        {  //  7
-         {{1, 2, 3, 4, 5, 6, 7, 8, ~0, 9, 10, 11, 12, 13, 14, 15},
-          {0, 1, 2, 3, 4, 5, 6, 7, ~0, 8, 9, 10, 11, 12, 13, 14}},
-         {16, 17}},
-        {  //  8
-         {{1, 2, 3, 4, 5, 6, 7, 8, 9, ~0, 10, 11, 12, 13, 14, 15},
-          {0, 1, 2, 3, 4, 5, 6, 7, 8, ~0, 9, 10, 11, 12, 13, 14}},
-         {16, 17}},
-        {  //  9
-         {{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, ~0, 11, 12, 13, 14, 15},
-          {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, ~0, 10, 11, 12, 13, 14}},
-         {16, 17}},
-        {  // 10
-         {{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, ~0, 12, 13, 14, 15},
-          {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, ~0, 11, 12, 13, 14}},
-         {16, 17}},
-        {  // 11
-         {{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, ~0, 13, 14, 15},
-          {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, ~0, 12, 13, 14}},
-         {16, 17}},
-        {  // 12
-         {{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, ~0, 14, 15},
-          {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, ~0, 13, 14}},
-         {16, 17}},
-        {  // 13
-         {{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, ~0, 15},
-          {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, ~0, 14}},
-         {16, 17}},
-        {  // 14
-         {{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, ~0},
-          {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, ~0}},
-         {16, 17}},
-        {  // 15
-         {{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16},
-          {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}},
-         {15, 17}},
-        // clang-format on
-    },
-#endif
 };
-
-typedef struct zmij_data zmij_data;
+#undef ZMIJ_FIXED_SSE
 
 static uint128 get_pow10_significand(const zmij_data* d, int dec_exp) {
   const int dec_exp_min = -293;
@@ -2168,17 +2214,15 @@ static ZMIJ_INLINE char* do_write(
     buffer += layout->start_pos;
 #if ZMIJ_USE_SSE4_1
     if (num_bits == 64) {
-      const fixed_shuffle_entry* sh =
-          &d->fixed_shuffle[dec_exp - double_min_fixed_dec_exp];
       __m128i digits = dig64.digits;
-      __m128i tbl = _mm_load_si128((const __m128i*)&sh->shuffle[extra_digit]);
+      __m128i tbl = _mm_load_si128((const __m128i*)&layout->shuffle[extra_digit]);
       __m128i out = _mm_shuffle_epi8(digits, tbl);
       memcpy(buffer, &out, bcd_size);  // Store the assembled digits in one go.
       // The point can push BCD[15] outside the vector to buffer[16], so write
       // it unconditionally (otherwise it's in-vector or overwritten below).
       buffer[bcd_size] = (char)_mm_extract_epi8(digits, 15);
       start[layout->point_pos] = '.';
-      buffer[sh->last_digit_pos[extra_digit]] = last_digit_char;
+      buffer[layout->last_digit_pos[extra_digit]] = last_digit_char;
       int num_digits = has_last_digit ? bcd_size : dig64.num_digits - 1;
       return buffer + layout->end_pos[num_digits + extra_digit - 1];
     }
