@@ -1349,6 +1349,7 @@ static const fixed_shuffle_entry fixed_shuffle_table[20] = {
 };
 #endif  // ZMIJ_USE_SSE4_1
 
+#if ZMIJ_USE_EXP_STRING_TABLE
 // A table of precomputed exponent strings for scientific notation.
 // Each entry packs "e+dd" or "e+ddd" into a uint64_t with the length in byte 7.
 // Indexed by `dec_exp + exp_string_offset` for dec_exp in [-324, 308].
@@ -1569,6 +1570,7 @@ static const uint64_t exp_string_data[633] = {
     0x0005003330332b65ull, 0x0005003430332b65ull, 0x0005003530332b65ull,
     0x0005003630332b65ull, 0x0005003730332b65ull, 0x0005003830332b65ull,
 };
+#endif  // ZMIJ_USE_EXP_STRING_TABLE
 
 // A table of precomputed shifts for the new direct-scaling algorithm.
 // `data[raw_exp] = compute_exp_shift(bin_exp, dec_exp + 1) + extra_shift`
@@ -2289,11 +2291,30 @@ static ZMIJ_INLINE char* do_write(uint64_t bin_sig, int64_t bin_exp,
   buffer -= (buffer - 1 == start + 1);  // Remove trailing point.
 
   // Write exponent.
+#if ZMIJ_USE_EXP_STRING_TABLE
   uint64_t exp_data = exp_string_data[dec_exp + exp_string_offset];
   int len = (int)(exp_data >> 48);
   if (is_big_endian) exp_data = bswap64(exp_data);
   memcpy(buffer, &exp_data, num_bits == 64 ? 8 : 4);
   return buffer + len;
+#else
+  uint16_t e_sign = dec_exp >= 0 ? ('+' << 8 | 'e') : ('-' << 8 | 'e');
+  if (is_big_endian) e_sign = e_sign << 8 | e_sign >> 8;
+  memcpy(buffer, &e_sign, 2);
+  buffer += 2;
+  dec_exp = dec_exp >= 0 ? dec_exp : -dec_exp;
+  if (num_bits == 64) {
+    // digit = dec_exp / 100
+    uint32_t digit = use_umul128_hi64
+                         ? (uint32_t)umul128_hi64(dec_exp, 0x290000000000000)
+                         : ((uint32_t)dec_exp * div100_sig) >> div100_exp;
+    *buffer = (char)('0' + digit);
+    buffer += dec_exp >= 100;
+    dec_exp -= digit * 100;
+  }
+  memcpy(buffer, digits2(dec_exp), 2);
+  return buffer + 2;
+#endif  // ZMIJ_USE_EXP_STRING_TABLE
 }
 
 char* zmij_detail_write_float(float value, char* buffer) {
