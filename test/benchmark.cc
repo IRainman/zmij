@@ -37,8 +37,7 @@ class rng {
   unsigned seed_;
 };
 
-template <typename T>
-auto get_random_digit_data(int digit) -> const T* {
+template <typename T> auto get_random_digit_data(int digit) -> const T* {
   constexpr int max_digits = std::numeric_limits<T>::max_digits10;
   static const std::vector<T> random_digit_data = []() {
     std::vector<T> data;
@@ -73,8 +72,7 @@ auto get_random_digit_data(int digit) -> const T* {
   return random_digit_data.data() + (digit - 1) * num_per_digit;
 }
 
-template <typename T>
-auto get_mixed_pool() -> const std::vector<T>& {
+template <typename T> auto get_mixed_pool() -> const std::vector<T>& {
   constexpr int max_digits = std::numeric_limits<T>::max_digits10;
   static const std::vector<T> pool = [] {
     std::vector<T> v;
@@ -101,15 +99,15 @@ static void run_to_chars(benchmark::State& state,
       benchmark::ClobberMemory();
     }
   }
-  state.counters["Throughput"] = benchmark::Counter(
-      static_cast<double>(num_per_digit),
-      benchmark::Counter::kIsIterationInvariantRate);
+  state.counters["Throughput"] =
+      benchmark::Counter(static_cast<double>(num_per_digit),
+                         benchmark::Counter::kIsIterationInvariantRate);
   const char* time_label =
       std::is_same_v<T, double> ? "Time/double" : "Time/float";
-  state.counters[time_label] = benchmark::Counter(
-      static_cast<double>(num_per_digit),
-      benchmark::Counter::kIsIterationInvariantRate |
-          benchmark::Counter::kInvert);
+  state.counters[time_label] =
+      benchmark::Counter(static_cast<double>(num_per_digit),
+                         benchmark::Counter::kIsIterationInvariantRate |
+                             benchmark::Counter::kInvert);
 }
 
 template <typename T>
@@ -124,15 +122,15 @@ static void run_to_chars_mixed(benchmark::State& state,
       benchmark::ClobberMemory();
     }
   }
-  state.counters["Throughput"] = benchmark::Counter(
-      static_cast<double>(pool.size()),
-      benchmark::Counter::kIsIterationInvariantRate);
+  state.counters["Throughput"] =
+      benchmark::Counter(static_cast<double>(pool.size()),
+                         benchmark::Counter::kIsIterationInvariantRate);
   const char* time_label =
       std::is_same_v<T, double> ? "Time/double" : "Time/float";
-  state.counters[time_label] = benchmark::Counter(
-      static_cast<double>(pool.size()),
-      benchmark::Counter::kIsIterationInvariantRate |
-          benchmark::Counter::kInvert);
+  state.counters[time_label] =
+      benchmark::Counter(static_cast<double>(pool.size()),
+                         benchmark::Counter::kIsIterationInvariantRate |
+                             benchmark::Counter::kInvert);
 }
 
 // Doubles extracted from the canonical canada.json corpus (GeoJSON polygon of
@@ -153,13 +151,13 @@ static void run_to_chars_canada(benchmark::State& state,
       benchmark::ClobberMemory();
     }
   }
-  state.counters["Throughput"] = benchmark::Counter(
-      static_cast<double>(canada_numbers_count),
-      benchmark::Counter::kIsIterationInvariantRate);
-  state.counters["Time/double"] = benchmark::Counter(
-      static_cast<double>(canada_numbers_count),
-      benchmark::Counter::kIsIterationInvariantRate |
-          benchmark::Counter::kInvert);
+  state.counters["Throughput"] =
+      benchmark::Counter(static_cast<double>(canada_numbers_count),
+                         benchmark::Counter::kIsIterationInvariantRate);
+  state.counters["Time/double"] =
+      benchmark::Counter(static_cast<double>(canada_numbers_count),
+                         benchmark::Counter::kIsIterationInvariantRate |
+                             benchmark::Counter::kInvert);
 }
 
 // Doubles drawn uniformly from zmij's fixed-notation decimal-exponent range,
@@ -169,8 +167,7 @@ static void run_to_chars_canada(benchmark::State& state,
 // canada_numbers for comparable per-iteration cost.
 static const std::vector<double>& get_fixed_range_numbers() {
   static const std::vector<double> v = [] {
-    constexpr size_t count =
-        sizeof(canada_numbers) / sizeof(canada_numbers[0]);
+    constexpr size_t count = sizeof(canada_numbers) / sizeof(canada_numbers[0]);
     std::mt19937_64 rng(0);
     std::uniform_int_distribution<int> exp_dist(-4, 15);
     std::uniform_real_distribution<double> sig_dist(1.0, 10.0);
@@ -189,8 +186,8 @@ static const std::vector<double>& get_fixed_range_numbers() {
   return v;
 }
 
-static void run_to_chars_fixed_range(
-    benchmark::State& state, auto (*to_chars)(double, char*)->char*) {
+static void run_to_chars_fixed_range(benchmark::State& state,
+                                     auto (*to_chars)(double, char*)->char*) {
   const auto& nums = get_fixed_range_numbers();
   char buffer[256];
   for (auto _ : state) {
@@ -200,13 +197,13 @@ static void run_to_chars_fixed_range(
       benchmark::ClobberMemory();
     }
   }
-  state.counters["Throughput"] = benchmark::Counter(
-      static_cast<double>(nums.size()),
-      benchmark::Counter::kIsIterationInvariantRate);
-  state.counters["Time/double"] = benchmark::Counter(
-      static_cast<double>(nums.size()),
-      benchmark::Counter::kIsIterationInvariantRate |
-          benchmark::Counter::kInvert);
+  state.counters["Throughput"] =
+      benchmark::Counter(static_cast<double>(nums.size()),
+                         benchmark::Counter::kIsIterationInvariantRate);
+  state.counters["Time/double"] =
+      benchmark::Counter(static_cast<double>(nums.size()),
+                         benchmark::Counter::kIsIterationInvariantRate |
+                             benchmark::Counter::kInvert);
 }
 
 // Formats a counter value with 2 fractional digits, applying SI auto-scaling
@@ -261,8 +258,7 @@ class pretty_reporter : public benchmark::ConsoleReporter {
   }
 };
 
-template <typename T>
-static void register_all(bool per_digit) {
+template <typename T> static void register_all(bool per_digit) {
   auto& v = methods<T>;
   std::sort(v.begin(), v.end(), [](const method<T>& a, const method<T>& b) {
     return a.name < b.name;

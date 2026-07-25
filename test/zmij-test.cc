@@ -5,6 +5,7 @@
 
 #ifndef ZMIJ_C
 #  include "zmij.h"
+
 #  include "zmij-to-chars.h"
 #  define ZMIJ_C 0
 #else
@@ -28,12 +29,12 @@ auto write(char* out, size_t n, float value) noexcept -> char* {
 #endif
 
 #include <gtest/gtest.h>
-
 #include <stdint.h>  // uint64_t
 #include <stdio.h>   // snprintf
 #include <stdlib.h>  // atoi
-#include <limits>    // std::numeric_limits
-#include <string>    // std::string
+
+#include <limits>  // std::numeric_limits
+#include <string>  // std::string
 
 #include "dragonbox/dragonbox_to_chars.h"
 #include "fmt/format.h"
@@ -135,12 +136,10 @@ TEST(float_test, to_decimal_precision) {
   EXPECT_EQ(to_decimal(9.99f, 2), decimal(10, 0));         // carry
   EXPECT_EQ(to_decimal(2.5f, 1), decimal(2, 0));           // round half to even
   EXPECT_EQ(to_decimal(-1.5f, 2), decimal(15, -1, true));  // sign preserved
-  EXPECT_EQ(
-      to_decimal(std::numeric_limits<float>::denorm_min(), 1), decimal(1, -45)
-  );  // subnormal path
-  EXPECT_EQ(
-      to_decimal(std::numeric_limits<float>::max(), 9), decimal(340282347, 30)
-  );
+  EXPECT_EQ(to_decimal(std::numeric_limits<float>::denorm_min(), 1),
+            decimal(1, -45));  // subnormal path
+  EXPECT_EQ(to_decimal(std::numeric_limits<float>::max(), 9),
+            decimal(340282347, 30));
 }
 #endif  // !ZMIJ_C
 
@@ -162,21 +161,19 @@ TEST(double_test, subnormal) {
 }
 
 TEST(double_test, irregular) {
-  const char* fixed[] = {
-      "0.0001220703125",
-      "0.000244140625",
-      "0.00048828125",
-      "0.0009765625",
-      "0.001953125",
-      "0.00390625",
-      "0.0078125",
-      "0.015625",
-      "0.03125",
-      "0.0625",
-      "0.125",
-      "0.25",
-      "0.5"
-  };
+  const char* fixed[] = {"0.0001220703125",
+                         "0.000244140625",
+                         "0.00048828125",
+                         "0.0009765625",
+                         "0.001953125",
+                         "0.00390625",
+                         "0.0078125",
+                         "0.015625",
+                         "0.03125",
+                         "0.0625",
+                         "0.125",
+                         "0.25",
+                         "0.5"};
   for (uint64_t exp = 1; exp < 0x3ff; ++exp) {
     uint64_t bits = exp << 52;
     double value = 0;
@@ -387,9 +384,8 @@ TEST(double_test, to_decimal_precision) {
   // Smallest subnormal at full precision (exercises the widened table top).
   EXPECT_EQ(to_decimal(5e-324, 18), decimal(494065645841246544, -341));
   // Largest subnormal, round-tripped at full precision.
-  EXPECT_EQ(
-      to_decimal(2.2250738585072009e-308, 17), decimal(22250738585072009, -324)
-  );
+  EXPECT_EQ(to_decimal(2.2250738585072009e-308, 17),
+            decimal(22250738585072009, -324));
   EXPECT_EQ(to_decimal(2.2250738585072009e-308, 6), decimal(222507, -313));
 
   // Large values at low precision reach the low end of the table.
@@ -403,10 +399,9 @@ TEST(double_test, to_decimal_precision_irregular) {
     double value = 0;
     memcpy(&value, &bits, sizeof(double));
     for (int precision = 1; precision <= 18; ++precision) {
-      EXPECT_EQ(
-          zmij::to_decimal(value, precision), expected_decimal(value, precision)
-      ) << "value="
-        << value << " precision=" << precision;
+      EXPECT_EQ(zmij::to_decimal(value, precision),
+                expected_decimal(value, precision))
+          << "value=" << value << " precision=" << precision;
     }
   }
 }

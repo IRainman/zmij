@@ -9,18 +9,16 @@
 #include <string>
 #include <vector>
 
-template <typename T>
-struct method {
+template <typename T> struct method {
   std::string name;
   auto (*to_chars)(T, char*) -> char*;
 };
 
-template <typename T>
-inline std::vector<method<T>> methods;
+template <typename T> inline std::vector<method<T>> methods;
 
 template <typename T>
 inline auto register_method_(const std::string& name,
-                             auto (*fn)(T, char*) -> char*) -> int {
+                             auto (*fn)(T, char*)->char*) -> int {
   methods<T>.push_back({name, fn});
   return 0;
 }

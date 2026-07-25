@@ -7,8 +7,9 @@
 #ifndef ZMIJ_TO_CHARS_H_
 #define ZMIJ_TO_CHARS_H_
 
-#include <stddef.h>      // size_t
-#include <string.h>      // memcpy
+#include <stddef.h>  // size_t
+#include <string.h>  // memcpy
+
 #include <system_error>  // std::errc
 
 #include "zmij.h"
