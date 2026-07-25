@@ -1301,6 +1301,26 @@ auto to_decimal(Float value, int precision) noexcept -> dec_fp {
   return {dec_sig, dec_exp, negative};
 }
 
+// Writes the exponent as 'e', a sign and at least two digits (e.g. e+05).
+template <typename Float>
+ZMIJ_INLINE auto write_exp(char* buffer, int dec_exp) noexcept -> char* {
+  uint16_t e_sign = dec_exp >= 0 ? ('+' << 8 | 'e') : ('-' << 8 | 'e');
+  if (is_big_endian) e_sign = e_sign << 8 | e_sign >> 8;
+  memcpy(buffer, &e_sign, 2);
+  buffer += 2;
+  uint32_t exp = dec_exp >= 0 ? dec_exp : -dec_exp;
+  if (float_traits<Float>::max_exponent10 >= 100) {
+    uint32_t digit = use_umul128_hi64
+                         ? umul128_hi64(exp, 0x290000000000000)
+                         : (exp * div100_sig) >> div100_exp;
+    *buffer = '0' + digit;
+    buffer += exp >= 100;
+    exp -= digit * 100;
+  }
+  memcpy(buffer, digits2(exp), 2);
+  return buffer + 2;
+}
+
 // It is slightly faster to return a pointer to the end than the size.
 template <typename Float>
 auto write(Float value, char* buffer) noexcept -> char* {
@@ -1410,22 +1430,7 @@ auto write(Float value, char* buffer) noexcept -> char* {
     memcpy(buffer, &exp_data, traits::max_exponent10 >= 100 ? 8 : 4);
     return buffer + len;
   }
-  uint16_t e_sign = dec_exp >= 0 ? ('+' << 8 | 'e') : ('-' << 8 | 'e');
-  if (is_big_endian) e_sign = e_sign << 8 | e_sign >> 8;
-  memcpy(buffer, &e_sign, 2);
-  buffer += 2;
-  dec_exp = dec_exp >= 0 ? dec_exp : -dec_exp;
-  if (traits::max_exponent10 >= 100) {
-    // digit = dec_exp / 100
-    uint32_t digit = use_umul128_hi64
-                         ? umul128_hi64(dec_exp, 0x290000000000000)
-                         : (uint32_t(dec_exp) * div100_sig) >> div100_exp;
-    *buffer = '0' + digit;
-    buffer += dec_exp >= 100;
-    dec_exp -= digit * 100;
-  }
-  memcpy(buffer, digits2(dec_exp), 2);
-  return buffer + 2;
+  return write_exp<Float>(buffer, dec_exp);
 }
 
 template <typename Float>
@@ -1450,17 +1455,7 @@ auto write(Float value, int precision, char* buffer) noexcept -> char* {
     memcpy(buffer, digits + 1, precision - 1);
     buffer += precision - 1;
   }
-
-  int exp = dec.sig != 0 ? dec.exp + precision - 1 : 0;
-  *buffer++ = 'e';
-  *buffer++ = exp < 0 ? '-' : '+';
-  unsigned e = exp < 0 ? -exp : exp;
-  char exp_digits[3];
-  int n = 0;
-  do exp_digits[n++] = char('0' + e % 10); while (e /= 10);
-  while (n < 2) exp_digits[n++] = '0';  // Pad to at least two digits.
-  while (n) *buffer++ = exp_digits[--n];
-  return buffer;
+  return write_exp<Float>(buffer, dec.sig != 0 ? dec.exp + precision - 1 : 0);
 }
 
 template auto to_decimal(float value, int precision) noexcept -> dec_fp;
