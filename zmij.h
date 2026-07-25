@@ -21,6 +21,13 @@ auto write_scientific(Float value, int precision, char* buffer) noexcept
 
 template <typename Float>
 auto write_general(Float value, int precision, char* buffer) noexcept -> char*;
+
+/// Clamps `precision` to the supported range [1, 18].
+inline auto clamp_precision(int precision) noexcept -> int {
+  if (precision < 1) return 1;
+  if (precision > 18) return 18;
+  return precision;
+}
 }  // namespace detail
 
 enum {
@@ -80,8 +87,7 @@ inline auto write(char* out, size_t n, double value) noexcept -> char* {
 /// out-of-range values are clamped.
 inline auto write_scientific(char* out, size_t n, float value,
                              int precision) noexcept -> char* {
-  if (precision < 1) precision = 1;
-  if (precision > 18) precision = 18;
+  precision = detail::clamp_precision(precision);
   if (n >= scientific_buffer_size)
     return detail::write_scientific(value, precision, out);
   char buffer[scientific_buffer_size];
@@ -98,8 +104,7 @@ inline auto write_scientific(char* out, size_t n, float value,
 /// out-of-range values are clamped.
 inline auto write_scientific(char* out, size_t n, double value,
                              int precision) noexcept -> char* {
-  if (precision < 1) precision = 1;
-  if (precision > 18) precision = 18;
+  precision = detail::clamp_precision(precision);
   if (n >= scientific_buffer_size)
     return detail::write_scientific(value, precision, out);
   char buffer[scientific_buffer_size];
@@ -118,8 +123,7 @@ inline auto write_scientific(char* out, size_t n, double value,
 /// are clamped.
 inline auto write_general(char* out, size_t n, float value,
                           int precision) noexcept -> char* {
-  if (precision < 1) precision = 1;
-  if (precision > 18) precision = 18;
+  precision = detail::clamp_precision(precision);
   if (n >= general_buffer_size)
     return detail::write_general(value, precision, out);
   char buffer[general_buffer_size];
@@ -138,8 +142,7 @@ inline auto write_general(char* out, size_t n, float value,
 /// are clamped.
 inline auto write_general(char* out, size_t n, double value,
                           int precision) noexcept -> char* {
-  if (precision < 1) precision = 1;
-  if (precision > 18) precision = 18;
+  precision = detail::clamp_precision(precision);
   if (n >= general_buffer_size)
     return detail::write_general(value, precision, out);
   char buffer[general_buffer_size];
