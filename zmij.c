@@ -614,7 +614,8 @@ typedef struct {
 #  define ZMIJ_FIXED_SSE(...)
 #endif
 
-ZMIJ_ALIGNAS(64) static const zmij_data static_data = {
+ZMIJ_ALIGNAS(64)
+static const zmij_data static_data = {
     (uint64_t)1e15,
     ((uint64_t)1 << 63) + 6,
 #if ZMIJ_USE_NEON
@@ -1715,27 +1716,25 @@ typedef struct {
 
 #if ZMIJ_USE_NEON
 // Converts four numbers < 10000, one in each 32-bit lane, to BCD digits.
-static ZMIJ_INLINE uint8x16_t to_bcd_4x4(
-    const zmij_data* d, int32x4_t efgh_abcd_mnop_ijkl
-) {
+static ZMIJ_INLINE uint8x16_t
+to_bcd_4x4(const zmij_data* d, int32x4_t efgh_abcd_mnop_ijkl) {
   // Compiler barrier, or clang breaks the subsequent MLA into UADDW + MUL.
   ZMIJ_ASM(("" : "+w"(efgh_abcd_mnop_ijkl)));
 
   int32x4_t ef_ab_mn_ij =
       vqdmulhq_n_s32(efgh_abcd_mnop_ijkl, d->multipliers32[2]);
-  int16x8_t gh_ef_cd_ab_op_mn_kl_ij = vreinterpretq_s16_s32(vmlaq_n_s32(
-      efgh_abcd_mnop_ijkl, ef_ab_mn_ij, d->multipliers32[3]
-  ));
+  int16x8_t gh_ef_cd_ab_op_mn_kl_ij = vreinterpretq_s16_s32(
+      vmlaq_n_s32(efgh_abcd_mnop_ijkl, ef_ab_mn_ij, d->multipliers32[3])
+  );
   int16x8_t high_10s =
       vqdmulhq_n_s16(gh_ef_cd_ab_op_mn_kl_ij, d->multipliers16[0]);
-  return vreinterpretq_u8_s16(vmlaq_n_s16(
-      gh_ef_cd_ab_op_mn_kl_ij, high_10s, d->multipliers16[1]
-  ));
+  return vreinterpretq_u8_s16(
+      vmlaq_n_s16(gh_ef_cd_ab_op_mn_kl_ij, high_10s, d->multipliers16[1])
+  );
 }
 
-static ZMIJ_INLINE uint8x16_t to_unshuffled_digits(
-    const zmij_data* d, uint64_t value
-) {
+static ZMIJ_INLINE uint8x16_t
+to_unshuffled_digits(const zmij_data* d, uint64_t value) {
   uint64_t hundred_million = d->hundred_million;
   uint64_t mul_const = d->mul_const;
 
@@ -1872,18 +1871,16 @@ static ZMIJ_INLINE bcd_result to_bcd8(const zmij_data* d, uint64_t abcdefgh) {
 }
 
 // Converts a value (up to 8 decimal digits) to BCD representation.
-static ZMIJ_INLINE dec_digits_float to_digits_float(
-    const zmij_data* d, uint64_t value
-) {
+static ZMIJ_INLINE dec_digits_float
+to_digits_float(const zmij_data* d, uint64_t value) {
   bcd_result result = to_bcd8(d, value);
   dec_digits_float dig = {result.bcd + zeros, result.len};
   return dig;
 }
 
 // Converts a value (up to 16 decimal digits) to BCD representation.
-static ZMIJ_INLINE dec_digits_double to_digits_double(
-    const zmij_data* d, uint64_t value
-) {
+static ZMIJ_INLINE dec_digits_double
+to_digits_double(const zmij_data* d, uint64_t value) {
 #if !ZMIJ_USE_NEON && !ZMIJ_USE_SSE
   uint32_t hi = (uint32_t)(value / 100000000);
   uint32_t lo = (uint32_t)(value % 100000000);
@@ -1968,9 +1965,8 @@ static ZMIJ_INLINE void write_digits_double(
   uint8x16_t shifted = vqtbl1q_u8(vreinterpretq_u8_u16(digits), shuffle);
   vst1q_u8((uint8_t*)buffer, shifted);
 #elif ZMIJ_USE_SSE4_1
-  __m128i shuffle = _mm_loadu_si128(
-      (const __m128i*)(d->shift_shuffle + drop_leading_zero)
-  );
+  __m128i shuffle =
+      _mm_loadu_si128((const __m128i*)(d->shift_shuffle + drop_leading_zero));
   _mm_storeu_si128((__m128i*)buffer, _mm_shuffle_epi8(digits, shuffle));
 #endif
 }
@@ -1992,9 +1988,9 @@ typedef struct {
 // Here be 🐉s.
 // Converts a binary FP number bin_sig * 2**bin_exp to the shortest decimal
 // representation, where bin_exp = raw_exp - exp_offset.
-static ZMIJ_INLINE to_decimal_result
-to_decimal_double(const zmij_data* d, uint64_t bin_sig, int64_t raw_exp,
-                  bool regular) {
+static ZMIJ_INLINE to_decimal_result to_decimal_double(
+    const zmij_data* d, uint64_t bin_sig, int64_t raw_exp, bool regular
+) {
   int64_t bin_exp = raw_exp - double_exp_offset;
   const int extra_shift = 6;
 
@@ -2059,9 +2055,9 @@ to_decimal_double(const zmij_data* d, uint64_t bin_sig, int64_t raw_exp,
 
 // Converts a binary FP number bin_sig * 2**bin_exp to the shortest decimal
 // representation, where bin_exp = raw_exp - exp_offset.
-static ZMIJ_INLINE to_decimal_result
-to_decimal_float(const zmij_data* d, uint32_t bin_sig, int64_t raw_exp,
-                 bool regular) {
+static ZMIJ_INLINE to_decimal_result to_decimal_float(
+    const zmij_data* d, uint32_t bin_sig, int64_t raw_exp, bool regular
+) {
   int64_t bin_exp = raw_exp - float_exp_offset;
   const int irregular_extra_shift = 6;
 
@@ -2129,25 +2125,17 @@ static ZMIJ_INLINE char* do_write(
     uint64_t bin_sig, int64_t bin_exp, bool negative, char* buffer,
     const int num_bits
 ) {
-  const zmij_data* d = &static_data;
-  ZMIJ_ASM(("" : "+r"(d)));  // Load constants from memory.
-
-  const int max_digits10 = num_bits == 64 ? DBL_DECIMAL_DIG : FLT_DECIMAL_DIG;
-  const int min_fixed_dec_exp =
-      num_bits == 64 ? double_min_fixed_dec_exp : float_min_fixed_dec_exp;
-  const int max_fixed_dec_exp =
-      num_bits == 64 ? double_max_fixed_dec_exp : float_max_fixed_dec_exp;
-  const int bcd_size = num_bits == 64 ? 16 : 8;
-  const int exp_mask = num_bits == 64 ? double_exp_mask : float_exp_mask;
-  const uint64_t threshold = num_bits == 64 ? d->threshold : (uint64_t)1e7;
-  const uint64_t implicit_bit =
-      num_bits == 64 ? double_implicit_bit : float_implicit_bit;
-
   *buffer = '-';
   buffer += negative;
 
+  const zmij_data* d = &static_data;
+  ZMIJ_ASM(("" : "+r"(d)));  // Load constants from memory.
+  const uint64_t threshold = num_bits == 64 ? d->threshold : (uint64_t)1e7;
+
   to_decimal_result dec;
-  if (ZMIJ_UNLIKELY(bin_exp == 0 || bin_exp == exp_mask)) {
+  const int exp_mask = num_bits == 64 ? double_exp_mask : float_exp_mask;
+  bool is_normal = (unsigned)(bin_exp - 1) < (unsigned)(exp_mask - 1);
+  if (ZMIJ_UNLIKELY(!is_normal)) {
     if (bin_exp != 0) {
       memcpy(buffer, bin_sig == 0 ? "inf" : "nan", 4);
       return buffer + 3;
@@ -2172,16 +2160,19 @@ static ZMIJ_INLINE char* do_write(
     dec.last_digit = last_digit;
     dec.has_last_digit = last_digit != 0;
   } else {
-    dec = num_bits == 64 ? to_decimal_double(
-                               d, bin_sig | implicit_bit, bin_exp, bin_sig != 0
-                           )
-                         : to_decimal_float(
-                               d, (uint32_t)(bin_sig | implicit_bit), bin_exp,
-                               bin_sig != 0
-                           );
+    if (num_bits == 64) {
+      dec = to_decimal_double(
+          d, bin_sig | double_implicit_bit, bin_exp, bin_sig != 0
+      );
+    } else {
+      dec = to_decimal_float(
+          d, (uint32_t)(bin_sig | float_implicit_bit), bin_exp, bin_sig != 0
+      );
+    }
   }
   bool has_last_digit = dec.has_last_digit;
   bool extra_digit = (uint64_t)dec.sig >= threshold;
+  const int max_digits10 = num_bits == 64 ? DBL_DECIMAL_DIG : FLT_DECIMAL_DIG;
   int dec_exp = dec.exp + max_digits10 - 2 + extra_digit;
   if (num_bits == 32 && ZMIJ_UNLIKELY(dec.sig < (uint32_t)1e6)) {
     dec.sig = 10 * dec.sig + (-(int)has_last_digit & dec.last_digit);
@@ -2189,6 +2180,8 @@ static ZMIJ_INLINE char* do_write(
     --dec_exp;
   }
 
+  // Write significand/fixed.
+  char* start = buffer;
   // Convert the significand to digits once, before the fixed/scientific
   // branch, so the long-latency conversion overlaps the branch logic.
   dec_digits_double dig64;
@@ -2197,13 +2190,19 @@ static ZMIJ_INLINE char* do_write(
     dig64 = to_digits_double(d, dec.sig);
   else
     dig32 = to_digits_float(d, dec.sig);
-
-  // Write significand/fixed.
-  char* start = buffer;
+  const int bcd_size = num_bits == 64 ? 16 : 8;
+  const int min_fixed_dec_exp =
+      num_bits == 64 ? double_min_fixed_dec_exp : float_min_fixed_dec_exp;
+  const int max_fixed_dec_exp =
+      num_bits == 64 ? double_max_fixed_dec_exp : float_max_fixed_dec_exp;
   if (dec_exp >= min_fixed_dec_exp && dec_exp <= max_fixed_dec_exp) {
     write8(start, zeros);  // For dec_exp < 0.
     char last_digit_char =
         (char)('0' + (-(int)has_last_digit & dec.last_digit));
+    int num_digits =
+        has_last_digit
+            ? bcd_size
+            : (num_bits == 64 ? dig64.num_digits : dig32.num_digits) - 1;
 
     // Materialize the base early so the entry address is `base + idx*32`;
     // otherwise Clang folds the offset in and adds a cycle to the idx chain.
@@ -2216,7 +2215,8 @@ static ZMIJ_INLINE char* do_write(
 #if ZMIJ_USE_SSE4_1
     if (num_bits == 64) {
       __m128i digits = dig64.digits;
-      __m128i tbl = _mm_load_si128((const __m128i*)&layout->shuffle[extra_digit]);
+      __m128i tbl =
+          _mm_load_si128((const __m128i*)&layout->shuffle[extra_digit]);
       __m128i out = _mm_shuffle_epi8(digits, tbl);
       memcpy(buffer, &out, bcd_size);  // Store the assembled digits in one go.
       // The point can push BCD[15] outside the vector to buffer[16], so write
@@ -2224,18 +2224,13 @@ static ZMIJ_INLINE char* do_write(
       buffer[bcd_size] = (char)_mm_extract_epi8(digits, 15);
       start[layout->point_pos] = '.';
       buffer[layout->last_digit_pos[extra_digit]] = last_digit_char;
-      int num_digits = has_last_digit ? bcd_size : dig64.num_digits - 1;
       return buffer + layout->end_pos[num_digits + extra_digit - 1];
     }
 #endif  // ZMIJ_USE_SSE4_1
-    int num_digits;
-    if (num_bits == 64) {
+    if (num_bits == 64)
       write_digits_double(d, buffer, dig64.digits, !extra_digit);
-      num_digits = has_last_digit ? bcd_size : dig64.num_digits - 1;
-    } else {
+    else
       write_digits_float(buffer, dig32.digits, !extra_digit);
-      num_digits = has_last_digit ? bcd_size : dig32.num_digits - 1;
-    }
     buffer[bcd_size + extra_digit - 1] = last_digit_char;
     unsigned point_pos = layout->point_pos;
     memmove(start + layout->shift_pos, start + point_pos, bcd_size);
