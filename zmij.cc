@@ -1244,26 +1244,15 @@ ZMIJ_INLINE auto to_decimal(UInt bin_sig, int64_t raw_exp, bool regular,
   return {integral, dec_exp, digit, (round_up + round_down) == 0};
 }
 
-// Converts `value` to a correctly rounded decimal with exactly `precision`
-// significant digits (sig * 10**exp), backing the write() precision overload.
+// Converts the significand `bin_sig` scaled by 2**bin_exp - with the implicit
+// bit set and the exponent bias removed - to a correctly rounded decimal with
+// exactly `precision` significant digits. Non-finite values, zero and subnormal
+// normalization are handled by write().
 template <typename Float>
-auto to_decimal(Float value, int precision) noexcept -> zmij::dec_fp {
+auto to_decimal(uint64_t bin_sig, int bin_exp, int precision) noexcept
+    -> zmij::dec_fp {
   assert(precision >= 1 && precision <= 18);
   using traits = float_traits<Float>;
-  auto bits = traits::to_bits(value);
-  auto bin_exp = traits::get_exp(bits);
-  auto bin_sig = traits::get_sig(bits);
-  auto negative = traits::is_negative(bits);
-  if (bin_exp == 0 || bin_exp == traits::exp_mask) [[ZMIJ_UNLIKELY]] {
-    if (bin_exp != 0) return {int64_t(bin_sig), int(~0u >> 1), negative};
-    if (bin_sig == 0) return {0, 0, negative};
-    // clz operates on 64 bits, so measure from bit 63 regardless of type.
-    int shift = clz(bin_sig) - (63 - traits::num_sig_bits);
-    bin_sig <<= shift;  // Move the leading 1 up to the implicit-bit position.
-    bin_exp = 1 - shift;
-  }
-  bin_sig |= traits::implicit_bit;
-  bin_exp -= traits::exp_offset;
 
   // Choose dec_exp so integral holds the precision digits. bin_exp +
   // num_sig_bits approximates log2(value).
@@ -1296,7 +1285,7 @@ auto to_decimal(Float value, int precision) noexcept -> zmij::dec_fp {
     dec_sig = round_even(scaled / 10 | (scaled & 1) | (scaled % 10 != 0));
     ++dec_exp;
   }
-  return {dec_sig, dec_exp, negative};
+  return {dec_sig, dec_exp, false};  // Sign is handled by write().
 }
 
 }  // namespace
@@ -1437,13 +1426,32 @@ auto write(Float value, char* buffer) noexcept -> char* {
 
 template <typename Float>
 auto write(Float value, int precision, char* buffer) noexcept -> char* {
-  dec_fp dec = ::to_decimal(value, precision);
+  using traits = float_traits<Float>;
+  auto bits = traits::to_bits(value);
+  auto bin_exp = traits::get_exp(bits);
+  auto bin_sig = traits::get_sig(bits);
+
   *buffer = '-';
-  buffer += dec.negative;
-  if (dec.exp == non_finite_exp) [[ZMIJ_UNLIKELY]] {
-    memcpy(buffer, dec.sig == 0 ? "inf" : "nan", 4);
-    return buffer + 3;
+  buffer += traits::is_negative(bits);
+
+  bool is_normal = unsigned(bin_exp - 1) < unsigned(traits::exp_mask - 1);
+  if (!is_normal) [[ZMIJ_UNLIKELY]] {
+    if (bin_exp != 0) {  // inf or nan
+      memcpy(buffer, bin_sig == 0 ? "inf" : "nan", 4);
+      return buffer + 3;
+    }
+    if (bin_sig == 0) {  // zero, e.g. 0.000e+00
+      memset(buffer, '0', precision + 1);
+      buffer[1] = '.';  // Overwritten by the exponent when precision is 1.
+      return write_exp<Float>(buffer + precision + (precision > 1), 0);
+    }
+    // Subnormal: clz operates on 64 bits, so measure from bit 63.
+    int shift = clz(bin_sig) - (63 - traits::num_sig_bits);
+    bin_sig <<= shift;  // Move the leading 1 up to the implicit-bit position.
+    bin_exp = 1 - shift;
   }
+  dec_fp dec = ::to_decimal<Float>(bin_sig | traits::implicit_bit,
+                                   bin_exp - traits::exp_offset, precision);
 
   // Extract the significant digits most-significant first.
   char digits[18];
@@ -1457,7 +1465,7 @@ auto write(Float value, int precision, char* buffer) noexcept -> char* {
     memcpy(buffer, digits + 1, precision - 1);
     buffer += precision - 1;
   }
-  return write_exp<Float>(buffer, dec.sig != 0 ? dec.exp + precision - 1 : 0);
+  return write_exp<Float>(buffer, dec.exp + precision - 1);
 }
 
 template auto write(float value, char* buffer) noexcept -> char*;
