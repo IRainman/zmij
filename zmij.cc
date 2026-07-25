@@ -1119,9 +1119,8 @@ ZMIJ_INLINE auto write_exp(char* buffer, int dec_exp) noexcept -> char* {
   buffer += 2;
   uint32_t exp = dec_exp >= 0 ? dec_exp : -dec_exp;
   if (float_traits<Float>::max_exponent10 >= 100) {
-    uint32_t digit = use_umul128_hi64
-                         ? umul128_hi64(exp, 0x290000000000000)
-                         : (exp * div100_sig) >> div100_exp;
+    uint32_t digit = use_umul128_hi64 ? umul128_hi64(exp, 0x290000000000000)
+                                      : (exp * div100_sig) >> div100_exp;
     *buffer = '0' + digit;
     buffer += exp >= 100;
     exp -= digit * 100;
@@ -1244,14 +1243,11 @@ ZMIJ_INLINE auto to_decimal(UInt bin_sig, int64_t raw_exp, bool regular,
   return {integral, dec_exp, digit, (round_up + round_down) == 0};
 }
 
-// Converts the significand `bin_sig` scaled by 2**bin_exp - with the implicit
-// bit set and the exponent bias removed - to a correctly rounded decimal with
-// exactly `precision` significant digits. Non-finite values, zero and subnormal
-// normalization are handled by write().
+// Converts a binary FP number bin_sig * 2**bin_exp to a correctly rounded
+// decimal with exactly `precision` significant digits.
 template <typename Float>
 auto to_decimal(uint64_t bin_sig, int bin_exp, int precision) noexcept
     -> zmij::dec_fp {
-  assert(precision >= 1 && precision <= 18);
   using traits = float_traits<Float>;
 
   // Choose dec_exp so integral holds the precision digits. bin_exp +
@@ -1426,6 +1422,7 @@ auto write(Float value, char* buffer) noexcept -> char* {
 
 template <typename Float>
 auto write(Float value, int precision, char* buffer) noexcept -> char* {
+  assert(precision >= 1 && precision <= 18);
   using traits = float_traits<Float>;
   auto bits = traits::to_bits(value);
   auto bin_exp = traits::get_exp(bits);
@@ -1450,22 +1447,18 @@ auto write(Float value, int precision, char* buffer) noexcept -> char* {
     bin_sig <<= shift;  // Move the leading 1 up to the implicit-bit position.
     bin_exp = 1 - shift;
   }
+
   dec_fp dec = ::to_decimal<Float>(bin_sig | traits::implicit_bit,
                                    bin_exp - traits::exp_offset, precision);
-
-  // Extract the significant digits most-significant first.
-  char digits[18];
-  long long sig = dec.sig;
-  for (int i = precision - 1; i >= 0; --i, sig /= 10)
-    digits[i] = char('0' + sig % 10);
-
-  *buffer++ = digits[0];
-  if (precision > 1) {
-    *buffer++ = '.';
-    memcpy(buffer, digits + 1, precision - 1);
-    buffer += precision - 1;
-  }
-  return write_exp<Float>(buffer, dec.exp + precision - 1);
+  unsigned long long dec_sig = dec.sig;
+  int i = precision;
+  for (; i >= 2; i -= 2, dec_sig /= 100)
+    memcpy(buffer + i - 1, digits2(dec_sig % 100), 2);
+  if (i != 0) buffer[1] = char('0' + dec_sig);
+  buffer[0] = buffer[1];
+  buffer[1] = '.';  // Overwritten by the exponent when precision is 1.
+  return write_exp<Float>(buffer + precision + (precision > 1),
+                          dec.exp + precision - 1);
 }
 
 template auto write(float value, char* buffer) noexcept -> char*;
