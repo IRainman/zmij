@@ -16,7 +16,8 @@ template <typename Float>
 auto write(Float value, char* buffer) noexcept -> char*;
 
 template <typename Float>
-auto write(Float value, int precision, char* buffer) noexcept -> char*;
+auto write_scientific(Float value, int precision, char* buffer) noexcept
+    -> char*;
 }  // namespace detail
 
 enum {
@@ -73,13 +74,14 @@ inline auto write(char* out, size_t n, double value) noexcept -> char* {
 /// pointer past the last character written; if the representation exceeds `n`
 /// characters, only the first `n` are written. `precision` must be in [1, 18];
 /// out-of-range values are clamped.
-inline auto write(char* out, size_t n, float value, int precision) noexcept
-    -> char* {
+inline auto write_scientific(char* out, size_t n, float value,
+                             int precision) noexcept -> char* {
   if (precision < 1) precision = 1;
   if (precision > 18) precision = 18;
-  if (n >= scientific_buffer_size) return detail::write(value, precision, out);
+  if (n >= scientific_buffer_size)
+    return detail::write_scientific(value, precision, out);
   char buffer[scientific_buffer_size];
-  size_t size = detail::write(value, precision, buffer) - buffer;
+  size_t size = detail::write_scientific(value, precision, buffer) - buffer;
   if (size > n) size = n;
   memcpy(out, buffer, size);
   return out + size;
@@ -90,13 +92,14 @@ inline auto write(char* out, size_t n, float value, int precision) noexcept
 /// pointer past the last character written; if the representation exceeds `n`
 /// characters, only the first `n` are written. `precision` must be in [1, 18];
 /// out-of-range values are clamped.
-inline auto write(char* out, size_t n, double value, int precision) noexcept
-    -> char* {
+inline auto write_scientific(char* out, size_t n, double value,
+                             int precision) noexcept -> char* {
   if (precision < 1) precision = 1;
   if (precision > 18) precision = 18;
-  if (n >= scientific_buffer_size) return detail::write(value, precision, out);
+  if (n >= scientific_buffer_size)
+    return detail::write_scientific(value, precision, out);
   char buffer[scientific_buffer_size];
-  size_t size = detail::write(value, precision, buffer) - buffer;
+  size_t size = detail::write_scientific(value, precision, buffer) - buffer;
   if (size > n) size = n;
   memcpy(out, buffer, size);
   return out + size;

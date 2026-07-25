@@ -1421,7 +1421,8 @@ auto write(Float value, char* buffer) noexcept -> char* {
 }
 
 template <typename Float>
-auto write(Float value, int precision, char* buffer) noexcept -> char* {
+auto write_scientific(Float value, int precision, char* buffer) noexcept
+    -> char* {
   assert(precision >= 1 && precision <= 18);
   using traits = float_traits<Float>;
   auto bits = traits::to_bits(value);
@@ -1464,9 +1465,10 @@ auto write(Float value, int precision, char* buffer) noexcept -> char* {
 template auto write(float value, char* buffer) noexcept -> char*;
 template auto write(double value, char* buffer) noexcept -> char*;
 
-template auto write(float value, int precision, char* buffer) noexcept -> char*;
-template auto write(double value, int precision, char* buffer) noexcept
+template auto write_scientific(float value, int precision, char* buffer) noexcept
     -> char*;
+template auto write_scientific(double value, int precision,
+                               char* buffer) noexcept -> char*;
 
 }  // namespace detail
 }  // namespace zmij

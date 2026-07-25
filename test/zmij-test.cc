@@ -89,11 +89,13 @@ TEST(float_test, fixed_with_zeros) {
 // Writes `value` with `precision` significant digits in scientific format.
 static auto ftoa(float value, int precision) -> std::string {
   char buffer[zmij::scientific_buffer_size];
-  return {buffer, zmij::write(buffer, sizeof(buffer), value, precision)};
+  return {buffer,
+          zmij::write_scientific(buffer, sizeof(buffer), value, precision)};
 }
 static auto dtoa(double value, int precision) -> std::string {
   char buffer[zmij::scientific_buffer_size];
-  return {buffer, zmij::write(buffer, sizeof(buffer), value, precision)};
+  return {buffer,
+          zmij::write_scientific(buffer, sizeof(buffer), value, precision)};
 }
 
 TEST(float_test, to_chars) {
