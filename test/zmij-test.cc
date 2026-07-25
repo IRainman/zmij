@@ -86,33 +86,14 @@ TEST(float_test, fixed_with_zeros) {
 }
 
 #if !ZMIJ_C
-namespace zmij {
-auto operator==(const dec_fp& a, const dec_fp& b) -> bool {
-  return a.sig == b.sig && a.exp == b.exp && a.negative == b.negative;
+// Writes `value` with `precision` significant digits in scientific format.
+static auto ftoa(float value, int precision) -> std::string {
+  char buffer[zmij::scientific_buffer_size];
+  return {buffer, zmij::write(buffer, sizeof(buffer), value, precision)};
 }
-void PrintTo(const dec_fp& d, std::ostream* os) {
-  *os << "{sig=" << d.sig << ", exp=" << d.exp << ", negative=" << d.negative
-      << "}";
-}
-}  // namespace zmij
-
-static auto decimal(long long sig, int exp, bool negative = false)
-    -> zmij::dec_fp {
-  return {sig, exp, negative};
-}
-
-// Returns the expected `dec_fp` for `value` rounded to `precision` significant
-// digits, using libc's snprintf and parsing its scientific output.
-static auto expected_decimal(double value, int precision) -> zmij::dec_fp {
-  char s[32] = {};
-  snprintf(s, sizeof(s), "%.*e", precision - 1, value);
-  bool negative = s[0] == '-';
-  long long sig = 0;
-  size_t i = negative;
-  for (; s[i] != 'e'; ++i) {
-    if (s[i] != '.') sig = sig * 10 + (s[i] - '0');
-  }
-  return {sig, atoi(s + i + 1) - (precision - 1), negative};
+static auto dtoa(double value, int precision) -> std::string {
+  char buffer[zmij::scientific_buffer_size];
+  return {buffer, zmij::write(buffer, sizeof(buffer), value, precision)};
 }
 
 TEST(float_test, to_chars) {
@@ -129,17 +110,14 @@ TEST(float_test, to_chars) {
   EXPECT_EQ(std::string(small, sizeof(small)), "???");
 }
 
-TEST(float_test, to_decimal_precision) {
-  using zmij::to_decimal;
-
-  EXPECT_EQ(to_decimal(1.5f, 2), decimal(15, -1));
-  EXPECT_EQ(to_decimal(9.99f, 2), decimal(10, 0));         // carry
-  EXPECT_EQ(to_decimal(2.5f, 1), decimal(2, 0));           // round half to even
-  EXPECT_EQ(to_decimal(-1.5f, 2), decimal(15, -1, true));  // sign preserved
-  EXPECT_EQ(to_decimal(std::numeric_limits<float>::denorm_min(), 1),
-            decimal(1, -45));  // subnormal path
-  EXPECT_EQ(to_decimal(std::numeric_limits<float>::max(), 9),
-            decimal(340282347, 30));
+TEST(float_test, write_precision) {
+  EXPECT_EQ(ftoa(1.5f, 2), "1.5e+00");
+  EXPECT_EQ(ftoa(9.99f, 2), "1.0e+01");   // carry
+  EXPECT_EQ(ftoa(2.5f, 1), "2e+00");      // round half to even
+  EXPECT_EQ(ftoa(-1.5f, 2), "-1.5e+00");  // sign preserved
+  EXPECT_EQ(ftoa(std::numeric_limits<float>::denorm_min(), 1),
+            "1e-45");  // subnormal path
+  EXPECT_EQ(ftoa(std::numeric_limits<float>::max(), 9), "3.40282347e+38");
 }
 #endif  // !ZMIJ_C
 
@@ -355,66 +333,57 @@ TEST(double_test, to_decimal) {
   EXPECT_EQ(dec.sig, garlic);
 }
 
-TEST(double_test, to_decimal_precision) {
-  using zmij::to_decimal;
-
-  EXPECT_EQ(to_decimal(1.5, 2), decimal(15, -1));
+TEST(double_test, write_precision) {
+  EXPECT_EQ(dtoa(1.5, 2), "1.5e+00");
+  EXPECT_EQ(dtoa(1.0, 1), "1e+00");       // no point when precision 1
+  EXPECT_EQ(dtoa(0.0, 5), "0.0000e+00");  // zero
+  EXPECT_EQ(dtoa(std::numeric_limits<double>::infinity(), 3), "inf");
 
   // Overshoot: the integral part carries precision + 1 digits, so the extra
   // digit is dropped and the exponent bumped up.
-  EXPECT_EQ(to_decimal(12.0, 2), decimal(12, 0));
-  EXPECT_EQ(to_decimal(123.0, 3), decimal(123, 0));
+  EXPECT_EQ(dtoa(12.0, 2), "1.2e+01");
+  EXPECT_EQ(dtoa(123.0, 3), "1.23e+02");
+  EXPECT_EQ(dtoa(12345.678, 3), "1.23e+04");
 
   // Carry: rounding 9...9 up rolls into a new leading digit.
-  EXPECT_EQ(to_decimal(9.99, 2), decimal(10, 0));
-  EXPECT_EQ(to_decimal(99.9, 2), decimal(10, 1));
+  EXPECT_EQ(dtoa(9.99, 2), "1.0e+01");
+  EXPECT_EQ(dtoa(99.9, 2), "1.0e+02");
 
   // Round half-to-even.
-  EXPECT_EQ(to_decimal(0.125, 2), decimal(12, -2));  // 1.25 -> 1.2
-  EXPECT_EQ(to_decimal(2.5, 1), decimal(2, 0));      // -> 2 (even)
-  EXPECT_EQ(to_decimal(3.5, 1), decimal(4, 0));      // -> 4 (even)
+  EXPECT_EQ(dtoa(0.125, 2), "1.2e-01");  // 1.25 -> 1.2
+  EXPECT_EQ(dtoa(2.5, 1), "2e+00");      // -> 2 (even)
+  EXPECT_EQ(dtoa(3.5, 1), "4e+00");      // -> 4 (even)
 
-  // Sign is carried in `negative`; `sig` stays positive.
-  EXPECT_EQ(to_decimal(-9.99, 2), decimal(10, 0, true));
+  // Sign is carried through.
+  EXPECT_EQ(dtoa(-9.99, 2), "-1.0e+01");
 
   // Subnormals take a separate normalization path, so check both boundaries
   // (smallest and largest) at low and full precision.
-  EXPECT_EQ(to_decimal(5e-324, 1), decimal(5, -324));         // DBL_TRUE_MIN
-  EXPECT_EQ(to_decimal(-5e-324, 1), decimal(5, -324, true));  // sign preserved
+  EXPECT_EQ(dtoa(5e-324, 1), "5e-324");    // DBL_TRUE_MIN
+  EXPECT_EQ(dtoa(-5e-324, 1), "-5e-324");  // sign preserved
   // Smallest subnormal at full precision (exercises the widened table top).
-  EXPECT_EQ(to_decimal(5e-324, 18), decimal(494065645841246544, -341));
+  EXPECT_EQ(dtoa(5e-324, 18), "4.94065645841246544e-324");
   // Largest subnormal, round-tripped at full precision.
-  EXPECT_EQ(to_decimal(2.2250738585072009e-308, 17),
-            decimal(22250738585072009, -324));
-  EXPECT_EQ(to_decimal(2.2250738585072009e-308, 6), decimal(222507, -313));
+  EXPECT_EQ(dtoa(2.2250738585072009e-308, 17), "2.2250738585072009e-308");
+  EXPECT_EQ(dtoa(2.2250738585072009e-308, 6), "2.22507e-308");
 
   // Large values at low precision reach the low end of the table.
-  EXPECT_EQ(to_decimal(1.7976931348623157e308, 1), decimal(2, 308));  // DBL_MAX
-  EXPECT_EQ(to_decimal(1.7976931348623157e308, 2), decimal(18, 307));
+  EXPECT_EQ(dtoa(1.7976931348623157e308, 1), "2e+308");  // DBL_MAX
+  EXPECT_EQ(dtoa(1.7976931348623157e308, 2), "1.8e+308");
+
+  // Full-precision round trip.
+  EXPECT_EQ(dtoa(6.62607015e-34, 9), "6.62607015e-34");
 }
 
-TEST(double_test, write_precision) {
-  auto write = [](double value, int precision) -> std::string {
-    char buffer[zmij::scientific_buffer_size];
-    return {buffer, zmij::write(buffer, sizeof(buffer), value, precision)};
-  };
-  EXPECT_EQ(write(1.5, 2), "1.5e+00");
-  EXPECT_EQ(write(1.0, 1), "1e+00");                 // no point when precision 1
-  EXPECT_EQ(write(12345.678, 3), "1.23e+04");        // rounding
-  EXPECT_EQ(write(-9.99, 2), "-1.0e+01");            // carry + sign
-  EXPECT_EQ(write(6.62607015e-34, 9), "6.62607015e-34");
-  EXPECT_EQ(write(0.0, 5), "0.0000e+00");            // zero
-  EXPECT_EQ(write(std::numeric_limits<double>::infinity(), 3), "inf");
-}
-
-TEST(double_test, to_decimal_precision_irregular) {
+TEST(double_test, write_precision_irregular) {
   for (uint64_t exp = 1; exp <= 2046; ++exp) {
     uint64_t bits = exp << 52;
     double value = 0;
     memcpy(&value, &bits, sizeof(double));
     for (int precision = 1; precision <= 18; ++precision) {
-      EXPECT_EQ(zmij::to_decimal(value, precision),
-                expected_decimal(value, precision))
+      char expected[32];
+      snprintf(expected, sizeof(expected), "%.*e", precision - 1, value);
+      EXPECT_EQ(dtoa(value, precision), expected)
           << "value=" << value << " precision=" << precision;
     }
   }
