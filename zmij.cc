@@ -1244,32 +1244,10 @@ ZMIJ_INLINE auto to_decimal(UInt bin_sig, int64_t raw_exp, bool regular,
   return {integral, dec_exp, digit, (round_up + round_down) == 0};
 }
 
-}  // namespace
-
-namespace zmij {
-
-auto to_decimal(double value) noexcept -> dec_fp {
-  using traits = float_traits<double>;
-  auto bits = traits::to_bits(value);
-  auto bin_exp = traits::get_exp(bits);  // binary exponent
-  auto bin_sig = traits::get_sig(bits);  // binary significand
-  auto negative = traits::is_negative(bits);
-  if (bin_exp == 0 || bin_exp == traits::exp_mask) [[ZMIJ_UNLIKELY]] {
-    if (bin_exp != 0) return {int64_t(bin_sig), int(~0u >> 1), negative};
-    if (bin_sig == 0) return {0, 0, negative};
-    bin_exp = 1;
-    bin_sig |= traits::implicit_bit;
-  }
-  auto dec = ::to_decimal<double>(bin_sig ^ traits::implicit_bit, bin_exp,
-                                  bin_sig != 0, static_data);
-  auto last_digit = -dec.has_last_digit & dec.last_digit;
-  return {dec.sig * 10 + last_digit, dec.exp, negative};
-}
-
-namespace detail {
-
+// Converts `value` to a correctly rounded decimal with exactly `precision`
+// significant digits (sig * 10**exp), backing the write() precision overload.
 template <typename Float>
-auto to_decimal(Float value, int precision) noexcept -> dec_fp {
+auto to_decimal(Float value, int precision) noexcept -> zmij::dec_fp {
   assert(precision >= 1 && precision <= 18);
   using traits = float_traits<Float>;
   auto bits = traits::to_bits(value);
@@ -1320,6 +1298,30 @@ auto to_decimal(Float value, int precision) noexcept -> dec_fp {
   }
   return {dec_sig, dec_exp, negative};
 }
+
+}  // namespace
+
+namespace zmij {
+
+auto to_decimal(double value) noexcept -> dec_fp {
+  using traits = float_traits<double>;
+  auto bits = traits::to_bits(value);
+  auto bin_exp = traits::get_exp(bits);  // binary exponent
+  auto bin_sig = traits::get_sig(bits);  // binary significand
+  auto negative = traits::is_negative(bits);
+  if (bin_exp == 0 || bin_exp == traits::exp_mask) [[ZMIJ_UNLIKELY]] {
+    if (bin_exp != 0) return {int64_t(bin_sig), int(~0u >> 1), negative};
+    if (bin_sig == 0) return {0, 0, negative};
+    bin_exp = 1;
+    bin_sig |= traits::implicit_bit;
+  }
+  auto dec = ::to_decimal<double>(bin_sig ^ traits::implicit_bit, bin_exp,
+                                  bin_sig != 0, static_data);
+  auto last_digit = -dec.has_last_digit & dec.last_digit;
+  return {dec.sig * 10 + last_digit, dec.exp, negative};
+}
+
+namespace detail {
 
 // It is slightly faster to return a pointer to the end than the size.
 template <typename Float>
@@ -1435,7 +1437,7 @@ auto write(Float value, char* buffer) noexcept -> char* {
 
 template <typename Float>
 auto write(Float value, int precision, char* buffer) noexcept -> char* {
-  dec_fp dec = to_decimal(value, precision);
+  dec_fp dec = ::to_decimal(value, precision);
   *buffer = '-';
   buffer += dec.negative;
   if (dec.exp == non_finite_exp) [[ZMIJ_UNLIKELY]] {
