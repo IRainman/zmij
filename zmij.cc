@@ -1428,11 +1428,50 @@ auto write(Float value, char* buffer) noexcept -> char* {
   return buffer + 2;
 }
 
+template <typename Float>
+auto write(Float value, int precision, char* buffer) noexcept -> char* {
+  dec_fp dec = to_decimal(value, precision);
+  *buffer = '-';
+  buffer += dec.negative;
+  if (dec.exp == non_finite_exp) [[ZMIJ_UNLIKELY]] {
+    memcpy(buffer, dec.sig == 0 ? "inf" : "nan", 4);
+    return buffer + 3;
+  }
+
+  // Extract the significant digits most-significant first.
+  char digits[18];
+  long long sig = dec.sig;
+  for (int i = precision - 1; i >= 0; --i, sig /= 10)
+    digits[i] = char('0' + sig % 10);
+
+  *buffer++ = digits[0];
+  if (precision > 1) {
+    *buffer++ = '.';
+    memcpy(buffer, digits + 1, precision - 1);
+    buffer += precision - 1;
+  }
+
+  int exp = dec.sig != 0 ? dec.exp + precision - 1 : 0;
+  *buffer++ = 'e';
+  *buffer++ = exp < 0 ? '-' : '+';
+  unsigned e = exp < 0 ? -exp : exp;
+  char exp_digits[3];
+  int n = 0;
+  do exp_digits[n++] = char('0' + e % 10); while (e /= 10);
+  while (n < 2) exp_digits[n++] = '0';  // Pad to at least two digits.
+  while (n) *buffer++ = exp_digits[--n];
+  return buffer;
+}
+
 template auto to_decimal(float value, int precision) noexcept -> dec_fp;
 template auto to_decimal(double value, int precision) noexcept -> dec_fp;
 
 template auto write(float value, char* buffer) noexcept -> char*;
 template auto write(double value, char* buffer) noexcept -> char*;
+
+template auto write(float value, int precision, char* buffer) noexcept -> char*;
+template auto write(double value, int precision, char* buffer) noexcept
+    -> char*;
 
 }  // namespace detail
 }  // namespace zmij

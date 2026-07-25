@@ -393,6 +393,20 @@ TEST(double_test, to_decimal_precision) {
   EXPECT_EQ(to_decimal(1.7976931348623157e308, 2), decimal(18, 307));
 }
 
+TEST(double_test, write_precision) {
+  auto write = [](double value, int precision) -> std::string {
+    char buffer[zmij::scientific_buffer_size];
+    return {buffer, zmij::write(buffer, sizeof(buffer), value, precision)};
+  };
+  EXPECT_EQ(write(1.5, 2), "1.5e+00");
+  EXPECT_EQ(write(1.0, 1), "1e+00");                 // no point when precision 1
+  EXPECT_EQ(write(12345.678, 3), "1.23e+04");        // rounding
+  EXPECT_EQ(write(-9.99, 2), "-1.0e+01");            // carry + sign
+  EXPECT_EQ(write(6.62607015e-34, 9), "6.62607015e-34");
+  EXPECT_EQ(write(0.0, 5), "0.0000e+00");            // zero
+  EXPECT_EQ(write(std::numeric_limits<double>::infinity(), 3), "inf");
+}
+
 TEST(double_test, to_decimal_precision_irregular) {
   for (uint64_t exp = 1; exp <= 2046; ++exp) {
     uint64_t bits = exp << 52;
