@@ -98,6 +98,16 @@ static auto dtoa(double value, int precision) -> std::string {
           zmij::write_scientific(buffer, sizeof(buffer), value, precision)};
 }
 
+// Writes `value` with up to `precision` significant digits in general format.
+static auto ftoa_g(float value, int precision) -> std::string {
+  char buffer[zmij::general_buffer_size];
+  return {buffer, zmij::write_general(buffer, sizeof(buffer), value, precision)};
+}
+static auto dtoa_g(double value, int precision) -> std::string {
+  char buffer[zmij::general_buffer_size];
+  return {buffer, zmij::write_general(buffer, sizeof(buffer), value, precision)};
+}
+
 TEST(float_test, to_chars) {
   char buffer[zmij::float_buffer_size];
   auto result = zmij::to_chars(buffer, buffer + sizeof(buffer), 6.62607e-34f);
@@ -386,6 +396,59 @@ TEST(double_test, write_precision_irregular) {
       char expected[32];
       snprintf(expected, sizeof(expected), "%.*e", precision - 1, value);
       EXPECT_EQ(dtoa(value, precision), expected)
+          << "value=" << value << " precision=" << precision;
+    }
+  }
+}
+
+TEST(float_test, write_general) {
+  EXPECT_EQ(ftoa_g(1.5f, 6), "1.5");
+  EXPECT_EQ(ftoa_g(0.0001f, 6), "0.0001");   // exp10 == -4 -> fixed
+  EXPECT_EQ(ftoa_g(0.00001f, 6), "1e-05");   // exp10 == -5 -> scientific
+  EXPECT_EQ(ftoa_g(-1.5f, 6), "-1.5");       // sign preserved
+  EXPECT_EQ(ftoa_g(std::numeric_limits<float>::denorm_min(), 1),
+            "1e-45");  // subnormal path
+}
+
+TEST(double_test, write_general) {
+  // Fixed range: decimal exponent in [-4, precision).
+  EXPECT_EQ(dtoa_g(1.5, 6), "1.5");
+  EXPECT_EQ(dtoa_g(100.0, 6), "100");
+  EXPECT_EQ(dtoa_g(123456.0, 6), "123456");
+  EXPECT_EQ(dtoa_g(0.0001, 6), "0.0001");         // exp10 == -4 -> fixed
+  EXPECT_EQ(dtoa_g(0.00001, 6), "1e-05");         // exp10 == -5 -> scientific
+  EXPECT_EQ(dtoa_g(1234567.0, 6), "1.23457e+06");  // exp10 == precision -> sci
+
+  // Trailing zeros are trimmed, and the point with them.
+  EXPECT_EQ(dtoa_g(1.2000, 6), "1.2");
+  EXPECT_EQ(dtoa_g(1.0, 6), "1");
+  EXPECT_EQ(dtoa_g(1024.0, 6), "1024");
+
+  // Zero and sign.
+  EXPECT_EQ(dtoa_g(0.0, 6), "0");
+  EXPECT_EQ(dtoa_g(-0.0, 6), "-0");
+  EXPECT_EQ(dtoa_g(-1.5, 6), "-1.5");
+
+  // Rounding rolls into a new leading digit and bumps the format to scientific.
+  EXPECT_EQ(dtoa_g(999999.0, 5), "1e+06");
+
+  // Specials.
+  EXPECT_EQ(dtoa_g(std::numeric_limits<double>::infinity(), 6), "inf");
+
+  // Full-precision round trips.
+  EXPECT_EQ(dtoa_g(6.62607015e-34, 9), "6.62607015e-34");
+  EXPECT_EQ(dtoa_g(3.14159265358979, 15), "3.14159265358979");
+}
+
+TEST(double_test, write_general_irregular) {
+  for (uint64_t exp = 1; exp <= 2046; ++exp) {
+    uint64_t bits = exp << 52;
+    double value = 0;
+    memcpy(&value, &bits, sizeof(double));
+    for (int precision = 1; precision <= 18; ++precision) {
+      char expected[32];
+      snprintf(expected, sizeof(expected), "%.*g", precision, value);
+      EXPECT_EQ(dtoa_g(value, precision), expected)
           << "value=" << value << " precision=" << precision;
     }
   }

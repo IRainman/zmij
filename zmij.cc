@@ -1462,6 +1462,76 @@ auto write_scientific(Float value, int precision, char* buffer) noexcept
                           dec.exp + precision - 1);
 }
 
+template <typename Float>
+auto write_general(Float value, int precision, char* buffer) noexcept -> char* {
+  assert(precision >= 1 && precision <= 18);
+  using traits = float_traits<Float>;
+  auto bits = traits::to_bits(value);
+  auto bin_exp = traits::get_exp(bits);
+  auto bin_sig = traits::get_sig(bits);
+
+  *buffer = '-';
+  buffer += traits::is_negative(bits);
+
+  bool is_normal = unsigned(bin_exp - 1) < unsigned(traits::exp_mask - 1);
+  if (!is_normal) [[ZMIJ_UNLIKELY]] {
+    if (bin_exp != 0) {  // inf or nan
+      memcpy(buffer, bin_sig == 0 ? "inf" : "nan", 4);
+      return buffer + 3;
+    }
+    if (bin_sig == 0) {  // zero
+      *buffer = '0';
+      return buffer + 1;
+    }
+    // Subnormal: clz operates on 64 bits, so measure from bit 63.
+    int shift = clz(bin_sig) - (63 - traits::num_sig_bits);
+    bin_sig <<= shift;  // Move the leading 1 up to the implicit-bit position.
+    bin_exp = 1 - shift;
+  }
+
+  dec_fp dec = ::to_decimal<Float>(bin_sig | traits::implicit_bit,
+                                   bin_exp - traits::exp_offset, precision);
+
+  // Extract the significant digits most-significant first, then trim trailing
+  // zeros (keeping at least one digit).
+  char digits[18];
+  unsigned long long dec_sig = dec.sig;
+  for (int k = precision - 1; k >= 0; --k, dec_sig /= 10)
+    digits[k] = char('0' + dec_sig % 10);
+  int num_digits = precision;
+  while (num_digits > 1 && digits[num_digits - 1] == '0') --num_digits;
+
+  int exp10 = dec.exp + precision - 1;  // Decimal exponent of the leading digit.
+  if (exp10 < -4 || exp10 >= precision) {  // Scientific: d[.ddd]e±EE.
+    *buffer++ = digits[0];
+    if (num_digits > 1) {
+      *buffer++ = '.';
+      memcpy(buffer, digits + 1, num_digits - 1);
+      buffer += num_digits - 1;
+    }
+    return write_exp<Float>(buffer, exp10);
+  }
+
+  if (exp10 < 0) {  // Fixed with a leading 0.00...: exp10 in [-4, -1].
+    memcpy(buffer, "0.0000", 1 - exp10);  // '0', '.', then -exp10-1 zeros.
+    buffer += 1 - exp10;
+    memcpy(buffer, digits, num_digits);
+    return buffer + num_digits;
+  }
+
+  int point_pos = exp10 + 1;
+  if (num_digits <= point_pos) {  // All significant digits are integral.
+    memcpy(buffer, digits, num_digits);
+    memset(buffer + num_digits, '0', point_pos - num_digits);
+    return buffer + point_pos;
+  }
+  memcpy(buffer, digits, point_pos);  // Integer part, then the fraction.
+  buffer += point_pos;
+  *buffer++ = '.';
+  memcpy(buffer, digits + point_pos, num_digits - point_pos);
+  return buffer + (num_digits - point_pos);
+}
+
 template auto write(float value, char* buffer) noexcept -> char*;
 template auto write(double value, char* buffer) noexcept -> char*;
 
@@ -1469,6 +1539,11 @@ template auto write_scientific(float value, int precision, char* buffer) noexcep
     -> char*;
 template auto write_scientific(double value, int precision,
                                char* buffer) noexcept -> char*;
+
+template auto write_general(float value, int precision, char* buffer) noexcept
+    -> char*;
+template auto write_general(double value, int precision, char* buffer) noexcept
+    -> char*;
 
 }  // namespace detail
 }  // namespace zmij

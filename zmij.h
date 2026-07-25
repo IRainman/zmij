@@ -18,6 +18,9 @@ auto write(Float value, char* buffer) noexcept -> char*;
 template <typename Float>
 auto write_scientific(Float value, int precision, char* buffer) noexcept
     -> char*;
+
+template <typename Float>
+auto write_general(Float value, int precision, char* buffer) noexcept -> char*;
 }  // namespace detail
 
 enum {
@@ -41,6 +44,7 @@ enum {
   float_buffer_size = 17,
   double_buffer_size = 34,
   scientific_buffer_size = 25,
+  general_buffer_size = 25,
 };
 
 /// Writes the shortest correctly rounded decimal representation of `value` to
@@ -100,6 +104,46 @@ inline auto write_scientific(char* out, size_t n, double value,
     return detail::write_scientific(value, precision, out);
   char buffer[scientific_buffer_size];
   size_t size = detail::write_scientific(value, precision, buffer) - buffer;
+  if (size > n) size = n;
+  memcpy(out, buffer, size);
+  return out + size;
+}
+
+/// Writes `value` in general format with up to `precision` significant digits:
+/// fixed or scientific depending on its magnitude (scientific when the decimal
+/// exponent is < -4 or >= precision, otherwise fixed), trimming trailing zeros,
+/// to `out` without a null terminator. Returns a pointer past the last
+/// character written; if the representation exceeds `n` characters, only the
+/// first `n` are written. `precision` must be in [1, 18]; out-of-range values
+/// are clamped.
+inline auto write_general(char* out, size_t n, float value,
+                          int precision) noexcept -> char* {
+  if (precision < 1) precision = 1;
+  if (precision > 18) precision = 18;
+  if (n >= general_buffer_size)
+    return detail::write_general(value, precision, out);
+  char buffer[general_buffer_size];
+  size_t size = detail::write_general(value, precision, buffer) - buffer;
+  if (size > n) size = n;
+  memcpy(out, buffer, size);
+  return out + size;
+}
+
+/// Writes `value` in general format with up to `precision` significant digits:
+/// fixed or scientific depending on its magnitude (scientific when the decimal
+/// exponent is < -4 or >= precision, otherwise fixed), trimming trailing zeros,
+/// to `out` without a null terminator. Returns a pointer past the last
+/// character written; if the representation exceeds `n` characters, only the
+/// first `n` are written. `precision` must be in [1, 18]; out-of-range values
+/// are clamped.
+inline auto write_general(char* out, size_t n, double value,
+                          int precision) noexcept -> char* {
+  if (precision < 1) precision = 1;
+  if (precision > 18) precision = 18;
+  if (n >= general_buffer_size)
+    return detail::write_general(value, precision, out);
+  char buffer[general_buffer_size];
+  size_t size = detail::write_general(value, precision, buffer) - buffer;
   if (size > n) size = n;
   memcpy(out, buffer, size);
   return out + size;
