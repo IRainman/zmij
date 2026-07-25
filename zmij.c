@@ -538,13 +538,6 @@ typedef struct {
   unsigned char end_pos[17];
 } fixed_layout_entry;
 
-enum {
-  double_min_fixed_dec_exp = -4,
-  double_max_fixed_dec_exp = 15,
-  float_min_fixed_dec_exp = -4,
-  float_max_fixed_dec_exp = 6,
-};
-
 #if ZMIJ_USE_EXP_STRING_TABLE
 enum {
   exp_string_offset = 324,
@@ -2161,23 +2154,22 @@ static ZMIJ_INLINE char* do_write(uint64_t bin_sig, int64_t bin_exp,
   // branch, so the long-latency conversion overlaps the branch logic.
   dec_digits_double dig64;
   dec_digits_float dig32;
-  if (num_bits == 64)
+  int dig_num_digits;
+  if (num_bits == 64) {
     dig64 = to_digits_double(d, dec.sig);
-  else
+    dig_num_digits = dig64.num_digits;
+  } else {
     dig32 = to_digits_float(d, dec.sig);
+    dig_num_digits = dig32.num_digits;
+  }
   const int bcd_size = num_bits == 64 ? 16 : 8;
-  const int min_fixed_dec_exp =
-      num_bits == 64 ? double_min_fixed_dec_exp : float_min_fixed_dec_exp;
-  const int max_fixed_dec_exp =
-      num_bits == 64 ? double_max_fixed_dec_exp : float_max_fixed_dec_exp;
+  const int min_fixed_dec_exp = -4;
+  const int max_fixed_dec_exp = num_bits == 64 ? 15 : 6;
   if (dec_exp >= min_fixed_dec_exp && dec_exp <= max_fixed_dec_exp) {
     write8(start, zeros);  // For dec_exp < 0.
     char last_digit_char =
         (char)('0' + (-(int)has_last_digit & dec.last_digit));
-    int num_digits =
-        has_last_digit
-            ? bcd_size
-            : (num_bits == 64 ? dig64.num_digits : dig32.num_digits) - 1;
+    int num_digits = has_last_digit ? bcd_size : dig_num_digits - 1;
 
     // Materialize the base early so the entry address is `base + idx*32`;
     // otherwise Clang folds the offset in and adds a cycle to the idx chain.
@@ -2185,7 +2177,7 @@ static ZMIJ_INLINE char* do_write(uint64_t bin_sig, int64_t bin_exp,
     if (ZMIJ_AARCH64) ZMIJ_ASM(("" : "+r"(fixed_layouts)));
 
     const fixed_layout_entry* layout =
-        &fixed_layouts[dec_exp - double_min_fixed_dec_exp];
+        &fixed_layouts[dec_exp - min_fixed_dec_exp];
     buffer += layout->start_pos;
 #if ZMIJ_USE_SSE4_1
     if (num_bits == 64) {
@@ -2214,16 +2206,12 @@ static ZMIJ_INLINE char* do_write(uint64_t bin_sig, int64_t bin_exp,
   }
 
   buffer += extra_digit;
-  int num_digits;
-  if (num_bits == 64) {
+  if (num_bits == 64)
     memcpy(buffer, &dig64.digits, bcd_size);
-    num_digits = dig64.num_digits;
-  } else {
+  else
     memcpy(buffer, &dig32.digits, bcd_size);
-    num_digits = dig32.num_digits;
-  }
   buffer[bcd_size] = (char)('0' + dec.last_digit);
-  buffer += has_last_digit ? bcd_size + 1 : num_digits;
+  buffer += has_last_digit ? bcd_size + 1 : dig_num_digits;
   start[0] = start[1];
   start[1] = '.';
   buffer -= (buffer - 1 == start + 1);  // Remove trailing point.
