@@ -114,10 +114,10 @@ inline auto write_scientific(char* out, size_t n, double value,
   return out + size;
 }
 
-/// Writes `value` in general format with up to `precision` significant digits:
-/// fixed or scientific depending on its magnitude (scientific when the decimal
-/// exponent is < -4 or >= precision, otherwise fixed), trimming trailing zeros,
-/// to `out` without a null terminator. Returns a pointer past the last
+/// Writes `value` in general format with up to `precision` significant digits
+/// and no trailing zeros (e.g. 1.5 or 1.5e+20) to `out` without a null
+/// terminator. Fixed notation is used when `value`'s decimal exponent is in
+/// [-4, precision), and scientific otherwise. Returns a pointer past the last
 /// character written; if the representation exceeds `n` characters, only the
 /// first `n` are written. `precision` must be in [1, 18]; out-of-range values
 /// are clamped.
@@ -133,10 +133,10 @@ inline auto write_general(char* out, size_t n, float value,
   return out + size;
 }
 
-/// Writes `value` in general format with up to `precision` significant digits:
-/// fixed or scientific depending on its magnitude (scientific when the decimal
-/// exponent is < -4 or >= precision, otherwise fixed), trimming trailing zeros,
-/// to `out` without a null terminator. Returns a pointer past the last
+/// Writes `value` in general format with up to `precision` significant digits
+/// and no trailing zeros (e.g. 1.5 or 1.5e+20) to `out` without a null
+/// terminator. Fixed notation is used when `value`'s decimal exponent is in
+/// [-4, precision), and scientific otherwise. Returns a pointer past the last
 /// character written; if the representation exceeds `n` characters, only the
 /// first `n` are written. `precision` must be in [1, 18]; out-of-range values
 /// are clamped.
