@@ -1492,44 +1492,45 @@ auto write_general(Float value, int precision, char* buffer) noexcept -> char* {
   dec_fp dec = ::to_decimal<Float>(bin_sig | traits::implicit_bit,
                                    bin_exp - traits::exp_offset, precision);
 
-  // Extract the significant digits most-significant first, then trim trailing
-  // zeros (keeping at least one digit).
-  char digits[18];
+  // Remove trailing zeros.
   unsigned long long dec_sig = dec.sig;
-  for (int k = precision - 1; k >= 0; --k, dec_sig /= 10)
-    digits[k] = char('0' + dec_sig % 10);
   int num_digits = precision;
-  while (num_digits > 1 && digits[num_digits - 1] == '0') --num_digits;
+  while (num_digits > 1 && dec_sig % 10 == 0) {
+    dec_sig /= 10;
+    --num_digits;
+  }
 
   int exp10 = dec.exp + precision - 1;  // Decimal exponent of the leading digit.
   if (exp10 < -4 || exp10 >= precision) {  // Scientific: d[.ddd]e±EE.
-    *buffer++ = digits[0];
-    if (num_digits > 1) {
-      *buffer++ = '.';
-      memcpy(buffer, digits + 1, num_digits - 1);
-      buffer += num_digits - 1;
-    }
-    return write_exp<Float>(buffer, exp10);
+    for (int k = num_digits - 1; k >= 1; --k, dec_sig /= 10)
+      buffer[k + 1] = char('0' + dec_sig % 10);
+    buffer[0] = char('0' + dec_sig);
+    buffer[1] = '.';  // Overwritten by the exponent when num_digits is 1.
+    return write_exp<Float>(buffer + num_digits + (num_digits > 1), exp10);
   }
 
   if (exp10 < 0) {  // Fixed with a leading 0.00...: exp10 in [-4, -1].
     memcpy(buffer, "0.0000", 1 - exp10);  // '0', '.', then -exp10-1 zeros.
     buffer += 1 - exp10;
-    memcpy(buffer, digits, num_digits);
+    for (int k = num_digits - 1; k >= 0; --k, dec_sig /= 10)
+      buffer[k] = char('0' + dec_sig % 10);
     return buffer + num_digits;
   }
 
   int point_pos = exp10 + 1;
   if (num_digits <= point_pos) {  // All significant digits are integral.
-    memcpy(buffer, digits, num_digits);
+    for (int k = num_digits - 1; k >= 0; --k, dec_sig /= 10)
+      buffer[k] = char('0' + dec_sig % 10);
     memset(buffer + num_digits, '0', point_pos - num_digits);
     return buffer + point_pos;
   }
-  memcpy(buffer, digits, point_pos);  // Integer part, then the fraction.
-  buffer += point_pos;
-  *buffer++ = '.';
-  memcpy(buffer, digits + point_pos, num_digits - point_pos);
-  return buffer + (num_digits - point_pos);
+  // Integer part, then the fraction, split by the point.
+  for (int k = num_digits - point_pos - 1; k >= 0; --k, dec_sig /= 10)
+    buffer[point_pos + 1 + k] = char('0' + dec_sig % 10);
+  buffer[point_pos] = '.';
+  for (int k = point_pos - 1; k >= 0; --k, dec_sig /= 10)
+    buffer[k] = char('0' + dec_sig % 10);
+  return buffer + num_digits + 1;
 }
 
 template auto write(float value, char* buffer) noexcept -> char*;
