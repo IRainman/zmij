@@ -1110,6 +1110,11 @@ ZMIJ_INLINE auto write_exp_float_simd(char*, const dec_digits<64>&, int, bool,
   return nullptr;
 }
 
+// Writes "inf"/"nan" with one 4-byte store, so the buffer must hold 4 bytes.
+auto write_inf_nan(char* buffer, bool is_nan) noexcept -> char* {
+  return memcpy(buffer, is_nan ? "nan" : "inf", 4), buffer + 3;
+}
+
 // Writes the exponent as 'e', a sign and at least two digits (e.g. e+05).
 template <typename Float>
 ZMIJ_INLINE auto write_exp(char* buffer, int dec_exp) noexcept -> char* {
@@ -1326,10 +1331,7 @@ auto write(Float value, char* buffer) noexcept -> char* {
   to_decimal_result dec;
   bool is_normal = unsigned(bin_exp - 1) < unsigned(traits::exp_mask - 1);
   if (!is_normal) [[ZMIJ_UNLIKELY]] {
-    if (bin_exp != 0) {
-      memcpy(buffer, bin_sig == 0 ? "inf" : "nan", 4);
-      return buffer + 3;
-    }
+    if (bin_exp != 0) return write_inf_nan(buffer, bin_sig != 0);
     if (bin_sig == 0) {
       memcpy(buffer, "0", 2);
       return buffer + 1;
@@ -1434,10 +1436,7 @@ auto write_scientific(Float value, int precision, char* buffer) noexcept
 
   bool is_normal = unsigned(bin_exp - 1) < unsigned(traits::exp_mask - 1);
   if (!is_normal) [[ZMIJ_UNLIKELY]] {
-    if (bin_exp != 0) {  // inf or nan
-      memcpy(buffer, bin_sig == 0 ? "inf" : "nan", 4);
-      return buffer + 3;
-    }
+    if (bin_exp != 0) return write_inf_nan(buffer, bin_sig != 0);
     if (bin_sig == 0) {  // zero, e.g. 0.000e+00
       memset(buffer, '0', precision + 1);
       buffer[1] = '.';  // Overwritten by the exponent when precision is 1.
@@ -1475,10 +1474,7 @@ auto write_general(Float value, int precision, char* buffer) noexcept -> char* {
 
   bool is_normal = unsigned(bin_exp - 1) < unsigned(traits::exp_mask - 1);
   if (!is_normal) [[ZMIJ_UNLIKELY]] {
-    if (bin_exp != 0) {  // inf or nan
-      memcpy(buffer, bin_sig == 0 ? "inf" : "nan", 4);
-      return buffer + 3;
-    }
+    if (bin_exp != 0) return write_inf_nan(buffer, bin_sig != 0);
     if (bin_sig == 0) {  // zero
       *buffer = '0';
       return buffer + 1;
