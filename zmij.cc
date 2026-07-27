@@ -1516,19 +1516,16 @@ auto write_general(Float value, int precision, char* buffer) noexcept -> char* {
     return buffer + num_digits;
   }
 
+  for (int k = num_digits - 1; k >= 0; --k, dec_sig /= 10)
+    buffer[k] = char('0' + dec_sig % 10);
   int point_pos = dec_exp + 1;
-  if (num_digits <= point_pos) {  // All significant digits are integral.
-    for (int k = num_digits - 1; k >= 0; --k, dec_sig /= 10)
-      buffer[k] = char('0' + dec_sig % 10);
+  if (point_pos >= num_digits) {  // All significant digits are integral.
     memset(buffer + num_digits, '0', point_pos - num_digits);
     return buffer + point_pos;
   }
-  // Integer part, then the fraction, split by the point.
-  for (int k = num_digits - point_pos - 1; k >= 0; --k, dec_sig /= 10)
-    buffer[point_pos + 1 + k] = char('0' + dec_sig % 10);
+  // Open a one-byte gap for the point, as the fast path does.
+  memmove(buffer + point_pos + 1, buffer + point_pos, num_digits - point_pos);
   buffer[point_pos] = '.';
-  for (int k = point_pos - 1; k >= 0; --k, dec_sig /= 10)
-    buffer[k] = char('0' + dec_sig % 10);
   return buffer + num_digits + 1;
 }
 
