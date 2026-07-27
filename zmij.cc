@@ -1523,7 +1523,7 @@ auto write_general(Float value, int precision, char* buffer) noexcept -> char* {
     memset(buffer + num_digits, '0', point_pos - num_digits);
     return buffer + point_pos;
   }
-  // Open a one-byte gap for the point, as the fast path does.
+  // Open a one-byte gap for the point.
   memmove(buffer + point_pos + 1, buffer + point_pos, num_digits - point_pos);
   buffer[point_pos] = '.';
   return buffer + num_digits + 1;
