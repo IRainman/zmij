@@ -1333,7 +1333,7 @@ auto write(Float value, char* buffer) noexcept -> char* {
   if (!is_normal) [[ZMIJ_UNLIKELY]] {
     if (bin_exp != 0) return write_inf_nan(buffer, bin_sig != 0);
     if (bin_sig == 0) {
-      memcpy(buffer, "0", 2);
+      *buffer = '0';
       return buffer + 1;
     }
     dec = ::to_decimal<Float>(bin_sig, 1, true, *d);
