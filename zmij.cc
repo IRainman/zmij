@@ -1529,6 +1529,61 @@ auto write_general(Float value, int precision, char* buffer) noexcept -> char* {
   return buffer + num_digits + 1;
 }
 
+template <typename Float>
+auto write_fixed(Float value, int precision, char* buffer) noexcept -> char* {
+  assert(precision >= 1 && precision <= 18);
+  using traits = float_traits<Float>;
+  auto bits = traits::to_bits(value);
+  auto bin_exp = traits::get_exp(bits);
+  auto bin_sig = traits::get_sig(bits);
+
+  *buffer = '-';
+  buffer += traits::is_negative(bits);
+
+  bool is_normal = unsigned(bin_exp - 1) < unsigned(traits::exp_mask - 1);
+  if (!is_normal) [[ZMIJ_UNLIKELY]] {
+    if (bin_exp != 0) return write_inf_nan(buffer, bin_sig != 0);
+    if (bin_sig == 0) {  // zero
+      *buffer = '0';
+      return buffer + 1;
+    }
+    // Subnormal: clz operates on 64 bits, so measure from bit 63.
+    int shift = clz(bin_sig) - (63 - traits::num_sig_bits);
+    bin_sig <<= shift;  // Move the leading 1 up to the implicit-bit position.
+    bin_exp = 1 - shift;
+  }
+
+  dec_fp dec = ::to_decimal<Float>(bin_sig | traits::implicit_bit,
+                                   bin_exp - traits::exp_offset, precision);
+
+  uint64_t sig18 = uint64_t(dec.sig) * uint64_t(pow10s[18 - precision]);
+  unsigned lo2 = unsigned(sig18 % 100);
+  auto dig = to_digits<64>(sig18 / 100, static_data);
+  int num_digits = lo2 ? 18 - (lo2 % 10 == 0) : dig.num_digits;
+
+  int dec_exp = dec.exp + precision - 1;  // Leading digit's decimal exponent.
+  if (dec_exp < 0) {  // Fixed with a leading 0.00...
+    buffer[0] = '0';
+    buffer[1] = '.';
+    memset(buffer + 2, '0', -dec_exp - 1);  // Zeros between the point and digits.
+    memcpy(buffer + 1 - dec_exp, &dig.digits, 16);
+    memcpy(buffer + 17 - dec_exp, digits2(lo2), 2);
+    return buffer + (1 - dec_exp) + num_digits;
+  }
+
+  memcpy(buffer, &dig.digits, 16);
+  memcpy(buffer + 16, digits2(lo2), 2);
+  int point_pos = dec_exp + 1;
+  if (point_pos >= num_digits) {  // All significant digits are integral.
+    memset(buffer + num_digits, '0', point_pos - num_digits);
+    return buffer + point_pos;
+  }
+  // Open a one-byte gap for the point.
+  memmove(buffer + point_pos + 1, buffer + point_pos, num_digits - point_pos);
+  buffer[point_pos] = '.';
+  return buffer + num_digits + 1;
+}
+
 template auto write(float value, char* buffer) noexcept -> char*;
 template auto write(double value, char* buffer) noexcept -> char*;
 
@@ -1540,6 +1595,11 @@ template auto write_scientific(double value, int precision,
 template auto write_general(float value, int precision, char* buffer) noexcept
     -> char*;
 template auto write_general(double value, int precision, char* buffer) noexcept
+    -> char*;
+
+template auto write_fixed(float value, int precision, char* buffer) noexcept
+    -> char*;
+template auto write_fixed(double value, int precision, char* buffer) noexcept
     -> char*;
 
 }  // namespace detail
