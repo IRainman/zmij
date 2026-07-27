@@ -1134,6 +1134,21 @@ ZMIJ_INLINE auto write_exp(char* buffer, int dec_exp) noexcept -> char* {
   return buffer + 2;
 }
 
+// Writes num_digits significant digits of dec_sig in scientific form,
+// d[.ddd]e±EE (trailing zeros kept); dec_exp is the leading digit's exponent.
+template <typename Float>
+ZMIJ_INLINE auto write_scientific_digits(char* buffer, uint64_t dec_sig,
+                                         int num_digits, int dec_exp) noexcept
+    -> char* {
+  int i = num_digits;
+  for (; i >= 2; i -= 2, dec_sig /= 100)
+    memcpy(buffer + i - 1, digits2(dec_sig % 100), 2);
+  if (i != 0) buffer[1] = char('0' + dec_sig);
+  buffer[0] = buffer[1];
+  buffer[1] = '.';  // Overwritten by the exponent when num_digits is 1.
+  return write_exp<Float>(buffer + num_digits + (num_digits > 1), dec_exp);
+}
+
 struct to_decimal_result {
   long long sig;
   int exp;
@@ -1450,15 +1465,8 @@ auto write_scientific(Float value, int precision, char* buffer) noexcept
 
   dec_fp dec = ::to_decimal<Float>(bin_sig | traits::implicit_bit,
                                    bin_exp - traits::exp_offset, precision);
-  unsigned long long dec_sig = dec.sig;
-  int i = precision;
-  for (; i >= 2; i -= 2, dec_sig /= 100)
-    memcpy(buffer + i - 1, digits2(dec_sig % 100), 2);
-  if (i != 0) buffer[1] = char('0' + dec_sig);
-  buffer[0] = buffer[1];
-  buffer[1] = '.';  // Overwritten by the exponent when precision is 1.
-  return write_exp<Float>(buffer + precision + (precision > 1),
-                          dec.exp + precision - 1);
+  return write_scientific_digits<Float>(buffer, dec.sig, precision,
+                                        dec.exp + precision - 1);
 }
 
 template <typename Float>
@@ -1496,24 +1504,19 @@ auto write_general(Float value, int precision, char* buffer) noexcept -> char* {
     --num_digits;
   }
 
-  int exp10 = dec.exp + precision - 1;  // Decimal exponent of the leading digit.
-  if (exp10 < -4 || exp10 >= precision) {  // Scientific: d[.ddd]e±EE.
-    for (int k = num_digits - 1; k >= 1; --k, dec_sig /= 10)
-      buffer[k + 1] = char('0' + dec_sig % 10);
-    buffer[0] = char('0' + dec_sig);
-    buffer[1] = '.';  // Overwritten by the exponent when num_digits is 1.
-    return write_exp<Float>(buffer + num_digits + (num_digits > 1), exp10);
-  }
+  int dec_exp = dec.exp + precision - 1;  // Leading digit's decimal exponent.
+  if (dec_exp < -4 || dec_exp >= precision)
+    return write_scientific_digits<Float>(buffer, dec_sig, num_digits, dec_exp);
 
-  if (exp10 < 0) {  // Fixed with a leading 0.00...: exp10 in [-4, -1].
-    memcpy(buffer, "0.0000", 1 - exp10);  // '0', '.', then -exp10-1 zeros.
-    buffer += 1 - exp10;
+  if (dec_exp < 0) {  // Fixed with a leading 0.00...: dec_exp in [-4, -1].
+    memcpy(buffer, "0.0000", 1 - dec_exp);  // '0', '.', then -dec_exp-1 zeros.
+    buffer += 1 - dec_exp;
     for (int k = num_digits - 1; k >= 0; --k, dec_sig /= 10)
       buffer[k] = char('0' + dec_sig % 10);
     return buffer + num_digits;
   }
 
-  int point_pos = exp10 + 1;
+  int point_pos = dec_exp + 1;
   if (num_digits <= point_pos) {  // All significant digits are integral.
     for (int k = num_digits - 1; k >= 0; --k, dec_sig /= 10)
       buffer[k] = char('0' + dec_sig % 10);
@@ -1532,8 +1535,8 @@ auto write_general(Float value, int precision, char* buffer) noexcept -> char* {
 template auto write(float value, char* buffer) noexcept -> char*;
 template auto write(double value, char* buffer) noexcept -> char*;
 
-template auto write_scientific(float value, int precision, char* buffer) noexcept
-    -> char*;
+template auto write_scientific(float value, int precision,
+                               char* buffer) noexcept -> char*;
 template auto write_scientific(double value, int precision,
                                char* buffer) noexcept -> char*;
 
