@@ -113,7 +113,7 @@ taking the best of 3 runs.
 
 ## Differences from Schubfach
 
-* 1 instead of 3 multiplications by a power of 10 in the common case
+* 1 instead of 3 multiplications by a power of 10
 * Faster logarithm approximations
 * Faster division and modulo
 * Fewer conditional branches
