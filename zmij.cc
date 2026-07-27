@@ -1140,10 +1140,10 @@ template <typename Float>
 ZMIJ_INLINE auto write_scientific_digits(char* buffer, uint64_t dec_sig,
                                          int num_digits, int dec_exp) noexcept
     -> char* {
-  int i = num_digits;
-  for (; i >= 2; i -= 2, dec_sig /= 100)
-    memcpy(buffer + i - 1, digits2(dec_sig % 100), 2);
-  if (i != 0) buffer[1] = char('0' + dec_sig);
+  dec_sig *= uint64_t(pow10s[18 - num_digits]);
+  auto dig = to_digits<64>(dec_sig % 10000000000000000ull, static_data);
+  memcpy(buffer + 1, digits2(dec_sig / 10000000000000000ull), 2);
+  memcpy(buffer + 3, &dig.digits, 16);
   buffer[0] = buffer[1];
   buffer[1] = '.';  // Overwritten by the exponent when num_digits is 1.
   return write_exp<Float>(buffer + num_digits + (num_digits > 1), dec_exp);
