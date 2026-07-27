@@ -48,10 +48,10 @@ struct dec_fp {
 auto to_decimal(double value) noexcept -> dec_fp;
 
 enum {
-  float_buffer_size = 17,
-  double_buffer_size = 34,
-  scientific_buffer_size = 25,
-  general_buffer_size = 25,
+  float_buffer_size = 17,             // write
+  double_buffer_size = 34,            // write
+  float_precision_buffer_size = 24,   // write_scientific, write_general
+  double_precision_buffer_size = 25,  // write_scientific, write_general
 };
 
 /// Writes the shortest correctly rounded decimal representation of `value` to
@@ -88,9 +88,9 @@ inline auto write(char* out, size_t n, double value) noexcept -> char* {
 inline auto write_scientific(char* out, size_t n, float value,
                              int precision) noexcept -> char* {
   precision = detail::clamp_precision(precision);
-  if (n >= scientific_buffer_size)
+  if (n >= float_precision_buffer_size)
     return detail::write_scientific(value, precision, out);
-  char buffer[scientific_buffer_size];
+  char buffer[float_precision_buffer_size];
   size_t size = detail::write_scientific(value, precision, buffer) - buffer;
   if (size > n) size = n;
   memcpy(out, buffer, size);
@@ -105,9 +105,9 @@ inline auto write_scientific(char* out, size_t n, float value,
 inline auto write_scientific(char* out, size_t n, double value,
                              int precision) noexcept -> char* {
   precision = detail::clamp_precision(precision);
-  if (n >= scientific_buffer_size)
+  if (n >= double_precision_buffer_size)
     return detail::write_scientific(value, precision, out);
-  char buffer[scientific_buffer_size];
+  char buffer[double_precision_buffer_size];
   size_t size = detail::write_scientific(value, precision, buffer) - buffer;
   if (size > n) size = n;
   memcpy(out, buffer, size);
@@ -124,9 +124,9 @@ inline auto write_scientific(char* out, size_t n, double value,
 inline auto write_general(char* out, size_t n, float value,
                           int precision) noexcept -> char* {
   precision = detail::clamp_precision(precision);
-  if (n >= general_buffer_size)
+  if (n >= float_precision_buffer_size)
     return detail::write_general(value, precision, out);
-  char buffer[general_buffer_size];
+  char buffer[float_precision_buffer_size];
   size_t size = detail::write_general(value, precision, buffer) - buffer;
   if (size > n) size = n;
   memcpy(out, buffer, size);
@@ -143,9 +143,9 @@ inline auto write_general(char* out, size_t n, float value,
 inline auto write_general(char* out, size_t n, double value,
                           int precision) noexcept -> char* {
   precision = detail::clamp_precision(precision);
-  if (n >= general_buffer_size)
+  if (n >= double_precision_buffer_size)
     return detail::write_general(value, precision, out);
-  char buffer[general_buffer_size];
+  char buffer[double_precision_buffer_size];
   size_t size = detail::write_general(value, precision, buffer) - buffer;
   if (size > n) size = n;
   memcpy(out, buffer, size);

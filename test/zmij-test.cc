@@ -88,23 +88,23 @@ TEST(float_test, fixed_with_zeros) {
 #if !ZMIJ_C
 // Writes `value` with `precision` significant digits in scientific format.
 static auto ftoa(float value, int precision) -> std::string {
-  char buffer[zmij::scientific_buffer_size];
+  char buffer[zmij::float_precision_buffer_size];
   return {buffer,
           zmij::write_scientific(buffer, sizeof(buffer), value, precision)};
 }
 static auto dtoa(double value, int precision) -> std::string {
-  char buffer[zmij::scientific_buffer_size];
+  char buffer[zmij::double_precision_buffer_size];
   return {buffer,
           zmij::write_scientific(buffer, sizeof(buffer), value, precision)};
 }
 
 // Writes `value` with up to `precision` significant digits in general format.
 static auto ftoa_g(float value, int precision) -> std::string {
-  char buffer[zmij::general_buffer_size];
+  char buffer[zmij::float_precision_buffer_size];
   return {buffer, zmij::write_general(buffer, sizeof(buffer), value, precision)};
 }
 static auto dtoa_g(double value, int precision) -> std::string {
-  char buffer[zmij::general_buffer_size];
+  char buffer[zmij::double_precision_buffer_size];
   return {buffer, zmij::write_general(buffer, sizeof(buffer), value, precision)};
 }
 
