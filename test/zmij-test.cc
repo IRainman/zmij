@@ -39,7 +39,7 @@ auto write(char* out, size_t n, float value) noexcept -> char* {
 #include "dragonbox/dragonbox_to_chars.h"
 #include "fmt/format.h"
 
-auto dtoa(double value) -> std::string {
+auto to_shortest(double value) -> std::string {
   char buffer[zmij::double_buffer_size + 1] = {};
   memset(buffer, '?', sizeof(buffer));
   auto end = zmij::write(buffer + 1, sizeof(buffer), value);
@@ -47,20 +47,20 @@ auto dtoa(double value) -> std::string {
   return {buffer + 1, end};
 }
 
-auto ftoa(float value) -> std::string {
+auto to_shortest(float value) -> std::string {
   char buffer[zmij::float_buffer_size] = {};
   auto end = zmij::write(buffer, sizeof(buffer), value);
   return {buffer, end};
 }
 
 TEST(float_test, normal) {
-  EXPECT_EQ(ftoa(6.62607e-34f), "6.62607e-34");
-  EXPECT_EQ(ftoa(1.342178e+08f), "1.342178e+08");
-  EXPECT_EQ(ftoa(1.3421781e+08f), "1.3421781e+08");
+  EXPECT_EQ(to_shortest(6.62607e-34f), "6.62607e-34");
+  EXPECT_EQ(to_shortest(1.342178e+08f), "1.342178e+08");
+  EXPECT_EQ(to_shortest(1.3421781e+08f), "1.3421781e+08");
 }
 
 TEST(float_test, subnormal) {
-  EXPECT_EQ(ftoa(std::numeric_limits<float>::denorm_min()), "1e-45");
+  EXPECT_EQ(to_shortest(std::numeric_limits<float>::denorm_min()), "1e-45");
 }
 
 TEST(float_test, no_overrun) {
@@ -80,30 +80,30 @@ TEST(float_test, no_buffer) {
 }
 
 TEST(float_test, fixed_with_zeros) {
-  EXPECT_EQ(ftoa(43210.0f), "43210");
-  EXPECT_EQ(ftoa(43210.1f), "43210.1");
-  EXPECT_EQ(ftoa(10000.f), "10000");
+  EXPECT_EQ(to_shortest(43210.0f), "43210");
+  EXPECT_EQ(to_shortest(43210.1f), "43210.1");
+  EXPECT_EQ(to_shortest(10000.f), "10000");
 }
 
 #if !ZMIJ_C
 // Writes `value` with `precision` significant digits in scientific format.
-static auto ftoa(float value, int precision) -> std::string {
+static auto to_scientific(float value, int precision) -> std::string {
   char buffer[zmij::float_precision_buffer_size];
   return {buffer,
           zmij::write_scientific(buffer, sizeof(buffer), value, precision)};
 }
-static auto dtoa(double value, int precision) -> std::string {
+static auto to_scientific(double value, int precision) -> std::string {
   char buffer[zmij::double_precision_buffer_size];
   return {buffer,
           zmij::write_scientific(buffer, sizeof(buffer), value, precision)};
 }
 
 // Writes `value` with up to `precision` significant digits in general format.
-static auto ftoa_g(float value, int precision) -> std::string {
+static auto to_general(float value, int precision) -> std::string {
   char buffer[zmij::float_precision_buffer_size];
   return {buffer, zmij::write_general(buffer, sizeof(buffer), value, precision)};
 }
-static auto dtoa_g(double value, int precision) -> std::string {
+static auto to_general(double value, int precision) -> std::string {
   char buffer[zmij::double_precision_buffer_size];
   return {buffer, zmij::write_general(buffer, sizeof(buffer), value, precision)};
 }
@@ -123,31 +123,32 @@ TEST(float_test, to_chars) {
 }
 
 TEST(float_test, write_precision) {
-  EXPECT_EQ(ftoa(1.5f, 2), "1.5e+00");
-  EXPECT_EQ(ftoa(9.99f, 2), "1.0e+01");   // carry
-  EXPECT_EQ(ftoa(2.5f, 1), "2e+00");      // round half to even
-  EXPECT_EQ(ftoa(-1.5f, 2), "-1.5e+00");  // sign preserved
-  EXPECT_EQ(ftoa(std::numeric_limits<float>::denorm_min(), 1),
+  EXPECT_EQ(to_scientific(1.5f, 2), "1.5e+00");
+  EXPECT_EQ(to_scientific(9.99f, 2), "1.0e+01");   // carry
+  EXPECT_EQ(to_scientific(2.5f, 1), "2e+00");      // round half to even
+  EXPECT_EQ(to_scientific(-1.5f, 2), "-1.5e+00");  // sign preserved
+  EXPECT_EQ(to_scientific(std::numeric_limits<float>::denorm_min(), 1),
             "1e-45");  // subnormal path
-  EXPECT_EQ(ftoa(std::numeric_limits<float>::max(), 9), "3.40282347e+38");
+  EXPECT_EQ(to_scientific(std::numeric_limits<float>::max(), 9),
+            "3.40282347e+38");
 }
 #endif  // !ZMIJ_C
 
 TEST(double_test, normal) {
-  EXPECT_EQ(dtoa(6.62607015e-34), "6.62607015e-34");
+  EXPECT_EQ(to_shortest(6.62607015e-34), "6.62607015e-34");
 
   // Exact half-ulp tie when rounding to nearest integer.
-  EXPECT_EQ(dtoa(5.444310685350916e+14), "544431068535091.6");
+  EXPECT_EQ(to_shortest(5.444310685350916e+14), "544431068535091.6");
 }
 
 TEST(double_test, subnormal) {
-  EXPECT_EQ(dtoa(std::numeric_limits<double>::denorm_min()), "5e-324");
-  EXPECT_EQ(dtoa(1e-323), "1e-323");
-  EXPECT_EQ(dtoa(1.2e-322), "1.2e-322");
-  EXPECT_EQ(dtoa(1.5e-323), "1.5e-323");
-  EXPECT_EQ(dtoa(1.24e-322), "1.24e-322");
-  EXPECT_EQ(dtoa(1.234e-320), "1.234e-320");
-  EXPECT_EQ(dtoa(2.2250738585072004e-308), "2.2250738585072004e-308");
+  EXPECT_EQ(to_shortest(std::numeric_limits<double>::denorm_min()), "5e-324");
+  EXPECT_EQ(to_shortest(1e-323), "1e-323");
+  EXPECT_EQ(to_shortest(1.2e-322), "1.2e-322");
+  EXPECT_EQ(to_shortest(1.5e-323), "1.5e-323");
+  EXPECT_EQ(to_shortest(1.24e-322), "1.24e-322");
+  EXPECT_EQ(to_shortest(1.234e-320), "1.234e-320");
+  EXPECT_EQ(to_shortest(2.2250738585072004e-308), "2.2250738585072004e-308");
 }
 
 TEST(double_test, irregular) {
@@ -171,14 +172,14 @@ TEST(double_test, irregular) {
 
     int fixed_start = 1010, fixed_end = 1022;
     if (exp >= fixed_start && exp <= fixed_end) {
-      EXPECT_EQ(dtoa(value), fixed[exp - fixed_start]);
+      EXPECT_EQ(to_shortest(value), fixed[exp - fixed_start]);
       continue;
     }
 
     char expected[32] = {};
     *jkj::dragonbox::to_chars(value, expected) = '\0';
 
-    EXPECT_EQ(dtoa(value), expected) << exp;
+    EXPECT_EQ(to_shortest(value), expected) << exp;
   }
 }
 
@@ -197,46 +198,46 @@ TEST(double_test, exponents) {
 
     int fixed_start = 1010, fixed_end = 1023;
     if (exp >= fixed_start && exp <= fixed_end) {
-      EXPECT_EQ(dtoa(value), fixed[exp - fixed_start]);
+      EXPECT_EQ(to_shortest(value), fixed[exp - fixed_start]);
       continue;
     }
 
     char expected[32] = {};
     *jkj::dragonbox::to_chars(value, expected) = '\0';
 
-    EXPECT_EQ(dtoa(value), expected) << exp;
+    EXPECT_EQ(to_shortest(value), expected) << exp;
   }
 }
 
-TEST(double_test, small_int) { EXPECT_EQ(dtoa(1), "1"); }
+TEST(double_test, small_int) { EXPECT_EQ(to_shortest(1.0), "1"); }
 
 TEST(double_test, zero) {
-  EXPECT_EQ(dtoa(0), "0");
-  EXPECT_EQ(dtoa(-0.0), "-0");
+  EXPECT_EQ(to_shortest(0.0), "0");
+  EXPECT_EQ(to_shortest(-0.0), "-0");
 }
 
 TEST(double_test, inf) {
-  EXPECT_EQ(dtoa(std::numeric_limits<double>::infinity()), "inf");
+  EXPECT_EQ(to_shortest(std::numeric_limits<double>::infinity()), "inf");
 }
 
 TEST(double_test, nan) {
-  EXPECT_EQ(dtoa(-std::numeric_limits<double>::quiet_NaN()), "-nan");
+  EXPECT_EQ(to_shortest(-std::numeric_limits<double>::quiet_NaN()), "-nan");
 }
 
 TEST(double_test, shorter) {
   // A possibly shorter underestimate is picked (u' in Schubfach).
-  EXPECT_EQ(dtoa(-4.932096661796888e-226), "-4.932096661796888e-226");
+  EXPECT_EQ(to_shortest(-4.932096661796888e-226), "-4.932096661796888e-226");
 
   // A possibly shorter overestimate is picked (w' in Schubfach).
-  EXPECT_EQ(dtoa(3.439070283483335e+35), "3.439070283483335e+35");
+  EXPECT_EQ(to_shortest(3.439070283483335e+35), "3.439070283483335e+35");
 }
 
 TEST(double_test, single_candidate) {
   // Only an underestimate is in the rounding region (u in Schubfach).
-  EXPECT_EQ(dtoa(6.606854224493745e-17), "6.606854224493745e-17");
+  EXPECT_EQ(to_shortest(6.606854224493745e-17), "6.606854224493745e-17");
 
   // Only an overestimate is in the rounding region (w in Schubfach).
-  EXPECT_EQ(dtoa(6.079537928711555e+61), "6.079537928711555e+61");
+  EXPECT_EQ(to_shortest(6.079537928711555e+61), "6.079537928711555e+61");
 }
 
 // Rounding-boundary doubles enumerated by verify.py (see --dump-boundaries).
@@ -269,16 +270,16 @@ TEST(double_test, boundaries) {
     double value = 0;
     memcpy(&value, &bits, sizeof(value));
     auto ref = jkj::dragonbox::to_decimal(value);
-    EXPECT_EQ(dtoa(value), to_string(ref.significand, ref.exponent))
+    EXPECT_EQ(to_shortest(value), to_string(ref.significand, ref.exponent))
         << "bits=" << bits;
   }
 }
 
 TEST(double_test, fixed_with_zeros) {
-  EXPECT_EQ(dtoa(43210.0), "43210");
-  EXPECT_EQ(dtoa(43210.1), "43210.1");
-  EXPECT_EQ(dtoa(10000), "10000");
-  EXPECT_EQ(dtoa(-5942736479622170.0), "-5942736479622170");
+  EXPECT_EQ(to_shortest(43210.0), "43210");
+  EXPECT_EQ(to_shortest(43210.1), "43210.1");
+  EXPECT_EQ(to_shortest(10000.0), "10000");
+  EXPECT_EQ(to_shortest(-5942736479622170.0), "-5942736479622170");
 }
 
 TEST(double_test, no_overrun) {
@@ -290,7 +291,7 @@ TEST(double_test, no_overrun) {
   EXPECT_EQ(buffer[zmij::double_buffer_size], '?');
 }
 
-TEST(double_test, no_underrun) { dtoa(9.061488e+15); }
+TEST(double_test, no_underrun) { to_shortest(9.061488e+15); }
 
 TEST(double_test, no_buffer) {
   double value = 6.62607015e-34;
@@ -346,45 +347,46 @@ TEST(double_test, to_decimal) {
 }
 
 TEST(double_test, write_precision) {
-  EXPECT_EQ(dtoa(1.5, 2), "1.5e+00");
-  EXPECT_EQ(dtoa(1.0, 1), "1e+00");       // no point when precision 1
-  EXPECT_EQ(dtoa(0.0, 5), "0.0000e+00");  // zero
-  EXPECT_EQ(dtoa(std::numeric_limits<double>::infinity(), 3), "inf");
+  EXPECT_EQ(to_scientific(1.5, 2), "1.5e+00");
+  EXPECT_EQ(to_scientific(1.0, 1), "1e+00");       // no point when precision 1
+  EXPECT_EQ(to_scientific(0.0, 5), "0.0000e+00");  // zero
+  EXPECT_EQ(to_scientific(std::numeric_limits<double>::infinity(), 3), "inf");
 
   // Overshoot: the integral part carries precision + 1 digits, so the extra
   // digit is dropped and the exponent bumped up.
-  EXPECT_EQ(dtoa(12.0, 2), "1.2e+01");
-  EXPECT_EQ(dtoa(123.0, 3), "1.23e+02");
-  EXPECT_EQ(dtoa(12345.678, 3), "1.23e+04");
+  EXPECT_EQ(to_scientific(12.0, 2), "1.2e+01");
+  EXPECT_EQ(to_scientific(123.0, 3), "1.23e+02");
+  EXPECT_EQ(to_scientific(12345.678, 3), "1.23e+04");
 
   // Carry: rounding 9...9 up rolls into a new leading digit.
-  EXPECT_EQ(dtoa(9.99, 2), "1.0e+01");
-  EXPECT_EQ(dtoa(99.9, 2), "1.0e+02");
+  EXPECT_EQ(to_scientific(9.99, 2), "1.0e+01");
+  EXPECT_EQ(to_scientific(99.9, 2), "1.0e+02");
 
   // Round half-to-even.
-  EXPECT_EQ(dtoa(0.125, 2), "1.2e-01");  // 1.25 -> 1.2
-  EXPECT_EQ(dtoa(2.5, 1), "2e+00");      // -> 2 (even)
-  EXPECT_EQ(dtoa(3.5, 1), "4e+00");      // -> 4 (even)
+  EXPECT_EQ(to_scientific(0.125, 2), "1.2e-01");  // 1.25 -> 1.2
+  EXPECT_EQ(to_scientific(2.5, 1), "2e+00");      // -> 2 (even)
+  EXPECT_EQ(to_scientific(3.5, 1), "4e+00");      // -> 4 (even)
 
   // Sign is carried through.
-  EXPECT_EQ(dtoa(-9.99, 2), "-1.0e+01");
+  EXPECT_EQ(to_scientific(-9.99, 2), "-1.0e+01");
 
   // Subnormals take a separate normalization path, so check both boundaries
   // (smallest and largest) at low and full precision.
-  EXPECT_EQ(dtoa(5e-324, 1), "5e-324");    // DBL_TRUE_MIN
-  EXPECT_EQ(dtoa(-5e-324, 1), "-5e-324");  // sign preserved
+  EXPECT_EQ(to_scientific(5e-324, 1), "5e-324");    // DBL_TRUE_MIN
+  EXPECT_EQ(to_scientific(-5e-324, 1), "-5e-324");  // sign preserved
   // Smallest subnormal at full precision (exercises the widened table top).
-  EXPECT_EQ(dtoa(5e-324, 18), "4.94065645841246544e-324");
+  EXPECT_EQ(to_scientific(5e-324, 18), "4.94065645841246544e-324");
   // Largest subnormal, round-tripped at full precision.
-  EXPECT_EQ(dtoa(2.2250738585072009e-308, 17), "2.2250738585072009e-308");
-  EXPECT_EQ(dtoa(2.2250738585072009e-308, 6), "2.22507e-308");
+  EXPECT_EQ(to_scientific(2.2250738585072009e-308, 17),
+            "2.2250738585072009e-308");
+  EXPECT_EQ(to_scientific(2.2250738585072009e-308, 6), "2.22507e-308");
 
   // Large values at low precision reach the low end of the table.
-  EXPECT_EQ(dtoa(1.7976931348623157e308, 1), "2e+308");  // DBL_MAX
-  EXPECT_EQ(dtoa(1.7976931348623157e308, 2), "1.8e+308");
+  EXPECT_EQ(to_scientific(1.7976931348623157e308, 1), "2e+308");  // DBL_MAX
+  EXPECT_EQ(to_scientific(1.7976931348623157e308, 2), "1.8e+308");
 
   // Full-precision round trip.
-  EXPECT_EQ(dtoa(6.62607015e-34, 9), "6.62607015e-34");
+  EXPECT_EQ(to_scientific(6.62607015e-34, 9), "6.62607015e-34");
 }
 
 TEST(double_test, write_precision_irregular) {
@@ -395,49 +397,49 @@ TEST(double_test, write_precision_irregular) {
     for (int precision = 1; precision <= 18; ++precision) {
       char expected[32];
       snprintf(expected, sizeof(expected), "%.*e", precision - 1, value);
-      EXPECT_EQ(dtoa(value, precision), expected)
+      EXPECT_EQ(to_scientific(value, precision), expected)
           << "value=" << value << " precision=" << precision;
     }
   }
 }
 
 TEST(float_test, write_general) {
-  EXPECT_EQ(ftoa_g(1.5f, 6), "1.5");
-  EXPECT_EQ(ftoa_g(0.0001f, 6), "0.0001");   // exp10 == -4 -> fixed
-  EXPECT_EQ(ftoa_g(0.00001f, 6), "1e-05");   // exp10 == -5 -> scientific
-  EXPECT_EQ(ftoa_g(-1.5f, 6), "-1.5");       // sign preserved
-  EXPECT_EQ(ftoa_g(std::numeric_limits<float>::denorm_min(), 1),
+  EXPECT_EQ(to_general(1.5f, 6), "1.5");
+  EXPECT_EQ(to_general(0.0001f, 6), "0.0001");   // exp10 == -4 -> fixed
+  EXPECT_EQ(to_general(0.00001f, 6), "1e-05");   // exp10 == -5 -> scientific
+  EXPECT_EQ(to_general(-1.5f, 6), "-1.5");       // sign preserved
+  EXPECT_EQ(to_general(std::numeric_limits<float>::denorm_min(), 1),
             "1e-45");  // subnormal path
 }
 
 TEST(double_test, write_general) {
   // Fixed range: decimal exponent in [-4, precision).
-  EXPECT_EQ(dtoa_g(1.5, 6), "1.5");
-  EXPECT_EQ(dtoa_g(100.0, 6), "100");
-  EXPECT_EQ(dtoa_g(123456.0, 6), "123456");
-  EXPECT_EQ(dtoa_g(0.0001, 6), "0.0001");         // exp10 == -4 -> fixed
-  EXPECT_EQ(dtoa_g(0.00001, 6), "1e-05");         // exp10 == -5 -> scientific
-  EXPECT_EQ(dtoa_g(1234567.0, 6), "1.23457e+06");  // exp10 == precision -> sci
+  EXPECT_EQ(to_general(1.5, 6), "1.5");
+  EXPECT_EQ(to_general(100.0, 6), "100");
+  EXPECT_EQ(to_general(123456.0, 6), "123456");
+  EXPECT_EQ(to_general(0.0001, 6), "0.0001");         // exp10 == -4 -> fixed
+  EXPECT_EQ(to_general(0.00001, 6), "1e-05");         // exp10 == -5 -> scientific
+  EXPECT_EQ(to_general(1234567.0, 6), "1.23457e+06");  // exp10 == precision -> sci
 
   // Trailing zeros are trimmed, and the point with them.
-  EXPECT_EQ(dtoa_g(1.2000, 6), "1.2");
-  EXPECT_EQ(dtoa_g(1.0, 6), "1");
-  EXPECT_EQ(dtoa_g(1024.0, 6), "1024");
+  EXPECT_EQ(to_general(1.2000, 6), "1.2");
+  EXPECT_EQ(to_general(1.0, 6), "1");
+  EXPECT_EQ(to_general(1024.0, 6), "1024");
 
   // Zero and sign.
-  EXPECT_EQ(dtoa_g(0.0, 6), "0");
-  EXPECT_EQ(dtoa_g(-0.0, 6), "-0");
-  EXPECT_EQ(dtoa_g(-1.5, 6), "-1.5");
+  EXPECT_EQ(to_general(0.0, 6), "0");
+  EXPECT_EQ(to_general(-0.0, 6), "-0");
+  EXPECT_EQ(to_general(-1.5, 6), "-1.5");
 
   // Rounding rolls into a new leading digit and bumps the format to scientific.
-  EXPECT_EQ(dtoa_g(999999.0, 5), "1e+06");
+  EXPECT_EQ(to_general(999999.0, 5), "1e+06");
 
   // Specials.
-  EXPECT_EQ(dtoa_g(std::numeric_limits<double>::infinity(), 6), "inf");
+  EXPECT_EQ(to_general(std::numeric_limits<double>::infinity(), 6), "inf");
 
   // Full-precision round trips.
-  EXPECT_EQ(dtoa_g(6.62607015e-34, 9), "6.62607015e-34");
-  EXPECT_EQ(dtoa_g(3.14159265358979, 15), "3.14159265358979");
+  EXPECT_EQ(to_general(6.62607015e-34, 9), "6.62607015e-34");
+  EXPECT_EQ(to_general(3.14159265358979, 15), "3.14159265358979");
 }
 
 TEST(double_test, write_general_irregular) {
@@ -448,7 +450,7 @@ TEST(double_test, write_general_irregular) {
     for (int precision = 1; precision <= 18; ++precision) {
       char expected[32];
       snprintf(expected, sizeof(expected), "%.*g", precision, value);
-      EXPECT_EQ(dtoa_g(value, precision), expected)
+      EXPECT_EQ(to_general(value, precision), expected)
           << "value=" << value << " precision=" << precision;
     }
   }
