@@ -31,6 +31,13 @@ inline auto clamp_precision(int precision) noexcept -> int {
   if (precision > 18) return 18;
   return precision;
 }
+
+/// Clamps `precision` to the range [0, 18] supported by write_fixed.
+inline auto clamp_fixed_precision(int precision) noexcept -> int {
+  if (precision < 0) return 0;
+  if (precision > 18) return 18;
+  return precision;
+}
 }  // namespace detail
 
 enum {
@@ -55,9 +62,10 @@ enum {
   double_buffer_size = 34,            // write
   float_precision_buffer_size = 24,   // write_{scientific,general}
   double_precision_buffer_size = 25,  // write_{scientific,general}
-  // Fixed notation is longer; the worst case is the smallest subnormal.
-  float_fixed_buffer_size = 65,    // sign + "0." + 44 zeros + 18 digits
-  double_fixed_buffer_size = 344,  // sign + "0." + 323 zeros + 18 digits
+  // Fixed notation is longer; the worst case is the largest finite value with
+  // the maximum precision (18 fractional digits).
+  float_fixed_buffer_size = 59,    // sign + 39 int digits + "." + 18 fractional
+  double_fixed_buffer_size = 329,  // sign + 309 int digits + "." + 18 fractional
 };
 
 /// Writes the shortest correctly rounded decimal representation of `value` to
@@ -158,14 +166,15 @@ inline auto write_general(char* out, size_t n, double value,
   return out + size;
 }
 
-/// Writes `value` in fixed notation with `precision` significant digits and no
-/// trailing zeros (e.g. 1.5) to `out` without a null terminator. Returns a
-/// pointer past the last character written; if the representation exceeds `n`
-/// characters, only the first `n` are written. `precision` must be in [1, 18];
-/// out-of-range values are clamped.
+/// Writes `value` in fixed notation with exactly `precision` digits after the
+/// decimal point (e.g. 1.500), matching printf's %f, to `out` without a null
+/// terminator. Returns a pointer past the last character written; if the
+/// representation exceeds `n` characters, only the first `n` are written.
+/// `precision` must be in [0, 18]; out-of-range values are clamped. Digits
+/// beyond the first 18 significant ones are emitted as zeros.
 inline auto write_fixed(char* out, size_t n, float value,
                         int precision) noexcept -> char* {
-  precision = detail::clamp_precision(precision);
+  precision = detail::clamp_fixed_precision(precision);
   if (n >= float_fixed_buffer_size)
     return detail::write_fixed(value, precision, out);
   char buffer[float_fixed_buffer_size];
@@ -175,14 +184,15 @@ inline auto write_fixed(char* out, size_t n, float value,
   return out + size;
 }
 
-/// Writes `value` in fixed notation with `precision` significant digits and no
-/// trailing zeros (e.g. 1.5) to `out` without a null terminator. Returns a
-/// pointer past the last character written; if the representation exceeds `n`
-/// characters, only the first `n` are written. `precision` must be in [1, 18];
-/// out-of-range values are clamped.
+/// Writes `value` in fixed notation with exactly `precision` digits after the
+/// decimal point (e.g. 1.500), matching printf's %f, to `out` without a null
+/// terminator. Returns a pointer past the last character written; if the
+/// representation exceeds `n` characters, only the first `n` are written.
+/// `precision` must be in [0, 18]; out-of-range values are clamped. Digits
+/// beyond the first 18 significant ones are emitted as zeros.
 inline auto write_fixed(char* out, size_t n, double value,
                         int precision) noexcept -> char* {
-  precision = detail::clamp_precision(precision);
+  precision = detail::clamp_fixed_precision(precision);
   if (n >= double_fixed_buffer_size)
     return detail::write_fixed(value, precision, out);
   char buffer[double_fixed_buffer_size];

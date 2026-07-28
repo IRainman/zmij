@@ -1115,6 +1115,15 @@ auto write_inf_nan(char* buffer, bool is_nan) noexcept -> char* {
   return memcpy(buffer, is_nan ? "nan" : "inf", 4), buffer + 3;
 }
 
+// Writes zero in fixed notation, e.g. "0.000" (or "0" when precision is 0).
+ZMIJ_INLINE auto write_zero(char* buffer, int precision) noexcept -> char* {
+  *buffer++ = '0';
+  if (precision == 0) return buffer;
+  *buffer = '.';
+  memset(buffer + 1, '0', precision);
+  return buffer + 1 + precision;
+}
+
 // Writes the exponent as 'e', a sign and at least two digits (e.g. e+05).
 template <typename Float>
 ZMIJ_INLINE auto write_exp(char* buffer, int dec_exp) noexcept -> char* {
@@ -1134,9 +1143,9 @@ ZMIJ_INLINE auto write_exp(char* buffer, int dec_exp) noexcept -> char* {
   return buffer + 2;
 }
 
-// Writes num_digits significant digits in scientific form, d[.ddd]e±EE (trailing
-// zeros kept), from the top 16 BCD digits `digits` and low two digits lo2.
-// dec_exp is the leading digit's exponent.
+// Writes num_digits significant digits in scientific form, d[.ddd]e±EE
+// (trailing zeros kept), from the top 16 BCD digits `digits` and low two digits
+// lo2. dec_exp is the leading digit's exponent.
 template <typename Float>
 ZMIJ_INLINE auto write_scientific_digits(char* buffer,
                                          dec_digits<64>::digits_type digits,
@@ -1263,41 +1272,47 @@ ZMIJ_INLINE auto to_decimal(UInt bin_sig, int64_t raw_exp, bool regular,
   return {integral, dec_exp, digit, (round_up + round_down) == 0};
 }
 
-// Converts a binary FP number bin_sig * 2**bin_exp to a correctly rounded
-// decimal with exactly `precision` significant digits.
+// Scales bin_sig * 2**bin_exp by 10**-dec_exp and packs the result into an
+// integer above two guard bits (bit 1 is the 1/2 place, bit 0 the sticky bit).
 template <typename Float>
-auto to_decimal(uint64_t bin_sig, int bin_exp, int precision) noexcept
-    -> zmij::dec_fp {
-  using traits = float_traits<Float>;
-
-  // Choose dec_exp so integral holds the precision digits. bin_exp +
-  // num_sig_bits approximates log2(value).
-  int dec_exp =
-      compute_dec_exp(bin_exp + traits::num_sig_bits) - (precision - 1);
-
-  // Multiply by 10**-dec_exp and pack into `scaled`: the precision-digit
-  // integer above two guard bits - bit 1 the 1/2 place, bit 0 the sticky bit -
-  // so one round-half-to-even step rounds it (idea by Russ Cox).
-  constexpr int shift = 64 - traits::digits;  // Left-justify the significand.
+ZMIJ_INLINE auto scale(uint64_t bin_sig, int bin_exp, int dec_exp) noexcept
+    -> uint64_t {
+  constexpr int shift = 64 - float_traits<Float>::digits;
   int point_shift = shift - compute_exp_shift(bin_exp, dec_exp);
   uint128 pow10 = static_data.pow10_significands[-dec_exp];
   // Bump inexact powers (dec_exp < -55 or > 0) up to a 128-bit ceiling so they
   // can't mimic an exact tie; the +1 stays in the low word, never carrying.
   uint128 p = umul192_hi128(pow10.hi, pow10.lo + (dec_exp < -55 | dec_exp > 0),
                             uint64_t(bin_sig) << shift);
-
   uint64_t integral = p.hi >> point_shift;
   // The ceiling makes the low 64 product bits unreliable, so sticky uses only
   // p.lo and p.hi's bits below 1/2; inexact powers always leave a 1 there.
   uint64_t half = p.hi >> (point_shift - 1) & 1;
   uint64_t tail = (p.hi & ((uint64_t(1) << (point_shift - 1)) - 1)) | p.lo;
-  uint64_t scaled = integral << 2 | half << 1 | (tail != 0);
+  return integral << 2 | half << 1 | (tail != 0);
+}
 
-  // Round half-to-even off the two guard bits.
-  auto round_even = [](uint64_t x) { return (x + 1 + ((x >> 2) & 1)) >> 2; };
+// Rounds a packed scaled value (integral << 2 | half << 1 | sticky) to the
+// nearest integral, half to even, off the two guard bits.
+ZMIJ_INLINE auto round_even(uint64_t x) noexcept -> uint64_t {
+  return (x + 1 + ((x >> 2) & 1)) >> 2;
+}
+
+// Converts a binary FP number bin_sig * 2**bin_exp to a correctly rounded
+// decimal with exactly `precision` significant digits.
+template <typename Float>
+auto to_decimal(uint64_t bin_sig, int bin_exp, int precision) noexcept
+    -> zmij::dec_fp {
+  using traits = float_traits<Float>;
+  // Choose dec_exp so integral holds the precision digits. bin_exp +
+  // num_sig_bits approximates log2(value).
+  int dec_exp =
+      compute_dec_exp(bin_exp + traits::num_sig_bits) - (precision - 1);
+  uint64_t scaled = scale<Float>(bin_sig, bin_exp, dec_exp);
   long long dec_sig = round_even(scaled);
   if (dec_sig >= pow10s[precision]) {  // One digit too many (overshoot/carry).
-    // Drop one decimal digit and round again, preserving the sticky bit.
+    // Drop one decimal digit and reround from the same guard bits in a single
+    // pass, folding the dropped digit into the sticky bit (idea by Russ Cox).
     dec_sig = round_even(scaled / 10 | (scaled & 1) | (scaled % 10 != 0));
     ++dec_exp;
   }
@@ -1467,8 +1482,9 @@ auto write_scientific(Float value, int precision, char* buffer) noexcept
                                    bin_exp - traits::exp_offset, precision);
   uint64_t sig18 = uint64_t(dec.sig) * uint64_t(pow10s[18 - precision]);
   auto dig = to_digits<64>(sig18 / 100, static_data);
-  return write_scientific_digits<Float>(buffer, dig.digits, unsigned(sig18 % 100),
-                                        precision, dec.exp + precision - 1);
+  return write_scientific_digits<Float>(buffer, dig.digits,
+                                        unsigned(sig18 % 100), precision,
+                                        dec.exp + precision - 1);
 }
 
 template <typename Float>
@@ -1531,7 +1547,7 @@ auto write_general(Float value, int precision, char* buffer) noexcept -> char* {
 
 template <typename Float>
 auto write_fixed(Float value, int precision, char* buffer) noexcept -> char* {
-  assert(precision >= 1 && precision <= 18);
+  assert(precision >= 0 && precision <= 18);
   using traits = float_traits<Float>;
   auto bits = traits::to_bits(value);
   auto bin_exp = traits::get_exp(bits);
@@ -1543,45 +1559,86 @@ auto write_fixed(Float value, int precision, char* buffer) noexcept -> char* {
   bool is_normal = unsigned(bin_exp - 1) < unsigned(traits::exp_mask - 1);
   if (!is_normal) [[ZMIJ_UNLIKELY]] {
     if (bin_exp != 0) return write_inf_nan(buffer, bin_sig != 0);
-    if (bin_sig == 0) {  // zero
-      *buffer = '0';
-      return buffer + 1;
-    }
+    if (bin_sig == 0) return write_zero(buffer, precision);  // e.g. 0.000
     // Subnormal: clz operates on 64 bits, so measure from bit 63.
     int shift = clz(bin_sig) - (63 - traits::num_sig_bits);
     bin_sig <<= shift;  // Move the leading 1 up to the implicit-bit position.
     bin_exp = 1 - shift;
   }
 
-  dec_fp dec = ::to_decimal<Float>(bin_sig | traits::implicit_bit,
-                                   bin_exp - traits::exp_offset, precision);
+  bin_exp -= traits::exp_offset;
+  bin_sig |= traits::implicit_bit;
 
-  uint64_t sig18 = uint64_t(dec.sig) * uint64_t(pow10s[18 - precision]);
+  // Scale to 18 significant digits, keeping guard bits for a later re-round.
+  int dec_exp = compute_dec_exp(bin_exp + traits::num_sig_bits) - 17;
+  uint64_t scaled = scale<Float>(bin_sig, bin_exp, dec_exp);
+  // A one-too-small dec_exp estimate leaves 19 significant digits, so derive
+  // the count (and the exact leading exponent) from the truncated integral.
+  uint64_t integral = scaled >> 2;
+  int num_scaled_digits = 18 + (integral >= uint64_t(pow10s[18]));
+  int lead_exp =
+      dec_exp + num_scaled_digits - 1;  // leading digit's decimal exp
+  int num_req_digits = lead_exp + 1 + precision;
+
+  if (num_req_digits < 1) [[ZMIJ_UNLIKELY]] {
+    // |value| < 10**-precision, so it rounds to 0, or up to 10**-precision iff
+    // |value| > 0.5 * 10**-precision (a tie rounds to 0). A 19-digit scale has
+    // leading digit 1 (< 5), so only the 18-digit case rounds up.
+    char* end = write_zero(buffer, precision);
+    if (num_scaled_digits == 18 && lead_exp == -precision - 1 &&
+        round_even(scaled) > 5 * pow10s[17]) {
+      end[-1] = '1';
+    }
+    return end;
+  }
+
+  // Round to num_digits significant digits from the retained guard bits in one
+  // pass, avoiding a second conversion.
+  int num_digits = num_req_digits < 18 ? num_req_digits : 18;
+  if (num_digits < num_scaled_digits) {
+    // Fold the dropped low digits into the guard bits so the round_even below
+    // is correct; discarding them first would double-round.
+    uint64_t pow = pow10s[num_scaled_digits - num_digits];
+    uint64_t integral = scaled >> 2;
+    uint64_t r = integral % pow;
+    uint64_t half = r >= pow / 2;
+    uint64_t sticky = (r != pow / 2) | ((scaled & 3) != 0);
+    scaled = (integral / pow) << 2 | half << 1 | sticky;
+  }
+  long long sig = round_even(scaled);
+  if (sig >= pow10s[num_digits]) {  // carry to next power of ten
+    ++lead_exp;
+    sig /= 10;
+  }
+
+  // Lay out the num_digits-digit significand as a fixed-point number whose
+  // leading digit has decimal exponent lead_exp, with `precision` fractional
+  // digits (padding with zeros beyond the significant digits).
+  uint64_t sig18 = uint64_t(sig) * uint64_t(pow10s[18 - num_digits]);
   unsigned lo2 = unsigned(sig18 % 100);
   auto dig = to_digits<64>(sig18 / 100, static_data);
-  int num_digits = lo2 ? 18 - (lo2 % 10 == 0) : dig.num_digits;
 
-  int dec_exp = dec.exp + precision - 1;  // Leading digit's decimal exponent.
-  if (dec_exp < 0) {  // Fixed with a leading 0.00...
+  int num_int_digits = lead_exp + 1;
+  int total = num_int_digits + precision;  // significant digits + zero padding
+
+  if (num_int_digits <= 0) {  // |value| < 1: "0." + leading zeros + digits
     buffer[0] = '0';
     buffer[1] = '.';
-    memset(buffer + 2, '0', -dec_exp - 1);  // Zeros between the point and digits.
-    memcpy(buffer + 1 - dec_exp, &dig.digits, 16);
-    memcpy(buffer + 17 - dec_exp, digits2(lo2), 2);
-    return buffer + (1 - dec_exp) + num_digits;
+    memset(buffer + 2, '0', -num_int_digits);
+    char* digits = buffer + 2 - num_int_digits;
+    memcpy(digits, &dig.digits, 16);
+    memcpy(digits + 16, digits2(lo2), 2);
+    return digits + total;
   }
 
   memcpy(buffer, &dig.digits, 16);
   memcpy(buffer + 16, digits2(lo2), 2);
-  int point_pos = dec_exp + 1;
-  if (point_pos >= num_digits) {  // All significant digits are integral.
-    memset(buffer + num_digits, '0', point_pos - num_digits);
-    return buffer + point_pos;
-  }
-  // Open a one-byte gap for the point.
-  memmove(buffer + point_pos + 1, buffer + point_pos, num_digits - point_pos);
-  buffer[point_pos] = '.';
-  return buffer + num_digits + 1;
+  if (total > 18) memset(buffer + 18, '0', total - 18);  // trailing zeros
+  if (precision == 0) return buffer + total;
+  // Open a one-byte gap for the point before the fractional digits.
+  memmove(buffer + num_int_digits + 1, buffer + num_int_digits, precision);
+  buffer[num_int_digits] = '.';
+  return buffer + total + 1;
 }
 
 template auto write(float value, char* buffer) noexcept -> char*;
