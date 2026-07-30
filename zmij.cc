@@ -1331,6 +1331,148 @@ auto to_decimal(uint64_t bin_sig, int bin_exp, int precision) noexcept
   return {dec_sig * pow10s[18 - precision], dec_exp + precision - 1};
 }
 
+// A minimal fixed-capacity binary big integer (little-endian base-2**32 limbs).
+struct bigint {
+  // Widest input is double: bin_sig * 10**precision < 2**53 * 2**60 = 2**113
+  // (bin_sig < 2**53, precision <= 18), left-shifted by up to bin_exp = 971 ->
+  // < 2**1084, i.e. 34 limbs, plus shift_left's provisional top limb.
+  static constexpr int max_limbs = 35;
+  uint32_t limb[max_limbs];
+  int size;  // Number of significant limbs; 0 represents the value zero.
+
+  explicit bigint(uint128_t value) noexcept {
+    uint64_t lo = uint64_t(value), hi = uint64_t(value >> 64);
+    limb[0] = uint32_t(lo);
+    limb[1] = uint32_t(lo >> 32);
+    limb[2] = uint32_t(hi);
+    limb[3] = uint32_t(hi >> 32);
+    size = 4;
+    trim();
+  }
+
+  void trim() noexcept {
+    while (size > 0 && limb[size - 1] == 0) --size;
+  }
+
+  auto bit(int pos) const noexcept -> uint32_t {
+    int w = pos >> 5;
+    return w < size ? (limb[w] >> (pos & 31)) & 1 : 0;
+  }
+
+  // Returns true if any bit strictly below `pos` is set.
+  auto any_below(int pos) const noexcept -> bool {
+    int w = pos >> 5, b = pos & 31;
+    for (int i = 0; i < w && i < size; ++i) {
+      if (limb[i] != 0) return true;
+    }
+    return w < size && (limb[w] & ((uint32_t(1) << b) - 1)) != 0;
+  }
+
+  void increment() noexcept {
+    int i = 0;
+    while (i < size && ++limb[i] == 0) ++i;
+    if (i == size) {
+      assert(size < max_limbs);
+      limb[size++] = 1;  // Carry out into a new top limb.
+    }
+  }
+
+  // Multiplies by 2**bits (exact); requires enough spare limbs.
+  void shift_left(int bits) noexcept {
+    if (size == 0 || bits == 0) return;
+    int words = bits >> 5, rem = bits & 31;
+    assert(size + words + (rem != 0) <= max_limbs);
+    if (rem == 0) {
+      for (int i = size - 1; i >= 0; --i) limb[i + words] = limb[i];
+      size += words;
+    } else {
+      limb[size + words] = limb[size - 1] >> (32 - rem);
+      for (int i = size - 1; i > 0; --i)
+        limb[i + words] = limb[i] << rem | limb[i - 1] >> (32 - rem);
+      limb[words] = limb[0] << rem;
+      size += words + 1;
+    }
+    for (int i = 0; i < words; ++i) limb[i] = 0;
+    trim();
+  }
+
+  // Divides by 2**bits, rounding to nearest with ties to even.
+  void shift_right_round(int bits) noexcept {
+    if (bits == 0) return;  // Dividing by 2**0 is a no-op (and avoids bit(-1)).
+    bool round_bit = bit(bits - 1) != 0;
+    bool sticky = any_below(bits - 1);
+    int words = bits >> 5, rem = bits & 31;
+    if (words >= size) {
+      size = 0;
+    } else if (rem == 0) {
+      for (int i = 0; i < size - words; ++i) limb[i] = limb[i + words];
+      size -= words;
+    } else {
+      int n = size - words;
+      for (int i = 0; i < n - 1; ++i)
+        limb[i] = limb[i + words] >> rem | limb[i + words + 1] << (32 - rem);
+      limb[n - 1] = limb[size - 1] >> rem;
+      size = n;
+      trim();
+    }
+    bool lsb = size > 0 && (limb[0] & 1) != 0;
+    if (round_bit && (sticky || lsb)) increment();
+  }
+
+  // Divides by 10**9 in place and returns the remainder.
+  auto divmod_1e9() noexcept -> uint32_t {
+    uint64_t rem = 0;
+    for (int i = size - 1; i >= 0; --i) {
+      uint64_t cur = rem << 32 | limb[i];
+      limb[i] = uint32_t(cur / 1'000'000'000u);
+      rem = cur % 1'000'000'000u;
+    }
+    trim();
+    return uint32_t(rem);
+  }
+};
+
+// Writes bin_sig * 2**bin_exp in fixed notation with `precision` fractional
+// digits, correctly rounded (ties to even) via exact big-integer arithmetic.
+ZMIJ_INLINE auto write_fixed_big(char* buffer, uint64_t bin_sig, int bin_exp,
+                                 int precision) noexcept -> char* {
+  bigint n(umul128(bin_sig, pow10s[precision]));
+  if (bin_exp >= 0)
+    n.shift_left(bin_exp);
+  else
+    n.shift_right_round(-bin_exp);
+
+  // Emit n's decimal digits (most significant first), 9 per divmod pass.
+  // n <= round(DBL_MAX * 10**18): DBL_MAX has 309 integer digits and precision
+  // adds at most 18 more.
+  char digits[309 + 18];
+  char* dp = digits + sizeof(digits);
+  uint32_t group = n.divmod_1e9();
+  while (n.size != 0) {  // Lower groups keep all 9 digits.
+    for (int k = 0; k < 9; ++k, group /= 10) *--dp = char('0' + group % 10);
+    group = n.divmod_1e9();
+  }
+  do {  // The most significant group drops its leading zeros.
+    *--dp = char('0' + group % 10);
+  } while ((group /= 10) != 0);
+  int num_digits = int(digits + sizeof(digits) - dp);
+
+  // Place the decimal point `precision` digits from the right.
+  if (num_digits > precision) {
+    int num_int_digits = num_digits - precision;
+    memcpy(buffer, dp, num_int_digits);
+    if (precision == 0) return buffer + num_int_digits;
+    buffer[num_int_digits] = '.';
+    memcpy(buffer + num_int_digits + 1, dp + num_int_digits, precision);
+    return buffer + num_int_digits + 1 + precision;
+  }
+  memcpy(buffer, "0.", 2);  // |value| < 1: "0." + leading zeros + digits.
+  int lead_zeros = precision - num_digits;
+  memset(buffer + 2, '0', lead_zeros);
+  memcpy(buffer + 2 + lead_zeros, dp, num_digits);
+  return buffer + 2 + lead_zeros + num_digits;
+}
+
 }  // namespace
 
 namespace zmij {
@@ -1590,9 +1732,12 @@ auto write_fixed(Float value, int precision, char* buffer) noexcept -> char* {
     return end;
   }
 
+  if (num_req_digits > 18) [[ZMIJ_UNLIKELY]]
+    return write_fixed_big(buffer, bin_sig, int(bin_exp), precision);
+
   // Round to num_digits significant digits from the retained guard bits in one
   // pass, avoiding a second conversion.
-  int num_digits = num_req_digits < 18 ? num_req_digits : 18;
+  int num_digits = num_req_digits;
   if (num_digits < num_scaled_digits) {
     // Fold the dropped low digits into the guard bits so the round_even below
     // is correct; discarding them first would double-round.
@@ -1625,7 +1770,7 @@ auto write_fixed(Float value, int precision, char* buffer) noexcept -> char* {
 
   memcpy(buffer, &hi.digits, 16);
   memcpy(buffer + 16, digits2(lo), 2);
-  if (total > 18) memset(buffer + 18, '0', total - 18);  // trailing zeros
+  buffer[18] = '0';  // At most one carry digit (total <= 18, or 19 on carry).
   if (precision == 0) return buffer + total;
   memmove(buffer + num_int_digits + 1, buffer + num_int_digits, precision);
   buffer[num_int_digits] = '.';

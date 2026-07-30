@@ -167,11 +167,12 @@ inline auto write_general(char* out, size_t n, double value,
 }
 
 /// Writes `value` in fixed notation with exactly `precision` digits after the
-/// decimal point (e.g. 1.500), matching printf's %f, to `out` without a null
-/// terminator. Returns a pointer past the last character written; if the
-/// representation exceeds `n` characters, only the first `n` are written.
-/// `precision` must be in [0, 18]; out-of-range values are clamped. Digits
-/// beyond the first 18 significant ones are emitted as zeros.
+/// decimal point (e.g. 1.500), to `out` without a null terminator. The result
+/// is the exact value correctly rounded to the given precision (ties to even),
+/// matching printf's %f for every finite input. Returns a pointer past the last
+/// character written; if the representation exceeds `n` characters, only the
+/// first `n` are written. `precision` must be in [0, 18]; out-of-range values
+/// are clamped.
 inline auto write_fixed(char* out, size_t n, float value,
                         int precision) noexcept -> char* {
   precision = detail::clamp_fixed_precision(precision);
@@ -185,11 +186,12 @@ inline auto write_fixed(char* out, size_t n, float value,
 }
 
 /// Writes `value` in fixed notation with exactly `precision` digits after the
-/// decimal point (e.g. 1.500), matching printf's %f, to `out` without a null
-/// terminator. Returns a pointer past the last character written; if the
-/// representation exceeds `n` characters, only the first `n` are written.
-/// `precision` must be in [0, 18]; out-of-range values are clamped. Digits
-/// beyond the first 18 significant ones are emitted as zeros.
+/// decimal point (e.g. 1.500), to `out` without a null terminator. The result
+/// is the exact value correctly rounded to the given precision (ties to even),
+/// matching printf's %f for every finite input. Returns a pointer past the last
+/// character written; if the representation exceeds `n` characters, only the
+/// first `n` are written. `precision` must be in [0, 18]; out-of-range values
+/// are clamped.
 inline auto write_fixed(char* out, size_t n, double value,
                         int precision) noexcept -> char* {
   precision = detail::clamp_fixed_precision(precision);
