@@ -1158,7 +1158,7 @@ ZMIJ_INLINE auto write_scientific_digits(char* buffer,
   return write_exp<Float>(buffer + num_digits + (num_digits > 1), dec_exp);
 }
 
-struct to_decimal_result {
+struct shortest_decimal {
   long long sig;
   int exp;
   int last_digit = 0;
@@ -1170,7 +1170,7 @@ struct to_decimal_result {
 // representation, where bin_exp = raw_exp - exp_offset.
 template <typename Float, typename UInt>
 ZMIJ_INLINE auto to_decimal(UInt bin_sig, int64_t raw_exp, bool regular,
-                            const data& d) noexcept -> to_decimal_result {
+                            const data& d) noexcept -> shortest_decimal {
   using traits = float_traits<Float>;
   int64_t bin_exp = raw_exp - traits::exp_offset;
   constexpr int num_bits = std::numeric_limits<UInt>::digits;
@@ -1298,16 +1298,20 @@ ZMIJ_INLINE auto round_even(uint64_t x) noexcept -> uint64_t {
   return (x + 1 + ((x >> 2) & 1)) >> 2;
 }
 
+// A value rounded to `precision` significant digits.
+struct precision_decimal {
+  long long sig;  // precision significant digits, zero-padded right to 18.
+  int lead_exp;   // Leading digit's decimal exponent.
+};
+
 // Converts a binary FP number bin_sig * 2**bin_exp to a correctly rounded
-// decimal with exactly `precision` significant digits.
+// decimal with `precision` significant digits.
 template <typename Float>
 auto to_decimal(uint64_t bin_sig, int bin_exp, int precision) noexcept
-    -> zmij::dec_fp {
-  using traits = float_traits<Float>;
-  // Choose dec_exp so integral holds the precision digits. bin_exp +
-  // num_sig_bits approximates log2(value).
-  int dec_exp =
-      compute_dec_exp(bin_exp + traits::num_sig_bits) - (precision - 1);
+    -> precision_decimal {
+  // Choose dec_exp so the scaled integer part (dec_sig) has precision digits.
+  constexpr int num_sig_bits = float_traits<Float>::num_sig_bits;
+  int dec_exp = compute_dec_exp(bin_exp + num_sig_bits) - (precision - 1);
   uint64_t scaled = scale<Float>(bin_sig, bin_exp, dec_exp);
   long long dec_sig = round_even(scaled);
   if (dec_sig >= pow10s[precision]) {  // One digit too many (overshoot/carry).
@@ -1316,7 +1320,7 @@ auto to_decimal(uint64_t bin_sig, int bin_exp, int precision) noexcept
     dec_sig = round_even(scaled / 10 | (scaled & 1) | (scaled % 10 != 0));
     ++dec_exp;
   }
-  return {dec_sig, dec_exp, false};  // Sign is handled by write().
+  return {dec_sig * pow10s[18 - precision], dec_exp + precision - 1};
 }
 
 }  // namespace
@@ -1358,7 +1362,7 @@ auto write(Float value, char* buffer) noexcept -> char* {
   ZMIJ_ASM(("" : "+r"(d)));  // Load constants from memory.
   uint64_t threshold = traits::num_bits == 64 ? d->threshold : uint64_t(1e7);
 
-  to_decimal_result dec;
+  shortest_decimal dec;
   bool is_normal = unsigned(bin_exp - 1) < unsigned(traits::exp_mask - 1);
   if (!is_normal) [[ZMIJ_UNLIKELY]] {
     if (bin_exp != 0) return write_inf_nan(buffer, bin_sig != 0);
@@ -1478,13 +1482,11 @@ auto write_scientific(Float value, int precision, char* buffer) noexcept
     bin_exp = 1 - shift;
   }
 
-  dec_fp dec = ::to_decimal<Float>(bin_sig | traits::implicit_bit,
-                                   bin_exp - traits::exp_offset, precision);
-  uint64_t sig18 = uint64_t(dec.sig) * uint64_t(pow10s[18 - precision]);
-  auto dig = to_digits<64>(sig18 / 100, static_data);
-  return write_scientific_digits<Float>(buffer, dig.digits,
-                                        unsigned(sig18 % 100), precision,
-                                        dec.exp + precision - 1);
+  auto dec = ::to_decimal<Float>(bin_sig | traits::implicit_bit,
+                                 bin_exp - traits::exp_offset, precision);
+  auto digits = to_digits<64>(dec.sig / 100, static_data).digits;
+  return write_scientific_digits<Float>(buffer, digits, unsigned(dec.sig % 100),
+                                        precision, dec.lead_exp);
 }
 
 template <typename Float>
@@ -1511,15 +1513,14 @@ auto write_general(Float value, int precision, char* buffer) noexcept -> char* {
     bin_exp = 1 - shift;
   }
 
-  dec_fp dec = ::to_decimal<Float>(bin_sig | traits::implicit_bit,
-                                   bin_exp - traits::exp_offset, precision);
+  auto dec = ::to_decimal<Float>(bin_sig | traits::implicit_bit,
+                                 bin_exp - traits::exp_offset, precision);
 
-  uint64_t sig18 = uint64_t(dec.sig) * uint64_t(pow10s[18 - precision]);
-  unsigned lo2 = unsigned(sig18 % 100);
-  auto dig = to_digits<64>(sig18 / 100, static_data);
+  unsigned lo2 = unsigned(dec.sig % 100);
+  auto dig = to_digits<64>(dec.sig / 100, static_data);
   int num_digits = lo2 ? 18 - (lo2 % 10 == 0) : dig.num_digits;
 
-  int dec_exp = dec.exp + precision - 1;  // Leading digit's decimal exponent.
+  int dec_exp = dec.lead_exp;  // Leading digit's decimal exponent.
   if (dec_exp < -4 || dec_exp >= precision) {
     return write_scientific_digits<Float>(buffer, dig.digits, lo2, num_digits,
                                           dec_exp);
