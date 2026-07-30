@@ -1456,6 +1456,14 @@ auto write(Float value, char* buffer) noexcept -> char* {
   return write_exp<Float>(buffer, dec_exp);
 }
 
+template <typename Float, typename UInt>
+ZMIJ_INLINE void normalize(UInt& bin_sig, int64_t& bin_exp) noexcept {
+  // clz operates on 64 bits, so measure from bit 63.
+  int shift = clz(bin_sig) - (63 - float_traits<Float>::num_sig_bits);
+  bin_sig <<= shift;
+  bin_exp = 1 - shift;
+}
+
 template <typename Float>
 auto write_scientific(Float value, int precision, char* buffer) noexcept
     -> char* {
@@ -1476,10 +1484,7 @@ auto write_scientific(Float value, int precision, char* buffer) noexcept
       buffer[1] = '.';  // Overwritten by the exponent when precision is 1.
       return write_exp<Float>(buffer + precision + (precision > 1), 0);
     }
-    // Subnormal: clz operates on 64 bits, so measure from bit 63.
-    int shift = clz(bin_sig) - (63 - traits::num_sig_bits);
-    bin_sig <<= shift;  // Move the leading 1 up to the implicit-bit position.
-    bin_exp = 1 - shift;
+    normalize<Float>(bin_sig, bin_exp);
   }
 
   auto dec = ::to_decimal<Float>(bin_sig | traits::implicit_bit,
@@ -1507,10 +1512,7 @@ auto write_general(Float value, int precision, char* buffer) noexcept -> char* {
       *buffer = '0';
       return buffer + 1;
     }
-    // Subnormal: clz operates on 64 bits, so measure from bit 63.
-    int shift = clz(bin_sig) - (63 - traits::num_sig_bits);
-    bin_sig <<= shift;  // Move the leading 1 up to the implicit-bit position.
-    bin_exp = 1 - shift;
+    normalize<Float>(bin_sig, bin_exp);
   }
 
   auto dec = ::to_decimal<Float>(bin_sig | traits::implicit_bit,
@@ -1561,10 +1563,7 @@ auto write_fixed(Float value, int precision, char* buffer) noexcept -> char* {
   if (!is_normal) [[ZMIJ_UNLIKELY]] {
     if (bin_exp != 0) return write_inf_nan(buffer, bin_sig != 0);
     if (bin_sig == 0) return write_zero(buffer, precision);  // e.g. 0.000
-    // Subnormal: clz operates on 64 bits, so measure from bit 63.
-    int shift = clz(bin_sig) - (63 - traits::num_sig_bits);
-    bin_sig <<= shift;  // Move the leading 1 up to the implicit-bit position.
-    bin_exp = 1 - shift;
+    normalize<Float>(bin_sig, bin_exp);
   }
 
   bin_exp -= traits::exp_offset;
@@ -1600,7 +1599,6 @@ auto write_fixed(Float value, int precision, char* buffer) noexcept -> char* {
     // Fold the dropped low digits into the guard bits so the round_even below
     // is correct; discarding them first would double-round.
     uint64_t pow = pow10s[num_scaled_digits - num_digits];
-    uint64_t integral = scaled >> 2;
     uint64_t r = integral % pow;
     uint64_t half = r >= pow / 2;
     uint64_t sticky = (r != pow / 2) | ((scaled & 3) != 0);
