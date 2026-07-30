@@ -1145,14 +1145,14 @@ ZMIJ_INLINE auto write_exp(char* buffer, int dec_exp) noexcept -> char* {
 
 // Writes num_digits significant digits in scientific form, d[.ddd]e±EE
 // (trailing zeros kept), from the top 16 BCD digits `digits` and low two digits
-// lo2. dec_exp is the leading digit's exponent.
+// lo. dec_exp is the leading digit's exponent.
 template <typename Float>
 ZMIJ_INLINE auto write_scientific_digits(char* buffer,
                                          dec_digits<64>::digits_type digits,
-                                         unsigned lo2, int num_digits,
+                                         unsigned lo, int num_digits,
                                          int dec_exp) noexcept -> char* {
   memcpy(buffer + 1, &digits, 16);
-  memcpy(buffer + 17, digits2(lo2), 2);
+  memcpy(buffer + 17, digits2(lo), 2);
   buffer[0] = buffer[1];
   buffer[1] = '.';  // Overwritten by the exponent when num_digits is 1.
   return write_exp<Float>(buffer + num_digits + (num_digits > 1), dec_exp);
@@ -1518,25 +1518,25 @@ auto write_general(Float value, int precision, char* buffer) noexcept -> char* {
   auto dec = ::to_decimal<Float>(bin_sig | traits::implicit_bit,
                                  bin_exp - traits::exp_offset, precision);
 
-  unsigned lo2 = unsigned(dec.sig % 100);
-  auto dig = to_digits<64>(dec.sig / 100, static_data);
-  int num_digits = lo2 ? 18 - (lo2 % 10 == 0) : dig.num_digits;
+  auto lo = unsigned(dec.sig % 100);
+  auto hi = to_digits<64>(dec.sig / 100, static_data);
+  int num_digits = lo ? 18 - (lo % 10 == 0) : hi.num_digits;
 
   int dec_exp = dec.lead_exp;  // Leading digit's decimal exponent.
   if (dec_exp < -4 || dec_exp >= precision) {
-    return write_scientific_digits<Float>(buffer, dig.digits, lo2, num_digits,
+    return write_scientific_digits<Float>(buffer, hi.digits, lo, num_digits,
                                           dec_exp);
   }
 
   if (dec_exp < 0) {  // Fixed with a leading 0.00...: dec_exp in [-4, -1].
     memcpy(buffer, "0.0000", 1 - dec_exp);  // '0', '.', then -dec_exp-1 zeros.
-    memcpy(buffer + 1 - dec_exp, &dig.digits, 16);
-    memcpy(buffer + 17 - dec_exp, digits2(lo2), 2);
+    memcpy(buffer + 1 - dec_exp, &hi.digits, 16);
+    memcpy(buffer + 17 - dec_exp, digits2(lo), 2);
     return buffer + (1 - dec_exp) + num_digits;
   }
 
-  memcpy(buffer, &dig.digits, 16);
-  memcpy(buffer + 16, digits2(lo2), 2);
+  memcpy(buffer, &hi.digits, 16);
+  memcpy(buffer + 16, digits2(lo), 2);
   int point_pos = dec_exp + 1;
   if (point_pos >= num_digits) {  // All significant digits are integral.
     memset(buffer + num_digits, '0', point_pos - num_digits);
@@ -1614,8 +1614,8 @@ auto write_fixed(Float value, int precision, char* buffer) noexcept -> char* {
   // leading digit has decimal exponent lead_exp, with `precision` fractional
   // digits (padding with zeros beyond the significant digits).
   uint64_t sig18 = uint64_t(sig) * uint64_t(pow10s[18 - num_digits]);
-  unsigned lo2 = unsigned(sig18 % 100);
-  auto dig = to_digits<64>(sig18 / 100, static_data);
+  auto lo = unsigned(sig18 % 100);
+  auto hi = to_digits<64>(sig18 / 100, static_data);
 
   int num_int_digits = lead_exp + 1;
   int total = num_int_digits + precision;  // significant digits + zero padding
@@ -1625,13 +1625,13 @@ auto write_fixed(Float value, int precision, char* buffer) noexcept -> char* {
     buffer[1] = '.';
     memset(buffer + 2, '0', -num_int_digits);
     char* digits = buffer + 2 - num_int_digits;
-    memcpy(digits, &dig.digits, 16);
-    memcpy(digits + 16, digits2(lo2), 2);
+    memcpy(digits, &hi.digits, 16);
+    memcpy(digits + 16, digits2(lo), 2);
     return digits + total;
   }
 
-  memcpy(buffer, &dig.digits, 16);
-  memcpy(buffer + 16, digits2(lo2), 2);
+  memcpy(buffer, &hi.digits, 16);
+  memcpy(buffer + 16, digits2(lo), 2);
   if (total > 18) memset(buffer + 18, '0', total - 18);  // trailing zeros
   if (precision == 0) return buffer + total;
   // Open a one-byte gap for the point before the fractional digits.
