@@ -6,6 +6,10 @@
 
 #include <gtest/gtest.h>
 
+#include <stdio.h>
+
+#include <string>
+
 // Include zmij.cc instead of linking with the library to test internal
 // functions.
 #include "zmij.cc"
@@ -689,4 +693,43 @@ TEST(zmij_impl_test, utilities) {
   EXPECT_EQ(count_trailing_nonzeros(0x00090000'09000000ull), 7);
   EXPECT_EQ(count_trailing_nonzeros(0x01000000'00000000ull), 8);
   EXPECT_EQ(count_trailing_nonzeros(0x09000000'00000000ull), 8);
+}
+
+static auto to_string(bigint n) -> std::string {
+  std::string s;
+  while (n.size != 0) {
+    char buf[16];
+    snprintf(buf, sizeof(buf), "%09u", n.divmod_1e9());
+    s.insert(0, buf);
+  }
+  size_t start = s.find_first_not_of('0');  // Remove leading zeros.
+  return start == std::string::npos ? "0" : s.substr(start);
+}
+
+TEST(zmij_impl_test, bigint) {
+  // Construction from a 128-bit value and base-10**9 output.
+  EXPECT_EQ(to_string(bigint(uint128_t(0))), "0");
+  EXPECT_EQ(to_string(bigint(uint128_t(123456789))), "123456789");
+  EXPECT_EQ(to_string(bigint(uint128_t(1000000000000000000ull))),
+            "1000000000000000000");
+
+  // shift_left multiplies by 2**bits (word-aligned and unaligned).
+  bigint a(uint128_t(1));
+  a.shift_left(64);
+  EXPECT_EQ(to_string(a), "18446744073709551616");
+  bigint b(uint128_t(1));
+  b.shift_left(80);
+  EXPECT_EQ(to_string(b), "1208925819614629174706176");
+
+  // shift_right_round divides by 2**bits, rounding ties to even.
+  auto rshift = [](uint64_t value, int bits) {
+    uint128_t scaled = value;
+    bigint n(scaled);
+    n.shift_right_round(bits);
+    return to_string(n);
+  };
+  EXPECT_EQ(rshift(6, 1), "3");  // 3.0 -> 3 (exact)
+  EXPECT_EQ(rshift(5, 1), "2");  // 2.5 -> 2 (tie to even)
+  EXPECT_EQ(rshift(7, 1), "4");  // 3.5 -> 4 (tie to even)
+  EXPECT_EQ(rshift(3, 1), "2");  // 1.5 -> 2 (tie to even)
 }

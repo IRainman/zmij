@@ -1446,30 +1446,30 @@ ZMIJ_INLINE auto write_fixed_big(char* buffer, uint64_t bin_sig, int bin_exp,
   // n <= round(DBL_MAX * 10**18): DBL_MAX has 309 integer digits and precision
   // adds at most 18 more.
   char digits[309 + 18];
-  char* dp = digits + sizeof(digits);
+  char* p = digits + sizeof(digits);
   uint32_t group = n.divmod_1e9();
   while (n.size != 0) {  // Lower groups keep all 9 digits.
-    for (int k = 0; k < 9; ++k, group /= 10) *--dp = char('0' + group % 10);
+    for (int k = 0; k < 9; ++k, group /= 10) *--p = char('0' + group % 10);
     group = n.divmod_1e9();
   }
   do {  // The most significant group drops its leading zeros.
-    *--dp = char('0' + group % 10);
+    *--p = char('0' + group % 10);
   } while ((group /= 10) != 0);
-  int num_digits = int(digits + sizeof(digits) - dp);
+  int num_digits = int(digits + sizeof(digits) - p);
 
   // Place the decimal point `precision` digits from the right.
   if (num_digits > precision) {
     int num_int_digits = num_digits - precision;
-    memcpy(buffer, dp, num_int_digits);
+    memcpy(buffer, p, num_int_digits);
     if (precision == 0) return buffer + num_int_digits;
     buffer[num_int_digits] = '.';
-    memcpy(buffer + num_int_digits + 1, dp + num_int_digits, precision);
+    memcpy(buffer + num_int_digits + 1, p + num_int_digits, precision);
     return buffer + num_int_digits + 1 + precision;
   }
   memcpy(buffer, "0.", 2);  // |value| < 1: "0." + leading zeros + digits.
   int lead_zeros = precision - num_digits;
   memset(buffer + 2, '0', lead_zeros);
-  memcpy(buffer + 2 + lead_zeros, dp, num_digits);
+  memcpy(buffer + 2 + lead_zeros, p, num_digits);
   return buffer + 2 + lead_zeros + num_digits;
 }
 
