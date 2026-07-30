@@ -1578,7 +1578,7 @@ auto write_fixed(Float value, int precision, char* buffer) noexcept -> char* {
   int lead_exp = dec_exp + num_scaled_digits - 1;
   int num_req_digits = lead_exp + 1 + precision;
 
-  if (num_req_digits < 1) [[ZMIJ_UNLIKELY]] {
+  if (num_req_digits <= 0) [[ZMIJ_UNLIKELY]] {
     // |value| < 10**-precision, so it rounds to 0, or up to 10**-precision iff
     // |value| > 0.5 * 10**-precision (a tie rounds to 0). A 19-digit scale has
     // leading digit 1 (< 5), so only the 18-digit case rounds up.
@@ -1619,8 +1619,7 @@ auto write_fixed(Float value, int precision, char* buffer) noexcept -> char* {
   int total = num_int_digits + precision;  // significant digits + zero padding
 
   if (num_int_digits <= 0) {  // |value| < 1: "0." + leading zeros + digits
-    buffer[0] = '0';
-    buffer[1] = '.';
+    memcpy(buffer, "0.", 2);
     memset(buffer + 2, '0', -num_int_digits);
     char* digits = buffer + 2 - num_int_digits;
     memcpy(digits, &hi.digits, 16);
