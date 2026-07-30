@@ -376,7 +376,7 @@ template <typename Float> struct float_traits : std::numeric_limits<Float> {
   }
 };
 
-constexpr long long pow10s[] = {
+constexpr uint64_t pow10s[] = {
     1,
     10,
     100,
@@ -1308,7 +1308,7 @@ ZMIJ_INLINE auto round_even(uint64_t x) noexcept -> uint64_t {
 
 // A value rounded to `precision` significant digits.
 struct precision_decimal {
-  long long sig;  // precision significant digits, zero-padded right to 18.
+  uint64_t sig;  // precision significant digits, zero-padded right to 18.
   int lead_exp;   // Leading digit's decimal exponent.
 };
 
@@ -1321,7 +1321,7 @@ auto to_decimal(uint64_t bin_sig, int bin_exp, int precision) noexcept
   constexpr int num_sig_bits = float_traits<Float>::num_sig_bits;
   int dec_exp = compute_dec_exp(bin_exp + num_sig_bits) - (precision - 1);
   uint64_t scaled = scale<Float>(bin_sig, bin_exp, dec_exp);
-  long long dec_sig = round_even(scaled);
+  uint64_t dec_sig = round_even(scaled);
   if (dec_sig >= pow10s[precision]) {  // One digit too many (overshoot/carry).
     // Drop one decimal digit and reround from the same guard bits in a single
     // pass, folding the dropped digit into the sticky bit (idea by Russ Cox).
@@ -1574,7 +1574,7 @@ auto write_fixed(Float value, int precision, char* buffer) noexcept -> char* {
   // A one-too-small dec_exp estimate leaves 19 significant digits, so derive
   // the count (and the exact leading exponent) from the truncated integral.
   uint64_t integral = scaled >> 2;
-  int num_scaled_digits = 18 + (integral >= uint64_t(pow10s[18]));
+  int num_scaled_digits = 18 + (integral >= pow10s[18]);
   int lead_exp = dec_exp + num_scaled_digits - 1;
   int num_req_digits = lead_exp + 1 + precision;
 
