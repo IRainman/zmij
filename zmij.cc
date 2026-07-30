@@ -1621,10 +1621,10 @@ auto write_fixed(Float value, int precision, char* buffer) noexcept -> char* {
   if (num_int_digits <= 0) {  // |value| < 1: "0." + leading zeros + digits
     memcpy(buffer, "0.", 2);
     memset(buffer + 2, '0', -num_int_digits);
-    char* digits = buffer + 2 - num_int_digits;
-    memcpy(digits, &hi.digits, 16);
-    memcpy(digits + 16, digits2(lo), 2);
-    return digits + total;
+    buffer += 2 - num_int_digits;
+    memcpy(buffer, &hi.digits, 16);
+    memcpy(buffer + 16, digits2(lo), 2);
+    return buffer + total;
   }
 
   memcpy(buffer, &hi.digits, 16);
