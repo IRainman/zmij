@@ -1602,18 +1602,14 @@ auto write_fixed(Float value, int precision, char* buffer) noexcept -> char* {
     uint64_t sticky = (r != pow / 2) | ((scaled & 3) != 0);
     scaled = (integral / pow) << 2 | half << 1 | sticky;
   }
-  long long sig = round_even(scaled);
-  if (sig >= pow10s[num_digits]) {  // carry to next power of ten
+  uint64_t dec_sig = round_even(scaled);
+  if (dec_sig >= pow10s[num_digits]) {  // carry to next power of ten
     ++lead_exp;
-    sig /= 10;
+    dec_sig /= 10;
   }
-
-  // Lay out the num_digits-digit significand as a fixed-point number whose
-  // leading digit has decimal exponent lead_exp, with `precision` fractional
-  // digits (padding with zeros beyond the significant digits).
-  uint64_t sig18 = uint64_t(sig) * uint64_t(pow10s[18 - num_digits]);
-  auto lo = unsigned(sig18 % 100);
-  auto hi = to_digits<64>(sig18 / 100, static_data);
+  dec_sig *= pow10s[18 - num_digits];
+  auto lo = unsigned(dec_sig % 100);
+  auto hi = to_digits<64>(dec_sig / 100, static_data);
 
   int num_int_digits = lead_exp + 1;
   int total = num_int_digits + precision;  // significant digits + zero padding
