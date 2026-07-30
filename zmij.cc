@@ -1143,6 +1143,14 @@ ZMIJ_INLINE auto write_exp(char* buffer, int dec_exp) noexcept -> char* {
   return buffer + 2;
 }
 
+template <typename Float, typename UInt>
+ZMIJ_INLINE void normalize(UInt& bin_sig, int64_t& bin_exp) noexcept {
+  // clz operates on 64 bits, so measure from bit 63.
+  int shift = clz(bin_sig) - (63 - float_traits<Float>::num_sig_bits);
+  bin_sig <<= shift;
+  bin_exp = 1 - shift;
+}
+
 // Writes num_digits significant digits in scientific form, d[.ddd]e±EE
 // (trailing zeros kept), from the top 16 BCD digits `digits` and low two digits
 // lo. dec_exp is the leading digit's exponent.
@@ -1454,14 +1462,6 @@ auto write(Float value, char* buffer) noexcept -> char* {
     return buffer + len;
   }
   return write_exp<Float>(buffer, dec_exp);
-}
-
-template <typename Float, typename UInt>
-ZMIJ_INLINE void normalize(UInt& bin_sig, int64_t& bin_exp) noexcept {
-  // clz operates on 64 bits, so measure from bit 63.
-  int shift = clz(bin_sig) - (63 - float_traits<Float>::num_sig_bits);
-  bin_sig <<= shift;
-  bin_exp = 1 - shift;
 }
 
 template <typename Float>
