@@ -150,6 +150,21 @@ TEST(float_test, write_precision) {
   EXPECT_EQ(to_scientific(std::numeric_limits<float>::max(), 9),
             "3.40282347e+38");
 }
+
+TEST(float_test, write_precision_big) {
+  auto check = [](float value, int precision) {
+    char buf[200];
+    char* end = zmij::write_scientific(buf, sizeof(buf), value, precision);
+    char ref[200];
+    snprintf(ref, sizeof(ref), "%.*e", precision, double(value));
+    EXPECT_EQ(std::string(buf, end), std::string(ref))
+        << "value=" << value << " precision=" << precision;
+  };
+  const float values[] = {1.0f, 0.1f, 1.5f, 3.14159f, 3.4028235e38f, 1.4e-45f};
+  for (float value : values) {
+    for (int precision : {19, 20, 30, 50, 100}) check(value, precision);
+  }
+}
 #endif  // !ZMIJ_C
 
 TEST(double_test, normal) {
@@ -452,6 +467,47 @@ TEST(double_test, write_precision_irregular) {
           << "value=" << value << " precision=" << precision;
     }
   }
+}
+
+TEST(double_test, write_precision_big) {
+  auto check = [](double value, int precision) {
+    char buf[1100];
+    char* end = zmij::write_scientific(buf, sizeof(buf), value, precision);
+    char ref[1100];
+    snprintf(ref, sizeof(ref), "%.*e", precision, value);
+    EXPECT_EQ(std::string(buf, end), std::string(ref))
+        << "value=" << value << " precision=" << precision;
+  };
+  const double values[] = {1.0,
+                           2.0,
+                           0.1,
+                           0.5,
+                           1.5,
+                           1.25,
+                           3.141592653589793,
+                           1234.5678,
+                           1e300,
+                           1e-300,
+                           9.999999999999999e22,
+                           1.7976931348623157e308,   // DBL_MAX
+                           2.2250738585072014e-308,  // smallest normal
+                           5e-324};                  // smallest subnormal
+  for (double value : values) {
+    for (int precision : {19, 20, 25, 30, 40, 60, 100, 300, 767, 800}) {
+      check(value, precision);
+      check(-value, precision);
+    }
+  }
+}
+
+// An undersized buffer truncates the big-precision result without overrunning.
+TEST(double_test, write_precision_big_truncated) {
+  char buf[8];
+  memset(buf, '?', sizeof(buf));
+  char* end = zmij::write_scientific(buf, 5, 1.5, 30);
+  EXPECT_EQ(std::string(buf, end), "1.500");  // first 5 of 1.500...e+00
+  EXPECT_EQ(end, buf + 5);
+  EXPECT_EQ(buf[5], '?');  // no overrun past the requested size
 }
 
 TEST(float_test, write_general) {

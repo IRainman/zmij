@@ -1456,7 +1456,7 @@ struct bigint {
   void mul_pow5(int n) noexcept {
     assert(n >= 0);
     static constexpr uint32_t pow5[] = {
-        1,     5,      25,      125,    625,     3125,    15625,
+        1,     5,      25,      125,     625,      3125,     15625,
         78125, 390625, 1953125, 9765625, 48828125, 244140625};
     while (n >= 13) {  // 5**13 is the largest power of five below 2**32.
       mul(1'220'703'125u);
@@ -1479,61 +1479,6 @@ auto write_digits(bigint& n, char* end) noexcept -> char* {
     *--p = char('0' + group % 10);
   } while ((group /= 10) != 0);
   return p;
-}
-
-// Writes bin_sig * 2**bin_exp in scientific notation with `precision` fractional
-// digits, correctly rounded (ties to even) via exact big-integer arithmetic.
-auto write_scientific_big(char* buffer, uint64_t bin_sig, int bin_exp,
-                          int precision) noexcept -> char* {
-  // Represent the value exactly as an integer n times a power of ten:
-  // value = bin_sig * 2**bin_exp = n * 10**base_exp, so its decimal digits are
-  // n's. For bin_exp < 0 the identity 2**bin_exp = 5**-bin_exp * 10**bin_exp
-  // keeps n integral via a power-of-five multiply.
-  bigint n{umul128(bin_sig, 1)};
-  int base_exp = 0;
-  if (bin_exp >= 0) {
-    n.shift_left(bin_exp);
-  } else {
-    n.mul_pow5(-bin_exp);
-    base_exp = bin_exp;
-  }
-
-  char digits[805];  // n < 2**2668 has at most 804 digits, plus a carry digit.
-  char* p = write_digits(n, digits + sizeof(digits));
-  int num_digits = int(digits + sizeof(digits) - p);
-  int lead_exp = num_digits - 1 + base_exp;
-
-  // Round to num_sig = precision + 1 significant digits, ties to even.
-  int num_sig = precision + 1;
-  if (num_digits > num_sig) {
-    char dropped = p[num_sig];
-    bool round_up = dropped > '5';
-    if (dropped == '5') {  // Tie unless a lower nonzero digit makes it sticky.
-      round_up = (p[num_sig - 1] - '0') & 1;
-      for (char* q = p + num_sig + 1; q < p + num_digits; ++q) {
-        if (*q != '0') { round_up = true; break; }
-      }
-    }
-    num_digits = num_sig;
-    if (round_up) {
-      char* q = p + num_sig - 1;
-      while (*q == '9') *q-- = '0';  // Propagate the carry over trailing nines.
-      if (q < p) {  // 999.. rolled over to 1000.., adding a significant digit.
-        *--p = '1';
-        ++lead_exp;
-      } else {
-        ++*q;
-      }
-    }
-  }
-
-  // Format as d.dddde±XX with `precision` fractional digits, zero-padded.
-  int avail = num_digits < num_sig ? num_digits : num_sig;
-  buffer[0] = p[0];
-  buffer[1] = '.';
-  memcpy(buffer + 2, p + 1, avail - 1);
-  memset(buffer + 1 + avail, '0', precision - (avail - 1));
-  return write_exp<double>(buffer + 2 + precision, lead_exp);
 }
 
 // Writes bin_sig * 2**bin_exp in fixed notation with `precision` fractional
@@ -1701,10 +1646,112 @@ auto write(Float value, char* buffer) noexcept -> char* {
   return write_exp<Float>(buffer, dec_exp);
 }
 
+// Writes `value` in scientific notation with `precision` fractional digits,
+// correctly rounded (ties to even) via exact big-integer arithmetic.
+template <typename Float>
+auto write_scientific_big(Float value, int precision, char* out,
+                          size_t n) noexcept -> char* {
+  using traits = float_traits<Float>;
+  auto bits = traits::to_bits(value);
+  auto bin_exp = traits::get_exp(bits);
+  auto bin_sig = traits::get_sig(bits);
+
+  char* dst = out;
+  char* end = out + n;
+  if (traits::is_negative(bits) && dst < end) *dst++ = '-';
+
+  char digits[805];  // num < 2**2668 has at most 804 digits, plus a carry digit.
+  digits[0] = '0';
+  char* p = digits;
+  int num_sig = precision + 1;  // significant digits requested
+  int avail = 1;                // significant digits available to emit (>= 1)
+  int lead_exp = 0;             // exponent of the leading digit
+
+  bool is_normal = unsigned(bin_exp - 1) < unsigned(traits::exp_mask - 1);
+  if (!is_normal) [[ZMIJ_UNLIKELY]] {
+    if (bin_exp != 0) {  // inf or nan
+      size_t size = size_t(write_inf_nan(digits, bin_sig != 0) - digits);
+      if (size > size_t(end - dst)) size = size_t(end - dst);
+      memcpy(dst, digits, size);
+      return dst + size;
+    }
+    if (bin_sig != 0) normalize<Float>(bin_sig, bin_exp);
+  }
+
+  if (is_normal || bin_sig != 0) {  // finite nonzero
+    // Represent the value exactly as an integer num times a power of ten:
+    // value = sig * 2**e2 = num * 10**base_exp, so its decimal digits are num's.
+    // For e2 < 0 the identity 2**e2 = 5**-e2 * 10**e2 keeps num integral via a
+    // power-of-five multiply.
+    uint64_t sig = bin_sig | traits::implicit_bit;
+    int e2 = int(bin_exp) - traits::exp_offset;
+    bigint num(umul128(sig, 1));
+    int base_exp = 0;
+    if (e2 >= 0) {
+      num.shift_left(e2);
+    } else {
+      num.mul_pow5(-e2);
+      base_exp = e2;
+    }
+
+    p = write_digits(num, digits + sizeof(digits));
+    int num_digits = int(digits + sizeof(digits) - p);
+    lead_exp = num_digits - 1 + base_exp;
+
+    // Round to num_sig significant digits, ties to even.
+    if (num_digits > num_sig) {
+      char dropped = p[num_sig];
+      bool round_up = dropped > '5';
+      // A dropped 5 is a tie unless a lower nonzero digit makes it sticky.
+      if (dropped == '5') {
+        round_up = (p[num_sig - 1] - '0') & 1;
+        for (char* q = p + num_sig + 1; q < p + num_digits; ++q) {
+          if (*q != '0') {
+            round_up = true;
+            break;
+          }
+        }
+      }
+      num_digits = num_sig;
+      if (round_up) {
+        char* q = p + num_sig - 1;
+        // Propagate the carry over trailing nines.
+        while (*q == '9') *q-- = '0';
+        // 999.. rolling over to 1000.. adds a significant digit.
+        if (q < p) {
+          *--p = '1';
+          ++lead_exp;
+        } else {
+          ++*q;
+        }
+      }
+    }
+    avail = num_digits < num_sig ? num_digits : num_sig;
+  }
+
+  // Emit d.ddd...e±XX with `precision` fractional digits, zero-padded, writing
+  // at most `end - dst` characters.
+  if (dst < end) *dst++ = p[0];
+  if (dst < end) *dst++ = '.';
+  size_t frac = size_t(avail - 1);
+  size_t take = frac < size_t(end - dst) ? frac : size_t(end - dst);
+  memcpy(dst, p + 1, take);
+  dst += take;
+  size_t zeros = size_t(precision) - frac;
+  take = zeros < size_t(end - dst) ? zeros : size_t(end - dst);
+  memset(dst, '0', take);
+  dst += take;
+  char exp[8];
+  size_t exp_len = size_t(write_exp<Float>(exp, lead_exp) - exp);
+  take = exp_len < size_t(end - dst) ? exp_len : size_t(end - dst);
+  memcpy(dst, exp, take);
+  return dst + take;
+}
+
 template <typename Float>
 auto write_scientific(Float value, int precision, char* buffer) noexcept
     -> char* {
-  assert(precision >= 1);
+  assert(precision >= 1 && precision <= 18);
   using traits = float_traits<Float>;
   auto bits = traits::to_bits(value);
   auto bin_exp = traits::get_exp(bits);
@@ -1722,11 +1769,6 @@ auto write_scientific(Float value, int precision, char* buffer) noexcept
       return write_exp<Float>(buffer + precision + (precision > 1), 0);
     }
     normalize<Float>(bin_sig, bin_exp);
-  }
-
-  if (precision > 18) [[ZMIJ_UNLIKELY]] {
-    return write_scientific_big(buffer, bin_sig | traits::implicit_bit,
-                                bin_exp - traits::exp_offset, precision);
   }
 
   auto dec = ::to_decimal<Float>(bin_sig | traits::implicit_bit,
@@ -1884,6 +1926,11 @@ template auto write_scientific(float value, int precision,
                                char* buffer) noexcept -> char*;
 template auto write_scientific(double value, int precision,
                                char* buffer) noexcept -> char*;
+
+template auto write_scientific_big(float value, int precision, char* out,
+                                   size_t cap) noexcept -> char*;
+template auto write_scientific_big(double value, int precision, char* out,
+                                   size_t cap) noexcept -> char*;
 
 template auto write_general(float value, int precision, char* buffer) noexcept
     -> char*;

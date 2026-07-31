@@ -12,12 +12,17 @@
 
 namespace zmij {
 namespace detail {
+
 template <typename Float>
 auto write(Float value, char* buffer) noexcept -> char*;
 
 template <typename Float>
 auto write_scientific(Float value, int precision, char* buffer) noexcept
     -> char*;
+
+template <typename Float>
+auto write_scientific_big(Float value, int precision, char* out,
+                          size_t n) noexcept -> char*;
 
 template <typename Float>
 auto write_general(Float value, int precision, char* buffer) noexcept -> char*;
@@ -38,6 +43,7 @@ inline auto clamp_fixed_precision(int precision) noexcept -> int {
   if (precision > 18) return 18;
   return precision;
 }
+
 }  // namespace detail
 
 enum {
@@ -106,11 +112,13 @@ inline auto write(char* out, size_t n, double value) noexcept -> char* {
 /// Writes `value` in scientific format with exactly `precision` significant
 /// digits (e.g. 1.234e+05) to `out` without a null terminator. Returns a
 /// pointer past the last character written; if the representation exceeds `n`
-/// characters, only the first `n` are written. `precision` must be in [1, 18];
-/// out-of-range values are clamped.
+/// characters, only the first `n` are written. `precision` must be at least 1;
+/// values below 1 are clamped to 1.
 inline auto write_scientific(char* out, size_t n, float value,
                              int precision) noexcept -> char* {
-  precision = detail::clamp_precision(precision);
+  if (precision < 1) precision = 1;
+  if (precision > 18)
+    return detail::write_scientific_big(value, precision, out, n);
   if (n >= buffer_sizes<float>::scientific)
     return detail::write_scientific(value, precision, out);
   char buffer[buffer_sizes<float>::scientific];
@@ -123,11 +131,13 @@ inline auto write_scientific(char* out, size_t n, float value,
 /// Writes `value` in scientific format with exactly `precision` significant
 /// digits (e.g. 1.234e+05) to `out` without a null terminator. Returns a
 /// pointer past the last character written; if the representation exceeds `n`
-/// characters, only the first `n` are written. `precision` must be in [1, 18];
-/// out-of-range values are clamped.
+/// characters, only the first `n` are written. `precision` must be at least 1;
+/// values below 1 are clamped to 1.
 inline auto write_scientific(char* out, size_t n, double value,
                              int precision) noexcept -> char* {
-  precision = detail::clamp_precision(precision);
+  if (precision < 1) precision = 1;
+  if (precision > 18)
+    return detail::write_scientific_big(value, precision, out, n);
   if (n >= buffer_sizes<double>::scientific)
     return detail::write_scientific(value, precision, out);
   char buffer[buffer_sizes<double>::scientific];
