@@ -85,14 +85,15 @@ inline auto to_chars(char* first, char* last, double value) -> to_chars_result {
   return {first + size, {}};
 }
 
-/// Writes `value` in the given `fmt` with `precision` digits (fractional digits
-/// for `fixed`, significant digits otherwise) to [`first`, `last`), like
-/// std::to_chars with a format and precision. `precision` must be in the
-/// supported range ([0, 18] for `fixed`, [1, 18] otherwise); otherwise returns
-/// {first, std::errc::invalid_argument} and writes nothing. On success returns
-/// {ptr, std::errc()}; if the output does not fit returns
-/// {last, std::errc::value_too_large} after writing a truncated result to
-/// [`first`, `last`).
+/// Writes `value` to [`first`, `last`) in the given `fmt` with `precision`
+/// digits, like std::to_chars with a format and precision. `precision` counts
+/// fractional digits for `fixed` and significant digits otherwise, and must be
+/// in [0, 18] for `fixed` or [1, 18] otherwise. Returns:
+/// - {ptr, std::errc()} on success, with ptr past the last character written;
+/// - {first, std::errc::invalid_argument} for an out-of-range `precision`,
+///   without writing anything;
+/// - {last, std::errc::value_too_large} if the output does not fit, after
+///   writing a truncated result to [`first`, `last`).
 inline auto to_chars(char* first, char* last, float value, chars_format fmt,
                      int precision) -> to_chars_result {
   return detail::to_chars(first, last, value, fmt, precision);
