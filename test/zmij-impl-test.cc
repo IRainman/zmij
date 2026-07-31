@@ -753,3 +753,24 @@ TEST(zmij_impl_test, bigint_divmod_1e9) {
   EXPECT_EQ(exact.divmod_1e9(), 0u);
   EXPECT_EQ(to_string(exact), "3");
 }
+
+TEST(zmij_impl_test, bigint_mul) {
+  // mul multiplies by a factor below 2**32, carrying across limbs.
+  bigint a = make_bigint(1);
+  a.mul(1'000'000'000u);
+  EXPECT_EQ(to_string(a), "1000000000");
+  bigint b = make_bigint(0xffffffffull);  // Forces a carry into a new limb.
+  b.mul(0xffffffffu);
+  EXPECT_EQ(to_string(b), "18446744065119617025");
+
+  // mul_pow5 multiplies by 5**n across the 5**13 chunk boundary.
+  bigint c = make_bigint(1);
+  c.mul_pow5(1);
+  EXPECT_EQ(to_string(c), "5");
+  bigint d = make_bigint(1);
+  d.mul_pow5(13);
+  EXPECT_EQ(to_string(d), "1220703125");
+  bigint e = make_bigint(1);
+  e.mul_pow5(27);  // 5**27, spanning two full chunks and a remainder.
+  EXPECT_EQ(to_string(e), "7450580596923828125");
+}
