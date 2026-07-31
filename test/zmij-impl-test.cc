@@ -695,14 +695,8 @@ TEST(zmij_impl_test, utilities) {
   EXPECT_EQ(count_trailing_nonzeros(0x09000000'00000000ull), 8);
 }
 
-// Builds a bigint from a 64-bit value; handles both the native __int128 and
-// the fallback uint128 aggregate (which has no integer constructor).
 static auto make_bigint(uint64_t value) -> bigint {
-#if ZMIJ_USE_INT128
-  return bigint(uint128_t(value));
-#else
-  return bigint(uint128_t{0, value});
-#endif
+  return bigint(umul128(value, 1));
 }
 
 static auto to_string(bigint n) -> std::string {
