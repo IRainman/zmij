@@ -695,6 +695,16 @@ TEST(zmij_impl_test, utilities) {
   EXPECT_EQ(count_trailing_nonzeros(0x09000000'00000000ull), 8);
 }
 
+// Builds a bigint from a 64-bit value; handles both the native __int128 and
+// the fallback uint128 aggregate (which has no integer constructor).
+static auto make_bigint(uint64_t value) -> bigint {
+#if ZMIJ_USE_INT128
+  return bigint(uint128_t(value));
+#else
+  return bigint(uint128_t{0, value});
+#endif
+}
+
 static auto to_string(bigint n) -> std::string {
   std::string s;
   while (n.size != 0) {
@@ -708,23 +718,22 @@ static auto to_string(bigint n) -> std::string {
 
 TEST(zmij_impl_test, bigint) {
   // Construction from a 128-bit value and base-10**9 output.
-  EXPECT_EQ(to_string(bigint(uint128_t(0))), "0");
-  EXPECT_EQ(to_string(bigint(uint128_t(123456789))), "123456789");
-  EXPECT_EQ(to_string(bigint(uint128_t(1000000000000000000ull))),
+  EXPECT_EQ(to_string(make_bigint(0)), "0");
+  EXPECT_EQ(to_string(make_bigint(123456789)), "123456789");
+  EXPECT_EQ(to_string(make_bigint(1000000000000000000ull)),
             "1000000000000000000");
 
   // shift_left multiplies by 2**bits (word-aligned and unaligned).
-  bigint a(uint128_t(1));
+  bigint a = make_bigint(1);
   a.shift_left(64);
   EXPECT_EQ(to_string(a), "18446744073709551616");
-  bigint b(uint128_t(1));
+  bigint b = make_bigint(1);
   b.shift_left(80);
   EXPECT_EQ(to_string(b), "1208925819614629174706176");
 
   // shift_right_round divides by 2**bits, rounding ties to even.
   auto rshift = [](uint64_t value, int bits) {
-    uint128_t scaled = value;
-    bigint n(scaled);
+    bigint n = make_bigint(value);
     n.shift_right_round(bits);
     return to_string(n);
   };
