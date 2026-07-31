@@ -1664,20 +1664,19 @@ auto write_scientific_big(double value, int precision, char* out,
   auto raw_exp = traits::get_exp(bits);
   auto bin_sig = traits::get_sig(bits);
 
-  char* dst = out;
   char* end = out + n;
-  if (traits::is_negative(bits) && dst < end) *dst++ = '-';
+  if (traits::is_negative(bits) && out < end) *out++ = '-';
 
   char digits[805];  // num < 2**2668 has at most 804 digits, plus a carry digit.
   digits[0] = '0';
   char* p = digits;
-  int num_avail_digits = 1;  // significant digits to emit (>= 1)
-  int lead_exp = 0;          // exponent of the leading digit
+  int num_digits = 1;  // significant digits to emit (>= 1)
+  int lead_exp = 0;    // exponent of the leading digit
 
   bool is_normal = unsigned(raw_exp - 1) < unsigned(traits::exp_mask - 1);
   if (!is_normal) [[ZMIJ_UNLIKELY]] {
     if (raw_exp != 0)  // inf or nan
-      return write_upto(dst, end, bin_sig != 0 ? "nan" : "inf", 3);
+      return write_upto(out, end, bin_sig != 0 ? "nan" : "inf", 3);
     if (bin_sig != 0) normalize<double>(bin_sig, raw_exp);
   }
 
@@ -1698,27 +1697,27 @@ auto write_scientific_big(double value, int precision, char* out,
     }
 
     p = write_digits(num, digits + sizeof(digits));
-    int num_digits = int(digits + sizeof(digits) - p);
+    num_digits = int(digits + sizeof(digits) - p);
     lead_exp = num_digits - 1 + base_exp;
 
-    int num_req_digits = precision + 1;
-    // Round to num_req_digits significant digits, ties to even.
-    if (num_digits > num_req_digits) {
-      char dropped = p[num_req_digits];
+    int max_digits = precision + 1;
+    // Round to max_digits significant digits, ties to even.
+    if (num_digits > max_digits) {
+      char dropped = p[max_digits];
       bool round_up = dropped > '5';
       // A dropped 5 is a tie unless a lower nonzero digit makes it sticky.
       if (dropped == '5') {
-        round_up = (p[num_req_digits - 1] - '0') & 1;
-        for (char* q = p + num_req_digits + 1; q < p + num_digits; ++q) {
+        round_up = (p[max_digits - 1] - '0') & 1;
+        for (char* q = p + max_digits + 1; q < p + num_digits; ++q) {
           if (*q != '0') {
             round_up = true;
             break;
           }
         }
       }
-      num_digits = num_req_digits;
+      num_digits = max_digits;
       if (round_up) {
-        char* q = p + num_req_digits - 1;
+        char* q = p + max_digits - 1;
         // Propagate the carry over trailing nines.
         while (*q == '9') *q-- = '0';
         // 999.. rolling over to 1000.. adds a significant digit.
@@ -1730,22 +1729,20 @@ auto write_scientific_big(double value, int precision, char* out,
         }
       }
     }
-    num_avail_digits = num_digits;
   }
 
   // Emit d.ddd...e±XX with `precision` fractional digits, zero-padded, writing
-  // at most `end - dst` characters.
-  if (dst < end) *dst++ = p[0];
-  if (dst < end) *dst++ = '.';
-  int num_frac_digits = num_avail_digits - 1;
-  dst = write_upto(dst, end, p + 1, size_t(num_frac_digits));
-  int num_zeros = precision - num_frac_digits;
-  if (num_zeros > end - dst) num_zeros = int(end - dst);
-  memset(dst, '0', num_zeros);
-  dst += num_zeros;
+  // at most `end - out` characters.
+  if (out < end) *out++ = p[0];
+  if (out < end) *out++ = '.';
+  out = write_upto(out, end, p + 1, size_t(num_digits - 1));
+  int num_zeros = precision - num_digits + 1;
+  if (num_zeros > end - out) num_zeros = int(end - out);
+  memset(out, '0', num_zeros);
+  out += num_zeros;
   char exp[8];
   char* exp_end = write_exp<double>(exp, lead_exp);
-  return write_upto(dst, end, exp, size_t(exp_end - exp));
+  return write_upto(out, end, exp, size_t(exp_end - exp));
 }
 
 template <typename Float>
