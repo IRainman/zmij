@@ -701,7 +701,7 @@ static auto make_bigint(uint64_t value) -> bigint {
 
 static auto to_string(bigint n) -> std::string {
   std::string s;
-  while (n.size != 0) {
+  while (n.num_limbs != 0) {
     char buf[16];
     snprintf(buf, sizeof(buf), "%09u", n.divmod_1e9());
     s.insert(0, buf);

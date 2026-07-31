@@ -1338,7 +1338,7 @@ struct bigint {
   // < 2**1084, i.e. 34 limbs, plus shift_left's provisional top limb.
   static constexpr int max_limbs = 35;
   uint32_t limbs[max_limbs];
-  int size;  // Number of significant limbs; 0 represents the value zero.
+  int num_limbs;  // Number of significant limbs; 0 represents the value zero.
 
   explicit bigint(uint128_t value) noexcept {
     uint64_t lo = uint64_t(value), hi = uint64_t(value >> 64);
@@ -1346,53 +1346,53 @@ struct bigint {
     limbs[1] = uint32_t(lo >> 32);
     limbs[2] = uint32_t(hi);
     limbs[3] = uint32_t(hi >> 32);
-    size = 4;
+    num_limbs = 4;
     trim();
   }
 
   void trim() noexcept {
-    while (size > 0 && limbs[size - 1] == 0) --size;
+    while (num_limbs > 0 && limbs[num_limbs - 1] == 0) --num_limbs;
   }
 
   auto bit(int pos) const noexcept -> uint32_t {
     int limb_index = pos >> 5;
-    return limb_index < size ? (limbs[limb_index] >> (pos & 31)) & 1 : 0;
+    return limb_index < num_limbs ? (limbs[limb_index] >> (pos & 31)) & 1 : 0;
   }
 
   // Returns true if any bit strictly below `pos` is set.
   auto any_below(int pos) const noexcept -> bool {
     int limb_index = pos >> 5, b = pos & 31;
-    for (int i = 0; i < limb_index && i < size; ++i) {
+    for (int i = 0; i < limb_index && i < num_limbs; ++i) {
       if (limbs[i] != 0) return true;
     }
-    return limb_index < size &&
+    return limb_index < num_limbs &&
            (limbs[limb_index] & ((uint32_t(1) << b) - 1)) != 0;
   }
 
   void increment() noexcept {
-    for (int i = 0; i < size; ++i) {
+    for (int i = 0; i < num_limbs; ++i) {
       if (++limbs[i] != 0) return;  // No carry out of this limb.
     }
-    assert(size < max_limbs);
-    limbs[size++] = 1;  // Carry into a new top limb.
+    assert(num_limbs < max_limbs);
+    limbs[num_limbs++] = 1;  // Carry into a new top limb.
   }
 
   // Shifts left by `n`; requires enough spare limbs.
   void shift_left(int n) noexcept {
-    if (size == 0) return;
+    if (num_limbs == 0) return;
     int limb_shift = n >> 5, bit_shift = n & 31;
-    assert(size + limb_shift + (bit_shift != 0) <= max_limbs);
+    assert(num_limbs + limb_shift + (bit_shift != 0) <= max_limbs);
     if (bit_shift == 0) {
-      for (int i = size - 1; i >= 0; --i) limbs[i + limb_shift] = limbs[i];
-      size += limb_shift;
+      for (int i = num_limbs - 1; i >= 0; --i) limbs[i + limb_shift] = limbs[i];
+      num_limbs += limb_shift;
     } else {
-      limbs[size + limb_shift] = limbs[size - 1] >> (32 - bit_shift);
-      for (int i = size - 1; i > 0; --i) {
+      limbs[num_limbs + limb_shift] = limbs[num_limbs - 1] >> (32 - bit_shift);
+      for (int i = num_limbs - 1; i > 0; --i) {
         limbs[i + limb_shift] =
             limbs[i] << bit_shift | limbs[i - 1] >> (32 - bit_shift);
       }
       limbs[limb_shift] = limbs[0] << bit_shift;
-      size += limb_shift + 1;
+      num_limbs += limb_shift + 1;
     }
     for (int i = 0; i < limb_shift; ++i) limbs[i] = 0;
     trim();
@@ -1400,34 +1400,34 @@ struct bigint {
 
   // Shifts right by `n`, rounding to nearest with ties to even.
   void shift_right_round(int n) noexcept {
-    if (n == 0) return;  // Dividing by 2**0 is a no-op (and avoids bit(-1)).
+    if (n == 0) return;
     bool round_bit = bit(n - 1) != 0;
     bool sticky = any_below(n - 1);
     int limb_shift = n >> 5, bit_shift = n & 31;
-    if (limb_shift >= size) {
-      size = 0;
+    if (limb_shift >= num_limbs) {
+      num_limbs = 0;
     } else if (bit_shift == 0) {
-      for (int i = 0; i < size - limb_shift; ++i)
+      for (int i = 0; i < num_limbs - limb_shift; ++i)
         limbs[i] = limbs[i + limb_shift];
-      size -= limb_shift;
+      num_limbs -= limb_shift;
     } else {
-      int new_size = size - limb_shift;
+      int new_size = num_limbs - limb_shift;
       for (int i = 0; i < new_size - 1; ++i) {
         uint32_t hi = limbs[i + limb_shift + 1] << (32 - bit_shift);
         limbs[i] = limbs[i + limb_shift] >> bit_shift | hi;
       }
-      limbs[new_size - 1] = limbs[size - 1] >> bit_shift;
-      size = new_size;
+      limbs[new_size - 1] = limbs[num_limbs - 1] >> bit_shift;
+      num_limbs = new_size;
       trim();
     }
-    bool lsb = size > 0 && (limbs[0] & 1) != 0;
+    bool lsb = num_limbs > 0 && (limbs[0] & 1) != 0;
     if (round_bit && (sticky || lsb)) increment();
   }
 
   // Divides by 10**9 in place and returns the remainder.
   auto divmod_1e9() noexcept -> uint32_t {
     uint64_t rem = 0;
-    for (int i = size - 1; i >= 0; --i) {
+    for (int i = num_limbs - 1; i >= 0; --i) {
       uint64_t cur = rem << 32 | limbs[i];
       limbs[i] = uint32_t(cur / 1'000'000'000u);
       rem = cur % 1'000'000'000u;
@@ -1453,7 +1453,7 @@ ZMIJ_INLINE auto write_fixed_big(char* buffer, uint64_t bin_sig, int bin_exp,
   char digits[309 + 18];
   char* p = digits + sizeof(digits);
   uint32_t group = n.divmod_1e9();
-  while (n.size != 0) {  // Lower groups keep all 9 digits.
+  while (n.num_limbs != 0) {  // Lower groups keep all 9 digits.
     for (int k = 0; k < 9; ++k, group /= 10) *--p = char('0' + group % 10);
     group = n.divmod_1e9();
   }
