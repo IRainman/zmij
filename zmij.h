@@ -20,8 +20,7 @@ template <typename Float>
 auto write_scientific(Float value, int precision, char* buffer) noexcept
     -> char*;
 
-template <typename Float>
-auto write_scientific_big(Float value, int precision, char* out,
+auto write_scientific_big(double value, int precision, char* out,
                           size_t n) noexcept -> char*;
 
 template <typename Float>

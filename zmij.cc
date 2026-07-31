@@ -1648,12 +1648,11 @@ auto write(Float value, char* buffer) noexcept -> char* {
 
 // Writes `value` in scientific notation with `precision` fractional digits,
 // correctly rounded (ties to even) via exact big-integer arithmetic.
-template <typename Float>
-auto write_scientific_big(Float value, int precision, char* out,
+auto write_scientific_big(double value, int precision, char* out,
                           size_t n) noexcept -> char* {
-  using traits = float_traits<Float>;
+  using traits = float_traits<double>;
   auto bits = traits::to_bits(value);
-  auto bin_exp = traits::get_exp(bits);
+  auto raw_exp = traits::get_exp(bits);
   auto bin_sig = traits::get_sig(bits);
 
   char* dst = out;
@@ -1667,31 +1666,30 @@ auto write_scientific_big(Float value, int precision, char* out,
   int avail = 1;                // significant digits available to emit (>= 1)
   int lead_exp = 0;             // exponent of the leading digit
 
-  bool is_normal = unsigned(bin_exp - 1) < unsigned(traits::exp_mask - 1);
+  bool is_normal = unsigned(raw_exp - 1) < unsigned(traits::exp_mask - 1);
   if (!is_normal) [[ZMIJ_UNLIKELY]] {
-    if (bin_exp != 0) {  // inf or nan
-      size_t size = size_t(write_inf_nan(digits, bin_sig != 0) - digits);
-      if (size > size_t(end - dst)) size = size_t(end - dst);
-      memcpy(dst, digits, size);
+    if (raw_exp != 0) {  // inf or nan
+      size_t size = size_t(end - dst) < 3 ? size_t(end - dst) : 3;
+      memcpy(dst, bin_sig != 0 ? "nan" : "inf", size);
       return dst + size;
     }
-    if (bin_sig != 0) normalize<Float>(bin_sig, bin_exp);
+    if (bin_sig != 0) normalize<double>(bin_sig, raw_exp);
   }
 
   if (is_normal || bin_sig != 0) {  // finite nonzero
     // Represent the value exactly as an integer num times a power of ten:
-    // value = sig * 2**e2 = num * 10**base_exp, so its decimal digits are num's.
-    // For e2 < 0 the identity 2**e2 = 5**-e2 * 10**e2 keeps num integral via a
-    // power-of-five multiply.
-    uint64_t sig = bin_sig | traits::implicit_bit;
-    int e2 = int(bin_exp) - traits::exp_offset;
-    bigint num(umul128(sig, 1));
+    // value = sig * 2**bin_exp = num * 10**base_exp, so its decimal digits are
+    // num's. For bin_exp < 0 the identity 2**bin_exp = 5**-bin_exp * 10**bin_exp
+    // keeps num integral via a power-of-five multiply.
+    bin_sig |= traits::implicit_bit;
+    int bin_exp = int(raw_exp) - traits::exp_offset;
+    bigint num(umul128(bin_sig, 1));
     int base_exp = 0;
-    if (e2 >= 0) {
-      num.shift_left(e2);
+    if (bin_exp >= 0) {
+      num.shift_left(bin_exp);
     } else {
-      num.mul_pow5(-e2);
-      base_exp = e2;
+      num.mul_pow5(-bin_exp);
+      base_exp = bin_exp;
     }
 
     p = write_digits(num, digits + sizeof(digits));
@@ -1742,7 +1740,7 @@ auto write_scientific_big(Float value, int precision, char* out,
   memset(dst, '0', take);
   dst += take;
   char exp[8];
-  size_t exp_len = size_t(write_exp<Float>(exp, lead_exp) - exp);
+  size_t exp_len = size_t(write_exp<double>(exp, lead_exp) - exp);
   take = exp_len < size_t(end - dst) ? exp_len : size_t(end - dst);
   memcpy(dst, exp, take);
   return dst + take;
@@ -1926,11 +1924,6 @@ template auto write_scientific(float value, int precision,
                                char* buffer) noexcept -> char*;
 template auto write_scientific(double value, int precision,
                                char* buffer) noexcept -> char*;
-
-template auto write_scientific_big(float value, int precision, char* out,
-                                   size_t cap) noexcept -> char*;
-template auto write_scientific_big(double value, int precision, char* out,
-                                   size_t cap) noexcept -> char*;
 
 template auto write_general(float value, int precision, char* buffer) noexcept
     -> char*;
