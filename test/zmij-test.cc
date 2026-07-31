@@ -116,12 +116,12 @@ TEST(float_test, to_chars) {
   EXPECT_EQ(result.ec, std::errc());
   EXPECT_EQ(std::string(buffer, result.ptr), "6.62607e-34");
 
-  // Too small: nothing written, ptr == last, value_too_large.
+  // Too small: truncated output, ptr == last, value_too_large.
   char small[3] = {'?', '?', '?'};
   result = zmij::to_chars(small, small + 2, 1.25f);
   EXPECT_EQ(result.ec, std::errc::value_too_large);
   EXPECT_EQ(result.ptr, small + 2);
-  EXPECT_EQ(std::string(small, sizeof(small)), "???");
+  EXPECT_EQ(std::string(small, sizeof(small)), "1.?");
 }
 
 TEST(float_test, to_chars_format) {
@@ -331,12 +331,12 @@ TEST(double_test, to_chars) {
   EXPECT_EQ(result.ec, std::errc());
   EXPECT_EQ(std::string(buffer, result.ptr), "1.25");
 
-  // Too small: nothing written, ptr == last, value_too_large.
+  // Too small: truncated output, ptr == last, value_too_large.
   char small[3] = {'?', '?', '?'};
   result = zmij::to_chars(small, small + 2, 1.25);
   EXPECT_EQ(result.ec, std::errc::value_too_large);
   EXPECT_EQ(result.ptr, small + 2);
-  EXPECT_EQ(std::string(small, sizeof(small)), "???");
+  EXPECT_EQ(std::string(small, sizeof(small)), "1.?");
 }
 
 TEST(double_test, to_chars_format) {
@@ -364,11 +364,12 @@ TEST(double_test, to_chars_format) {
   EXPECT_EQ(result.ec, std::errc::invalid_argument);
   EXPECT_EQ(std::string(small, sizeof(small)), "????????");
 
-  // Output too small: nothing written, ptr == last, value_too_large.
+  // Output too small: truncated result, ptr == last, value_too_large.
   result =
       zmij::to_chars(small, small + 3, 1234.5678, zmij::chars_format::fixed, 2);
   EXPECT_EQ(result.ec, std::errc::value_too_large);
   EXPECT_EQ(result.ptr, small + 3);
+  EXPECT_EQ(std::string(small, 3), "123");  // "1234.57" truncated to 3 chars
 }
 
 TEST(double_test, to_decimal) {

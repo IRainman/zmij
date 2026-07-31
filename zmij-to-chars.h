@@ -52,8 +52,8 @@ inline auto to_chars(char* first, char* last, Float value, chars_format fmt,
     end = write_general(value, precision, dst);
   if (dst == first) return {end, {}};  // Wrote directly into the output.
   size_t size = size_t(end - buffer);
+  memcpy(first, buffer, size < cap ? size : cap);
   if (size > cap) return {last, std::errc::value_too_large};
-  memcpy(first, buffer, size);
   return {first + size, {}};
 }
 
@@ -62,24 +62,26 @@ inline auto to_chars(char* first, char* last, Float value, chars_format fmt,
 /// Writes the shortest correctly rounded decimal representation of `value` to
 /// [`first`, `last`) without a null terminator, like std::to_chars. On success
 /// returns {ptr, std::errc()} with ptr past the last character written; if the
-/// output is too small returns {last, std::errc::value_too_large} and writes
-/// nothing.
+/// output is too small returns {last, std::errc::value_too_large} after writing
+/// a truncated result to [`first`, `last`).
 inline auto to_chars(char* first, char* last, float value) -> to_chars_result {
   if (size_t(last - first) >= float_buffer_size)
     return {detail::write(value, first), {}};
   char buffer[float_buffer_size];
+  size_t cap = size_t(last - first);
   size_t size = size_t(detail::write(value, buffer) - buffer);
-  if (size > size_t(last - first)) return {last, std::errc::value_too_large};
-  memcpy(first, buffer, size);
+  memcpy(first, buffer, size < cap ? size : cap);
+  if (size > cap) return {last, std::errc::value_too_large};
   return {first + size, {}};
 }
 inline auto to_chars(char* first, char* last, double value) -> to_chars_result {
   if (size_t(last - first) >= double_buffer_size)
     return {detail::write(value, first), {}};
   char buffer[double_buffer_size];
+  size_t cap = size_t(last - first);
   size_t size = size_t(detail::write(value, buffer) - buffer);
-  if (size > size_t(last - first)) return {last, std::errc::value_too_large};
-  memcpy(first, buffer, size);
+  memcpy(first, buffer, size < cap ? size : cap);
+  if (size > cap) return {last, std::errc::value_too_large};
   return {first + size, {}};
 }
 
@@ -89,7 +91,8 @@ inline auto to_chars(char* first, char* last, double value) -> to_chars_result {
 /// supported range ([0, 18] for `fixed`, [1, 18] otherwise); otherwise returns
 /// {first, std::errc::invalid_argument} and writes nothing. On success returns
 /// {ptr, std::errc()}; if the output does not fit returns
-/// {last, std::errc::value_too_large} and writes nothing.
+/// {last, std::errc::value_too_large} after writing a truncated result to
+/// [`first`, `last`).
 inline auto to_chars(char* first, char* last, float value, chars_format fmt,
                      int precision) -> to_chars_result {
   return detail::to_chars(first, last, value, fmt, precision);
