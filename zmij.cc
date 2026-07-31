@@ -1428,9 +1428,9 @@ struct bigint {
   auto divmod_1e9() noexcept -> uint32_t {
     uint64_t rem = 0;
     for (int i = num_limbs - 1; i >= 0; --i) {
-      uint64_t cur = rem << 32 | limbs[i];
-      limbs[i] = uint32_t(cur / 1'000'000'000u);
-      rem = cur % 1'000'000'000u;
+      uint64_t div = rem << 32 | limbs[i];
+      limbs[i] = uint32_t(div / 1'000'000'000u);
+      rem = div % 1'000'000'000u;
     }
     trim();
     return uint32_t(rem);
