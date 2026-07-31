@@ -88,24 +88,26 @@ TEST(float_test, fixed_with_zeros) {
 #if !ZMIJ_C
 // Writes `value` with `precision` significant digits in scientific format.
 static auto to_scientific(float value, int precision) -> std::string {
-  char buffer[zmij::float_precision_buffer_size];
+  char buffer[zmij::buffer_sizes<float>::scientific];
   return {buffer,
           zmij::write_scientific(buffer, sizeof(buffer), value, precision)};
 }
 static auto to_scientific(double value, int precision) -> std::string {
-  char buffer[zmij::double_precision_buffer_size];
+  char buffer[zmij::buffer_sizes<double>::scientific];
   return {buffer,
           zmij::write_scientific(buffer, sizeof(buffer), value, precision)};
 }
 
 // Writes `value` with up to `precision` significant digits in general format.
 static auto to_general(float value, int precision) -> std::string {
-  char buffer[zmij::float_precision_buffer_size];
-  return {buffer, zmij::write_general(buffer, sizeof(buffer), value, precision)};
+  char buffer[zmij::buffer_sizes<float>::scientific];
+  return {buffer,
+          zmij::write_general(buffer, sizeof(buffer), value, precision)};
 }
 static auto to_general(double value, int precision) -> std::string {
-  char buffer[zmij::double_precision_buffer_size];
-  return {buffer, zmij::write_general(buffer, sizeof(buffer), value, precision)};
+  char buffer[zmij::buffer_sizes<double>::scientific];
+  return {buffer,
+          zmij::write_general(buffer, sizeof(buffer), value, precision)};
 }
 
 TEST(float_test, to_chars) {
@@ -123,7 +125,7 @@ TEST(float_test, to_chars) {
 }
 
 TEST(float_test, to_chars_format) {
-  char buffer[zmij::float_fixed_buffer_size];
+  char buffer[zmij::buffer_sizes<float>::fixed];
   auto result = zmij::to_chars(buffer, buffer + sizeof(buffer), 1.5f,
                                zmij::chars_format::scientific, 2);
   EXPECT_EQ(result.ec, std::errc());
@@ -338,9 +340,10 @@ TEST(double_test, to_chars) {
 }
 
 TEST(double_test, to_chars_format) {
-  char buffer[zmij::double_fixed_buffer_size];
+  char buffer[zmij::buffer_sizes<double>::fixed];
   auto fmt = [&](zmij::chars_format f, int precision, double value) {
-    auto r = zmij::to_chars(buffer, buffer + sizeof(buffer), value, f, precision);
+    auto r =
+        zmij::to_chars(buffer, buffer + sizeof(buffer), value, f, precision);
     EXPECT_EQ(r.ec, std::errc());
     return std::string(buffer, r.ptr);
   };
@@ -362,8 +365,8 @@ TEST(double_test, to_chars_format) {
   EXPECT_EQ(std::string(small, sizeof(small)), "????????");
 
   // Output too small: nothing written, ptr == last, value_too_large.
-  result = zmij::to_chars(small, small + 3, 1234.5678,
-                          zmij::chars_format::fixed, 2);
+  result =
+      zmij::to_chars(small, small + 3, 1234.5678, zmij::chars_format::fixed, 2);
   EXPECT_EQ(result.ec, std::errc::value_too_large);
   EXPECT_EQ(result.ptr, small + 3);
 }
@@ -452,9 +455,9 @@ TEST(double_test, write_precision_irregular) {
 
 TEST(float_test, write_general) {
   EXPECT_EQ(to_general(1.5f, 6), "1.5");
-  EXPECT_EQ(to_general(0.0001f, 6), "0.0001");   // exp10 == -4 -> fixed
-  EXPECT_EQ(to_general(0.00001f, 6), "1e-05");   // exp10 == -5 -> scientific
-  EXPECT_EQ(to_general(-1.5f, 6), "-1.5");       // sign preserved
+  EXPECT_EQ(to_general(0.0001f, 6), "0.0001");  // exp10 == -4 -> fixed
+  EXPECT_EQ(to_general(0.00001f, 6), "1e-05");  // exp10 == -5 -> scientific
+  EXPECT_EQ(to_general(-1.5f, 6), "-1.5");      // sign preserved
   EXPECT_EQ(to_general(std::numeric_limits<float>::denorm_min(), 1),
             "1e-45");  // subnormal path
 }
@@ -464,9 +467,10 @@ TEST(double_test, write_general) {
   EXPECT_EQ(to_general(1.5, 6), "1.5");
   EXPECT_EQ(to_general(100.0, 6), "100");
   EXPECT_EQ(to_general(123456.0, 6), "123456");
-  EXPECT_EQ(to_general(0.0001, 6), "0.0001");         // exp10 == -4 -> fixed
-  EXPECT_EQ(to_general(0.00001, 6), "1e-05");         // exp10 == -5 -> scientific
-  EXPECT_EQ(to_general(1234567.0, 6), "1.23457e+06");  // exp10 == precision -> sci
+  EXPECT_EQ(to_general(0.0001, 6), "0.0001");  // exp10 == -4 -> fixed
+  EXPECT_EQ(to_general(0.00001, 6), "1e-05");  // exp10 == -5 -> scientific
+  EXPECT_EQ(to_general(1234567.0, 6),
+            "1.23457e+06");  // exp10 == precision -> sci
 
   // Trailing zeros are trimmed, and the point with them.
   EXPECT_EQ(to_general(1.2000, 6), "1.2");

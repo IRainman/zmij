@@ -30,6 +30,35 @@ enum class chars_format {
   general = 3,
 };
 
+namespace detail {
+
+template <typename Float>
+inline auto to_chars(char* first, char* last, Float value, chars_format fmt,
+                     int precision) -> to_chars_result {
+  int min_precision = fmt == chars_format::fixed ? 0 : 1;
+  if (precision < min_precision || precision > 18)
+    return {first, std::errc::invalid_argument};
+  size_t cap = size_t(last - first);
+  size_t need = fmt == chars_format::fixed ? buffer_sizes<Float>::fixed
+                                           : buffer_sizes<Float>::scientific;
+  char buffer[buffer_sizes<Float>::fixed];
+  char* dst = cap >= need ? first : buffer;
+  char* end;
+  if (fmt == chars_format::fixed)
+    end = write_fixed(value, precision, dst);
+  else if (fmt == chars_format::scientific)
+    end = write_scientific(value, precision, dst);
+  else
+    end = write_general(value, precision, dst);
+  if (dst == first) return {end, {}};  // Wrote directly into the output.
+  size_t size = size_t(end - buffer);
+  if (size > cap) return {last, std::errc::value_too_large};
+  memcpy(first, buffer, size);
+  return {first + size, {}};
+}
+
+}  // namespace detail
+
 /// Writes the shortest correctly rounded decimal representation of `value` to
 /// [`first`, `last`) without a null terminator, like std::to_chars. On success
 /// returns {ptr, std::errc()} with ptr past the last character written; if the
@@ -63,55 +92,11 @@ inline auto to_chars(char* first, char* last, double value) -> to_chars_result {
 /// {last, std::errc::value_too_large} and writes nothing.
 inline auto to_chars(char* first, char* last, float value, chars_format fmt,
                      int precision) -> to_chars_result {
-  int min_precision = fmt == chars_format::fixed ? 0 : 1;
-  if (precision < min_precision || precision > 18)
-    return {first, std::errc::invalid_argument};
-  size_t cap = size_t(last - first);
-  char buffer[float_fixed_buffer_size];
-  char* end;
-  if (fmt == chars_format::fixed) {
-    if (cap >= float_fixed_buffer_size)
-      return {detail::write_fixed(value, precision, first), {}};
-    end = detail::write_fixed(value, precision, buffer);
-  } else if (fmt == chars_format::scientific) {
-    if (cap >= float_precision_buffer_size)
-      return {detail::write_scientific(value, precision, first), {}};
-    end = detail::write_scientific(value, precision, buffer);
-  } else {
-    if (cap >= float_precision_buffer_size)
-      return {detail::write_general(value, precision, first), {}};
-    end = detail::write_general(value, precision, buffer);
-  }
-  size_t size = size_t(end - buffer);
-  if (size > cap) return {last, std::errc::value_too_large};
-  memcpy(first, buffer, size);
-  return {first + size, {}};
+  return detail::to_chars(first, last, value, fmt, precision);
 }
 inline auto to_chars(char* first, char* last, double value, chars_format fmt,
                      int precision) -> to_chars_result {
-  int min_precision = fmt == chars_format::fixed ? 0 : 1;
-  if (precision < min_precision || precision > 18)
-    return {first, std::errc::invalid_argument};
-  size_t cap = size_t(last - first);
-  char buffer[double_fixed_buffer_size];
-  char* end;
-  if (fmt == chars_format::fixed) {
-    if (cap >= double_fixed_buffer_size)
-      return {detail::write_fixed(value, precision, first), {}};
-    end = detail::write_fixed(value, precision, buffer);
-  } else if (fmt == chars_format::scientific) {
-    if (cap >= double_precision_buffer_size)
-      return {detail::write_scientific(value, precision, first), {}};
-    end = detail::write_scientific(value, precision, buffer);
-  } else {
-    if (cap >= double_precision_buffer_size)
-      return {detail::write_general(value, precision, first), {}};
-    end = detail::write_general(value, precision, buffer);
-  }
-  size_t size = size_t(end - buffer);
-  if (size > cap) return {last, std::errc::value_too_large};
-  memcpy(first, buffer, size);
-  return {first + size, {}};
+  return detail::to_chars(first, last, value, fmt, precision);
 }
 
 }  // namespace zmij
