@@ -1337,43 +1337,43 @@ struct bigint {
   // (bin_sig < 2**53, precision <= 18), left-shifted by up to bin_exp = 971 ->
   // < 2**1084, i.e. 34 limbs, plus shift_left's provisional top limb.
   static constexpr int max_limbs = 35;
-  uint32_t limb[max_limbs];
+  uint32_t limbs[max_limbs];
   int size;  // Number of significant limbs; 0 represents the value zero.
 
   explicit bigint(uint128_t value) noexcept {
     uint64_t lo = uint64_t(value), hi = uint64_t(value >> 64);
-    limb[0] = uint32_t(lo);
-    limb[1] = uint32_t(lo >> 32);
-    limb[2] = uint32_t(hi);
-    limb[3] = uint32_t(hi >> 32);
+    limbs[0] = uint32_t(lo);
+    limbs[1] = uint32_t(lo >> 32);
+    limbs[2] = uint32_t(hi);
+    limbs[3] = uint32_t(hi >> 32);
     size = 4;
     trim();
   }
 
   void trim() noexcept {
-    while (size > 0 && limb[size - 1] == 0) --size;
+    while (size > 0 && limbs[size - 1] == 0) --size;
   }
 
   auto bit(int pos) const noexcept -> uint32_t {
     int w = pos >> 5;
-    return w < size ? (limb[w] >> (pos & 31)) & 1 : 0;
+    return w < size ? (limbs[w] >> (pos & 31)) & 1 : 0;
   }
 
   // Returns true if any bit strictly below `pos` is set.
   auto any_below(int pos) const noexcept -> bool {
     int w = pos >> 5, b = pos & 31;
     for (int i = 0; i < w && i < size; ++i) {
-      if (limb[i] != 0) return true;
+      if (limbs[i] != 0) return true;
     }
-    return w < size && (limb[w] & ((uint32_t(1) << b) - 1)) != 0;
+    return w < size && (limbs[w] & ((uint32_t(1) << b) - 1)) != 0;
   }
 
   void increment() noexcept {
     int i = 0;
-    while (i < size && ++limb[i] == 0) ++i;
+    while (i < size && ++limbs[i] == 0) ++i;
     if (i == size) {
       assert(size < max_limbs);
-      limb[size++] = 1;  // Carry out into a new top limb.
+      limbs[size++] = 1;  // Carry out into a new top limb.
     }
   }
 
@@ -1383,16 +1383,16 @@ struct bigint {
     int words = bits >> 5, rem = bits & 31;
     assert(size + words + (rem != 0) <= max_limbs);
     if (rem == 0) {
-      for (int i = size - 1; i >= 0; --i) limb[i + words] = limb[i];
+      for (int i = size - 1; i >= 0; --i) limbs[i + words] = limbs[i];
       size += words;
     } else {
-      limb[size + words] = limb[size - 1] >> (32 - rem);
+      limbs[size + words] = limbs[size - 1] >> (32 - rem);
       for (int i = size - 1; i > 0; --i)
-        limb[i + words] = limb[i] << rem | limb[i - 1] >> (32 - rem);
-      limb[words] = limb[0] << rem;
+        limbs[i + words] = limbs[i] << rem | limbs[i - 1] >> (32 - rem);
+      limbs[words] = limbs[0] << rem;
       size += words + 1;
     }
-    for (int i = 0; i < words; ++i) limb[i] = 0;
+    for (int i = 0; i < words; ++i) limbs[i] = 0;
     trim();
   }
 
@@ -1405,17 +1405,17 @@ struct bigint {
     if (words >= size) {
       size = 0;
     } else if (rem == 0) {
-      for (int i = 0; i < size - words; ++i) limb[i] = limb[i + words];
+      for (int i = 0; i < size - words; ++i) limbs[i] = limbs[i + words];
       size -= words;
     } else {
       int n = size - words;
       for (int i = 0; i < n - 1; ++i)
-        limb[i] = limb[i + words] >> rem | limb[i + words + 1] << (32 - rem);
-      limb[n - 1] = limb[size - 1] >> rem;
+        limbs[i] = limbs[i + words] >> rem | limbs[i + words + 1] << (32 - rem);
+      limbs[n - 1] = limbs[size - 1] >> rem;
       size = n;
       trim();
     }
-    bool lsb = size > 0 && (limb[0] & 1) != 0;
+    bool lsb = size > 0 && (limbs[0] & 1) != 0;
     if (round_bit && (sticky || lsb)) increment();
   }
 
@@ -1423,8 +1423,8 @@ struct bigint {
   auto divmod_1e9() noexcept -> uint32_t {
     uint64_t rem = 0;
     for (int i = size - 1; i >= 0; --i) {
-      uint64_t cur = rem << 32 | limb[i];
-      limb[i] = uint32_t(cur / 1'000'000'000u);
+      uint64_t cur = rem << 32 | limbs[i];
+      limbs[i] = uint32_t(cur / 1'000'000'000u);
       rem = cur % 1'000'000'000u;
     }
     trim();
