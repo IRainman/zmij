@@ -1309,7 +1309,7 @@ ZMIJ_INLINE auto round_even(uint64_t x) noexcept -> uint64_t {
 // A value rounded to `precision` significant digits.
 struct precision_decimal {
   uint64_t sig;  // precision significant digits, zero-padded right to 18.
-  int lead_exp;   // Leading digit's decimal exponent.
+  int lead_exp;  // Leading digit's decimal exponent.
 };
 
 // Converts a binary FP number bin_sig * 2**bin_exp to a correctly rounded
@@ -1355,17 +1355,18 @@ struct bigint {
   }
 
   auto bit(int pos) const noexcept -> uint32_t {
-    int w = pos >> 5;
-    return w < size ? (limbs[w] >> (pos & 31)) & 1 : 0;
+    int limb_index = pos >> 5;
+    return limb_index < size ? (limbs[limb_index] >> (pos & 31)) & 1 : 0;
   }
 
   // Returns true if any bit strictly below `pos` is set.
   auto any_below(int pos) const noexcept -> bool {
-    int w = pos >> 5, b = pos & 31;
-    for (int i = 0; i < w && i < size; ++i) {
+    int limb_index = pos >> 5, b = pos & 31;
+    for (int i = 0; i < limb_index && i < size; ++i) {
       if (limbs[i] != 0) return true;
     }
-    return w < size && (limbs[w] & ((uint32_t(1) << b) - 1)) != 0;
+    return limb_index < size &&
+           (limbs[limb_index] & ((uint32_t(1) << b) - 1)) != 0;
   }
 
   void increment() noexcept {
@@ -1376,42 +1377,47 @@ struct bigint {
     limbs[size++] = 1;  // Carry into a new top limb.
   }
 
-  // Shifts left by `bits`; requires enough spare limbs.
-  void shift_left(int bits) noexcept {
+  // Shifts left by `n`; requires enough spare limbs.
+  void shift_left(int n) noexcept {
     if (size == 0) return;
-    int words = bits >> 5, rem = bits & 31;
-    assert(size + words + (rem != 0) <= max_limbs);
-    if (rem == 0) {
-      for (int i = size - 1; i >= 0; --i) limbs[i + words] = limbs[i];
-      size += words;
+    int limb_shift = n >> 5, bit_shift = n & 31;
+    assert(size + limb_shift + (bit_shift != 0) <= max_limbs);
+    if (bit_shift == 0) {
+      for (int i = size - 1; i >= 0; --i) limbs[i + limb_shift] = limbs[i];
+      size += limb_shift;
     } else {
-      limbs[size + words] = limbs[size - 1] >> (32 - rem);
-      for (int i = size - 1; i > 0; --i)
-        limbs[i + words] = limbs[i] << rem | limbs[i - 1] >> (32 - rem);
-      limbs[words] = limbs[0] << rem;
-      size += words + 1;
+      limbs[size + limb_shift] = limbs[size - 1] >> (32 - bit_shift);
+      for (int i = size - 1; i > 0; --i) {
+        limbs[i + limb_shift] =
+            limbs[i] << bit_shift | limbs[i - 1] >> (32 - bit_shift);
+      }
+      limbs[limb_shift] = limbs[0] << bit_shift;
+      size += limb_shift + 1;
     }
-    for (int i = 0; i < words; ++i) limbs[i] = 0;
+    for (int i = 0; i < limb_shift; ++i) limbs[i] = 0;
     trim();
   }
 
-  // Shifts right by `bits`, rounding to nearest with ties to even.
-  void shift_right_round(int bits) noexcept {
-    if (bits == 0) return;  // Dividing by 2**0 is a no-op (and avoids bit(-1)).
-    bool round_bit = bit(bits - 1) != 0;
-    bool sticky = any_below(bits - 1);
-    int words = bits >> 5, rem = bits & 31;
-    if (words >= size) {
+  // Shifts right by `n`, rounding to nearest with ties to even.
+  void shift_right_round(int n) noexcept {
+    if (n == 0) return;  // Dividing by 2**0 is a no-op (and avoids bit(-1)).
+    bool round_bit = bit(n - 1) != 0;
+    bool sticky = any_below(n - 1);
+    int limb_shift = n >> 5, bit_shift = n & 31;
+    if (limb_shift >= size) {
       size = 0;
-    } else if (rem == 0) {
-      for (int i = 0; i < size - words; ++i) limbs[i] = limbs[i + words];
-      size -= words;
+    } else if (bit_shift == 0) {
+      for (int i = 0; i < size - limb_shift; ++i)
+        limbs[i] = limbs[i + limb_shift];
+      size -= limb_shift;
     } else {
-      int n = size - words;
-      for (int i = 0; i < n - 1; ++i)
-        limbs[i] = limbs[i + words] >> rem | limbs[i + words + 1] << (32 - rem);
-      limbs[n - 1] = limbs[size - 1] >> rem;
-      size = n;
+      int new_size = size - limb_shift;
+      for (int i = 0; i < new_size - 1; ++i) {
+        uint32_t hi = limbs[i + limb_shift + 1] << (32 - bit_shift);
+        limbs[i] = limbs[i + limb_shift] >> bit_shift | hi;
+      }
+      limbs[new_size - 1] = limbs[size - 1] >> bit_shift;
+      size = new_size;
       trim();
     }
     bool lsb = size > 0 && (limbs[0] & 1) != 0;
