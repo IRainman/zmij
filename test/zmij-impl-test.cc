@@ -736,3 +736,20 @@ TEST(zmij_impl_test, bigint) {
   EXPECT_EQ(rshift(7, 1), "4");  // 3.5 -> 4 (tie to even)
   EXPECT_EQ(rshift(3, 1), "2");  // 1.5 -> 2 (tie to even)
 }
+
+TEST(zmij_impl_test, bigint_divmod_1e9) {
+  // Returns value % 10**9 and leaves value / 10**9 in place.
+  bigint n = make_bigint(123456789012345678ull);
+  EXPECT_EQ(n.divmod_1e9(), 12345678u);  // Low 9 digits.
+  EXPECT_EQ(to_string(n), "123456789");  // Remaining high digits.
+
+  // A value below 10**9 becomes empty, returning the value itself.
+  bigint small = make_bigint(42);
+  EXPECT_EQ(small.divmod_1e9(), 42u);
+  EXPECT_EQ(small.num_limbs, 0);
+
+  // An exact multiple of 10**9 yields a zero remainder.
+  bigint exact = make_bigint(3000000000ull);
+  EXPECT_EQ(exact.divmod_1e9(), 0u);
+  EXPECT_EQ(to_string(exact), "3");
+}
