@@ -1369,17 +1369,16 @@ struct bigint {
   }
 
   void increment() noexcept {
-    int i = 0;
-    while (i < size && ++limbs[i] == 0) ++i;
-    if (i == size) {
-      assert(size < max_limbs);
-      limbs[size++] = 1;  // Carry out into a new top limb.
+    for (int i = 0; i < size; ++i) {
+      if (++limbs[i] != 0) return;  // No carry out of this limb.
     }
+    assert(size < max_limbs);
+    limbs[size++] = 1;  // Carry into a new top limb.
   }
 
-  // Multiplies by 2**bits (exact); requires enough spare limbs.
+  // Shifts left by `bits`; requires enough spare limbs.
   void shift_left(int bits) noexcept {
-    if (size == 0 || bits == 0) return;
+    if (size == 0) return;
     int words = bits >> 5, rem = bits & 31;
     assert(size + words + (rem != 0) <= max_limbs);
     if (rem == 0) {
@@ -1396,7 +1395,7 @@ struct bigint {
     trim();
   }
 
-  // Divides by 2**bits, rounding to nearest with ties to even.
+  // Shifts right by `bits`, rounding to nearest with ties to even.
   void shift_right_round(int bits) noexcept {
     if (bits == 0) return;  // Dividing by 2**0 is a no-op (and avoids bit(-1)).
     bool round_bit = bit(bits - 1) != 0;
