@@ -44,10 +44,10 @@ inline auto to_chars(char* first, char* last, Float value, chars_format fmt,
   char buffer[buffer_sizes<Float>::fixed];
   char* dst = cap >= need ? first : buffer;
   char* end;
-  if (fmt == chars_format::fixed)
-    end = write_fixed(value, precision, dst);
-  else if (fmt == chars_format::scientific)
+  if (fmt == chars_format::scientific)
     end = write_scientific(value, precision, dst);
+  else if (fmt == chars_format::fixed)
+    end = write_fixed(value, precision, dst);
   else
     end = write_general(value, precision, dst);
   if (dst == first) return {end, {}};  // Wrote directly into the output.
