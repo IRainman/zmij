@@ -1115,6 +1115,15 @@ auto write_inf_nan(char* buffer, bool is_nan) noexcept -> char* {
   return memcpy(buffer, is_nan ? "nan" : "inf", 4), buffer + 3;
 }
 
+// Copies at most `end - dst` bytes of `src[0..n)` to `dst`, returning the end
+// of the written range.
+ZMIJ_INLINE auto write_upto(char* dst, char* end, const char* src,
+                           size_t n) noexcept -> char* {
+  size_t take = n < size_t(end - dst) ? n : size_t(end - dst);
+  memcpy(dst, src, take);
+  return dst + take;
+}
+
 // Writes zero in fixed notation, e.g. "0.000" (or "0" when precision is 0).
 ZMIJ_INLINE auto write_zero(char* buffer, int precision) noexcept -> char* {
   *buffer++ = '0';
@@ -1662,17 +1671,13 @@ auto write_scientific_big(double value, int precision, char* out,
   char digits[805];  // num < 2**2668 has at most 804 digits, plus a carry digit.
   digits[0] = '0';
   char* p = digits;
-  int num_sig = precision + 1;  // significant digits requested
-  int avail = 1;                // significant digits available to emit (>= 1)
-  int lead_exp = 0;             // exponent of the leading digit
+  int num_avail_digits = 1;  // significant digits to emit (>= 1)
+  int lead_exp = 0;          // exponent of the leading digit
 
   bool is_normal = unsigned(raw_exp - 1) < unsigned(traits::exp_mask - 1);
   if (!is_normal) [[ZMIJ_UNLIKELY]] {
-    if (raw_exp != 0) {  // inf or nan
-      size_t size = size_t(end - dst) < 3 ? size_t(end - dst) : 3;
-      memcpy(dst, bin_sig != 0 ? "nan" : "inf", size);
-      return dst + size;
-    }
+    if (raw_exp != 0)  // inf or nan
+      return write_upto(dst, end, bin_sig != 0 ? "nan" : "inf", 3);
     if (bin_sig != 0) normalize<double>(bin_sig, raw_exp);
   }
 
@@ -1696,23 +1701,24 @@ auto write_scientific_big(double value, int precision, char* out,
     int num_digits = int(digits + sizeof(digits) - p);
     lead_exp = num_digits - 1 + base_exp;
 
-    // Round to num_sig significant digits, ties to even.
-    if (num_digits > num_sig) {
-      char dropped = p[num_sig];
+    int num_req_digits = precision + 1;
+    // Round to num_req_digits significant digits, ties to even.
+    if (num_digits > num_req_digits) {
+      char dropped = p[num_req_digits];
       bool round_up = dropped > '5';
       // A dropped 5 is a tie unless a lower nonzero digit makes it sticky.
       if (dropped == '5') {
-        round_up = (p[num_sig - 1] - '0') & 1;
-        for (char* q = p + num_sig + 1; q < p + num_digits; ++q) {
+        round_up = (p[num_req_digits - 1] - '0') & 1;
+        for (char* q = p + num_req_digits + 1; q < p + num_digits; ++q) {
           if (*q != '0') {
             round_up = true;
             break;
           }
         }
       }
-      num_digits = num_sig;
+      num_digits = num_req_digits;
       if (round_up) {
-        char* q = p + num_sig - 1;
+        char* q = p + num_req_digits - 1;
         // Propagate the carry over trailing nines.
         while (*q == '9') *q-- = '0';
         // 999.. rolling over to 1000.. adds a significant digit.
@@ -1724,26 +1730,22 @@ auto write_scientific_big(double value, int precision, char* out,
         }
       }
     }
-    avail = num_digits < num_sig ? num_digits : num_sig;
+    num_avail_digits = num_digits;
   }
 
   // Emit d.ddd...e±XX with `precision` fractional digits, zero-padded, writing
   // at most `end - dst` characters.
   if (dst < end) *dst++ = p[0];
   if (dst < end) *dst++ = '.';
-  size_t frac = size_t(avail - 1);
-  size_t take = frac < size_t(end - dst) ? frac : size_t(end - dst);
-  memcpy(dst, p + 1, take);
-  dst += take;
-  size_t zeros = size_t(precision) - frac;
-  take = zeros < size_t(end - dst) ? zeros : size_t(end - dst);
-  memset(dst, '0', take);
-  dst += take;
+  int num_frac_digits = num_avail_digits - 1;
+  dst = write_upto(dst, end, p + 1, size_t(num_frac_digits));
+  int num_zeros = precision - num_frac_digits;
+  if (num_zeros > end - dst) num_zeros = int(end - dst);
+  memset(dst, '0', num_zeros);
+  dst += num_zeros;
   char exp[8];
-  size_t exp_len = size_t(write_exp<double>(exp, lead_exp) - exp);
-  take = exp_len < size_t(end - dst) ? exp_len : size_t(end - dst);
-  memcpy(dst, exp, take);
-  return dst + take;
+  char* exp_end = write_exp<double>(exp, lead_exp);
+  return write_upto(dst, end, exp, size_t(exp_end - exp));
 }
 
 template <typename Float>
