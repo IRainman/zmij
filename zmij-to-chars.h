@@ -39,10 +39,10 @@ inline auto to_chars(char* first, char* last, Float value, chars_format fmt,
   if (precision < min_precision || precision > 18)
     return {first, std::errc::invalid_argument};
   size_t cap = size_t(last - first);
-  size_t need = fmt == chars_format::fixed ? buffer_sizes<Float>::fixed
-                                           : buffer_sizes<Float>::scientific;
-  char buffer[buffer_sizes<Float>::fixed];
-  char* dst = cap >= need ? first : buffer;
+  using bs = buffer_sizes<Float>;
+  size_t max_size = fmt == chars_format::fixed ? bs::fixed : bs::scientific;
+  char buffer[bs::fixed];
+  char* dst = cap >= max_size ? first : buffer;
   char* end;
   if (fmt == chars_format::scientific)
     end = write_scientific(value, precision, dst);
