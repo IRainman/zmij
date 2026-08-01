@@ -338,6 +338,20 @@ inline auto umul192_hi128(uint64_t x_hi, uint64_t x_lo, uint64_t y) noexcept
   return {uint64_t(p >> 64) + (lo < uint64_t(p)), lo};
 }
 
+// Returns the 128-bit `value` shifted right by `n` bits (n >= 1), rounded to
+// nearest with ties to even.
+auto shift_right_round(uint128_t value, int n) noexcept -> uint128_t {
+  if (n >= 128) {  // everything shifts out; 2**127 is the only in-range tie
+    uint128_t half = uint128_t(1) << 127;
+    return n == 128 && half < value ? uint128_t(1) : uint128_t(0);
+  }
+  uint128_t q = value >> n;
+  uint128_t rem = (value << (128 - n)) >> (128 - n);  // discarded low n bits
+  uint128_t half = uint128_t(1) << (n - 1);
+  if (half < rem || ((uint64_t(q) & 1) && !(rem < half))) ++q;
+  return q;
+}
+
 // Returns x / 10 for x <= 2**62.
 ZMIJ_INLINE auto div10(uint64_t x) noexcept -> uint64_t {
   assert(x <= (1ull << 62));
@@ -1447,20 +1461,6 @@ struct bigint {
   }
 };
 
-// Returns the 128-bit `value` shifted right by `n` bits (n >= 1), rounded to
-// nearest with ties to even.
-auto shift_right_round(uint128_t value, int n) noexcept -> uint128_t {
-  if (n >= 128) {  // everything shifts out; 2**127 is the only in-range tie
-    uint128_t half = uint128_t(1) << 127;
-    return n == 128 && half < value ? uint128_t(1) : uint128_t(0);
-  }
-  uint128_t q = value >> n;
-  uint128_t rem = (value << (128 - n)) >> (128 - n);  // discarded low n bits
-  uint128_t half = uint128_t(1) << (n - 1);
-  if (half < rem || ((uint64_t(q) & 1) && !(rem < half))) ++q;
-  return q;
-}
-
 // Emits n's decimal digits (most significant first) ending at `end`, consuming
 // n, and returns a pointer to the first (most significant) digit.
 auto write_digits(bigint& n, char* end) noexcept -> char* {
@@ -1640,10 +1640,7 @@ auto write(Float value, char* buffer) noexcept -> char* {
 }
 
 // Writes `value` via exact big-integer arithmetic, correctly rounded (ties to
-// even), truncating into `out` after `n` bytes. In scientific format it emits
-// `precision` fractional digits (d.ddd...e±XX), like printf %e. In general
-// format it emits up to `precision` significant digits with trailing zeros
-// stripped, picking fixed or scientific notation like printf %g.
+// even), truncating into `out` after `n` bytes.
 auto write_big(double value, int precision, char* out, size_t n,
                format fmt) noexcept -> char* {
   bool general = fmt == format::general;
@@ -1869,9 +1866,9 @@ auto write_fixed(Float value, int precision, char* buffer) noexcept -> char* {
   uint64_t integral = scaled >> 2;
   int num_scaled_digits = 18 + (integral >= pow10s[18]);
   int lead_exp = dec_exp + num_scaled_digits - 1;
-  int num_req_digits = lead_exp + 1 + precision;
+  int num_digits = lead_exp + 1 + precision;  // significant digits to emit
 
-  if (num_req_digits <= 0) [[ZMIJ_UNLIKELY]] {
+  if (num_digits <= 0) [[ZMIJ_UNLIKELY]] {
     // |value| < 10**-precision, so it rounds to 0, or up to 10**-precision iff
     // |value| > 0.5 * 10**-precision (a tie rounds to 0). A 19-digit scale has
     // leading digit 1 (< 5), so only the 18-digit case rounds up.
@@ -1883,12 +1880,11 @@ auto write_fixed(Float value, int precision, char* buffer) noexcept -> char* {
     return end;
   }
 
-  if (num_req_digits > 18) [[ZMIJ_UNLIKELY]]
+  if (num_digits > 18) [[ZMIJ_UNLIKELY]]
     return write_fixed_big(buffer, bin_sig, int(bin_exp), precision);
 
   // Round to num_digits significant digits from the retained guard bits in one
   // pass, avoiding a second conversion.
-  int num_digits = num_req_digits;
   if (num_digits < num_scaled_digits) {
     // Fold the dropped low digits into the guard bits so the round_even below
     // is correct; discarding them first would double-round.
