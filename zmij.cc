@@ -1783,13 +1783,14 @@ auto write_big(double value, int precision, char* out, size_t n,
   }
 
   // Emit d.ddd...e±XX. In scientific format pad to `precision` fractional
-  // digits; in general format emit only the significant digits.
+  // digits; in general format emit only the significant digits. Neither emits a
+  // decimal point when there are no fractional digits (e.g. 1e+00).
   if (out < end) *out++ = p[0];
-  if (!general || num_digits > 1) {
+  if (general ? num_digits > 1 : precision != 0) {
     if (out < end) *out++ = '.';
     out = write_upto(out, end, p + 1, size_t(num_digits - 1));
+    if (!general) out = zero_upto(out, end, precision - num_digits + 1);
   }
-  if (!general) out = zero_upto(out, end, precision - num_digits + 1);
   char exp[8];
   char* exp_end = write_exp<double>(exp, lead_exp);
   return write_upto(out, end, exp, size_t(exp_end - exp));
@@ -1859,7 +1860,7 @@ auto write_general(Float value, int precision, char* buffer) noexcept -> char* {
                                           lead_exp);
   }
 
-  if (lead_exp < 0) {  // Fixed with a leading 0.00...: lead_exp in [-4, -1].
+  if (lead_exp < 0) {  // fixed with a leading 0.00...: lead_exp in [-4, -1]
     memcpy(buffer, "0.0000", 1 - lead_exp);  // "0.", then -lead_exp-1 zeros.
     memcpy(buffer + 1 - lead_exp, &hi.digits, 16);
     memcpy(buffer + 17 - lead_exp, digits2(lo), 2);
@@ -1958,7 +1959,7 @@ auto write_fixed(Float value, int precision, char* buffer) noexcept -> char* {
 
   memcpy(buffer, &hi.digits, 16);
   memcpy(buffer + 16, digits2(lo), 2);
-  buffer[18] = '0';  // At most one carry digit (total <= 18, or 19 on carry).
+  buffer[18] = '0';  // at most one carry digit: total <= 18, or 19 on carry
   if (precision == 0) return buffer + total;
   memmove(buffer + num_int_digits + 1, buffer + num_int_digits, precision);
   buffer[num_int_digits] = '.';

@@ -542,6 +542,22 @@ TEST(double_test, write_big_truncated) {
   EXPECT_EQ(buf[5], '?');
 }
 
+// write_big with zero fractional digits must not emit a trailing decimal point,
+// including on carry (e.g. 9.5 -> 1e+01). This path is only reachable directly,
+// since the public API routes low precision through the shortest writers.
+TEST(double_test, write_big_no_point) {
+  char buf[32], ref[32];
+  for (double value : {1.0, 2.5, 9.5, 12.5, 0.5, 1e300, 5e-324}) {
+    for (int precision : {0, 1, 2}) {
+      char* end = zmij::detail::write_big(value, precision, buf, sizeof(buf),
+                                          zmij::format::scientific);
+      snprintf(ref, sizeof(ref), "%.*e", precision, value);
+      EXPECT_EQ(std::string(buf, end), std::string(ref))
+          << "value=" << value << " precision=" << precision;
+    }
+  }
+}
+
 TEST(float_test, write_general) {
   EXPECT_EQ(to_general(1.5f, 6), "1.5");
   EXPECT_EQ(to_general(0.0001f, 6), "0.0001");  // exp10 == -4 -> fixed
