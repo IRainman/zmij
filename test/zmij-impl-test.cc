@@ -5,7 +5,6 @@
 // Distributed under the MIT license (see LICENSE).
 
 #include <gtest/gtest.h>
-
 #include <stdio.h>
 
 #include <string>

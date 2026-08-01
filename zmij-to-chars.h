@@ -23,12 +23,7 @@ struct to_chars_result {
 };
 
 // Like std::chars_format, but available without C++17 (hex is unsupported).
-// The values match std::chars_format so general == fixed | scientific.
-enum class chars_format {
-  scientific = 1,
-  fixed = 2,
-  general = 3,
-};
+using chars_format = format;
 
 namespace detail {
 

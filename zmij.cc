@@ -1118,9 +1118,16 @@ auto write_inf_nan(char* buffer, bool is_nan) noexcept -> char* {
 // Copies at most `end - dst` bytes of `src[0..n)` to `dst`, returning the end
 // of the written range.
 ZMIJ_INLINE auto write_upto(char* dst, char* end, const char* src,
-                           size_t n) noexcept -> char* {
+                            size_t n) noexcept -> char* {
   size_t take = n < size_t(end - dst) ? n : size_t(end - dst);
   memcpy(dst, src, take);
+  return dst + take;
+}
+
+// Writes at most `end - dst` copies of '0', returning the end of the range.
+ZMIJ_INLINE auto zero_upto(char* dst, char* end, int n) noexcept -> char* {
+  size_t take = n < end - dst ? size_t(n) : size_t(end - dst);
+  memset(dst, '0', take);
   return dst + take;
 }
 
@@ -1655,10 +1662,14 @@ auto write(Float value, char* buffer) noexcept -> char* {
   return write_exp<Float>(buffer, dec_exp);
 }
 
-// Writes `value` in scientific notation with `precision` fractional digits,
-// correctly rounded (ties to even) via exact big-integer arithmetic.
-auto write_scientific_big(double value, int precision, char* out,
-                          size_t n) noexcept -> char* {
+// Writes `value` via exact big-integer arithmetic, correctly rounded (ties to
+// even), truncating into `out` after `n` bytes. In scientific format it emits
+// `precision` fractional digits (d.ddd...e±XX), like printf %e. In general
+// format it emits up to `precision` significant digits with trailing zeros
+// stripped, picking fixed or scientific notation like printf %g.
+auto write_big(double value, int precision, char* out, size_t n,
+               format fmt) noexcept -> char* {
+  bool general = fmt == format::general;
   using traits = float_traits<double>;
   auto bits = traits::to_bits(value);
   auto raw_exp = traits::get_exp(bits);
@@ -1667,7 +1678,7 @@ auto write_scientific_big(double value, int precision, char* out,
   char* end = out + n;
   if (traits::is_negative(bits) && out < end) *out++ = '-';
 
-  char digits[805];  // num < 2**2668 has at most 804 digits, plus a carry digit.
+  char digits[805];  // num < 2**2668 has <= 804 digits, plus a carry digit.
   digits[0] = '0';
   char* p = digits;
   int num_digits = 1;  // significant digits to emit (>= 1)
@@ -1683,8 +1694,8 @@ auto write_scientific_big(double value, int precision, char* out,
   if (is_normal || bin_sig != 0) {  // finite nonzero
     // Represent the value exactly as an integer num times a power of ten:
     // value = sig * 2**bin_exp = num * 10**base_exp, so its decimal digits are
-    // num's. For bin_exp < 0 the identity 2**bin_exp = 5**-bin_exp * 10**bin_exp
-    // keeps num integral via a power-of-five multiply.
+    // num's. For bin_exp < 0 the identity 2**bin_exp = 5**-bin_exp *
+    // 10**bin_exp keeps num integral via a power-of-five multiply.
     bin_sig |= traits::implicit_bit;
     int bin_exp = int(raw_exp) - traits::exp_offset;
     bigint num(umul128(bin_sig, 1));
@@ -1700,7 +1711,7 @@ auto write_scientific_big(double value, int precision, char* out,
     num_digits = int(digits + sizeof(digits) - p);
     lead_exp = num_digits - 1 + base_exp;
 
-    int max_digits = precision + 1;
+    int max_digits = general ? precision : precision + 1;
     // Round to max_digits significant digits, ties to even.
     if (num_digits > max_digits) {
       char dropped = p[max_digits];
@@ -1731,15 +1742,39 @@ auto write_scientific_big(double value, int precision, char* out,
     }
   }
 
-  // Emit d.ddd...e±XX with `precision` fractional digits, zero-padded, writing
-  // at most `end - out` characters.
+  if (general) {
+    // %g: drop insignificant trailing zeros and pick fixed or scientific.
+    while (num_digits > 1 && p[num_digits - 1] == '0') --num_digits;
+
+    if (lead_exp >= -4 && lead_exp < precision) {  // fixed notation
+      if (lead_exp < 0) {  // leading 0.00..., lead_exp in [-4, -1]
+        if (out < end) *out++ = '0';
+        if (out < end) *out++ = '.';
+        out = zero_upto(out, end, -lead_exp - 1);
+        return write_upto(out, end, p, size_t(num_digits));
+      }
+      int point_pos = lead_exp + 1;
+      if (point_pos >= num_digits) {  // integer, e.g. 12300
+        out = write_upto(out, end, p, size_t(num_digits));
+        return zero_upto(out, end, point_pos - num_digits);
+      }
+      out = write_upto(out, end, p, size_t(point_pos));
+      if (out < end) *out++ = '.';
+      return write_upto(out, end, p + point_pos,
+                        size_t(num_digits - point_pos));
+    }
+    // Otherwise fall through to scientific notation below.
+  }
+
+  // Emit d.ddd...e±XX, writing at most `end - out` characters. In scientific
+  // mode pad to `precision` fractional digits; in general mode emit only the
+  // significant digits with no padding.
   if (out < end) *out++ = p[0];
-  if (out < end) *out++ = '.';
-  out = write_upto(out, end, p + 1, size_t(num_digits - 1));
-  int num_zeros = precision - num_digits + 1;
-  if (num_zeros > end - out) num_zeros = int(end - out);
-  memset(out, '0', num_zeros);
-  out += num_zeros;
+  if (!general || num_digits > 1) {
+    if (out < end) *out++ = '.';
+    out = write_upto(out, end, p + 1, size_t(num_digits - 1));
+  }
+  if (!general) out = zero_upto(out, end, precision - num_digits + 1);
   char exp[8];
   char* exp_end = write_exp<double>(exp, lead_exp);
   return write_upto(out, end, exp, size_t(exp_end - exp));
