@@ -1144,21 +1144,30 @@ auto write_inf_nan(char* buffer, bool is_nan) noexcept -> char* {
   return memcpy(buffer, is_nan ? "nan" : "inf", 4), buffer + 3;
 }
 
-// Copies at most `end - dst` bytes of `src[0..n)` to `dst`, returning the end
-// of the written range.
-ZMIJ_INLINE auto write_upto(char* dst, char* end, const char* src,
-                            size_t n) noexcept -> char* {
-  size_t take = n < size_t(end - dst) ? n : size_t(end - dst);
-  memcpy(dst, src, take);
-  return dst + take;
-}
+// An output sink that appends to `out`, discarding anything past `end`.
+struct writer {
+  char* out;
+  char* end;
 
-// Writes at most `end - dst` copies of '0', returning the end of the range.
-ZMIJ_INLINE auto zero_upto(char* dst, char* end, int n) noexcept -> char* {
-  size_t take = n < end - dst ? size_t(n) : size_t(end - dst);
-  memset(dst, '0', take);
-  return dst + take;
-}
+  ZMIJ_INLINE auto write(char c) noexcept -> char* {
+    if (out < end) *out++ = c;
+    return out;
+  }
+  // Copies at most `end - out` bytes of `s[0..n)`; `n` must be non-negative.
+  ZMIJ_INLINE auto write(const char* s, int n) noexcept -> char* {
+    assert(n >= 0);
+    size_t take = n < end - out ? size_t(n) : size_t(end - out);
+    memcpy(out, s, take);
+    return out += take;
+  }
+  // Writes at most `end - out` copies of '0'; `n` must be non-negative.
+  ZMIJ_INLINE auto write_zeros(int n) noexcept -> char* {
+    assert(n >= 0);
+    size_t take = n < end - out ? size_t(n) : size_t(end - out);
+    memset(out, '0', take);
+    return out += take;
+  }
+};
 
 // Returns true if any character in [first, last) is not '0'.
 auto any_nonzero(const char* first, const char* last) noexcept -> bool {
@@ -1653,13 +1662,14 @@ auto write_big(double value, int precision, char* out, size_t n,
   bool general = fmt == format::general;
   bool fixed = fmt == format::fixed;
   assert(precision >= general);
+
   using traits = float_traits<double>;
   auto bits = traits::to_bits(value);
   auto raw_exp = traits::get_exp(bits);
   auto bin_sig = traits::get_sig(bits);
 
-  char* end = out + n;
-  if (traits::is_negative(bits) && out < end) *out++ = '-';
+  writer w = {out, out + n};
+  if (traits::is_negative(bits)) w.write('-');
 
   char digits[805];  // num < 2**2668 has <= 804 digits, plus a carry digit.
   digits[0] = '0';
@@ -1670,16 +1680,17 @@ auto write_big(double value, int precision, char* out, size_t n,
   bool is_normal = unsigned(raw_exp - 1) < unsigned(traits::exp_mask - 1);
   if (!is_normal) [[ZMIJ_UNLIKELY]] {
     if (raw_exp != 0)  // inf or nan
-      return write_upto(out, end, bin_sig != 0 ? "nan" : "inf", 3);
+      return w.write(bin_sig != 0 ? "nan" : "inf", 3);
     if (bin_sig != 0) normalize<double>(bin_sig, raw_exp);
+    bin_sig ^= traits::implicit_bit;
   }
+  bin_sig ^= traits::implicit_bit;
 
-  if (is_normal || bin_sig != 0) {  // finite nonzero
+  if (bin_sig != 0) {
     // Represent the value exactly as an integer num times a power of ten:
     // value = sig * 2**bin_exp = num * 10**base_exp, so its decimal digits are
     // num's. For bin_exp < 0 the identity 2**bin_exp = 5**-bin_exp *
     // 10**bin_exp keeps num integral via a power-of-five multiply.
-    bin_sig |= traits::implicit_bit;
     int bin_exp = int(raw_exp) - traits::exp_offset;
     bigint num(umul128(bin_sig, 1));
     int base_exp = 0;
@@ -1739,23 +1750,23 @@ auto write_big(double value, int precision, char* out, size_t n,
     // %f: emit exactly `precision` fractional digits, zero-padding as needed.
     int point_pos = lead_exp + 1;  // digits before the decimal point
     if (point_pos <= 0) {          // |value| < 1, e.g. 0.00123
-      if (out < end) *out++ = '0';
+      w.write('0');
     } else {
       int int_digits = num_digits < point_pos ? num_digits : point_pos;
-      out = write_upto(out, end, p, size_t(int_digits));
-      out = zero_upto(out, end, point_pos - int_digits);  // e.g. 12300
+      w.write(p, int_digits);
+      w.write_zeros(point_pos - int_digits);  // e.g. 12300
     }
-    if (precision == 0) return out;
-    if (out < end) *out++ = '.';
+    if (precision == 0) return w.out;
+    w.write('.');
     int lead_zeros = point_pos < 0 ? -point_pos : 0;
-    out = zero_upto(out, end, lead_zeros);  // 0.00...
+    w.write_zeros(lead_zeros);  // 0.00...
     int frac_start = point_pos > 0 ? point_pos : 0;
     int frac_digits = num_digits - frac_start;
     if (frac_digits > 0)
-      out = write_upto(out, end, p + frac_start, size_t(frac_digits));
+      w.write(p + frac_start, frac_digits);
     else
       frac_digits = 0;
-    return zero_upto(out, end, precision - lead_zeros - frac_digits);
+    return w.write_zeros(precision - lead_zeros - frac_digits);
   }
 
   if (general) {
@@ -1764,20 +1775,19 @@ auto write_big(double value, int precision, char* out, size_t n,
 
     if (lead_exp >= -4 && lead_exp < precision) {  // fixed notation
       if (lead_exp < 0) {  // leading 0.00..., lead_exp in [-4, -1]
-        if (out < end) *out++ = '0';
-        if (out < end) *out++ = '.';
-        out = zero_upto(out, end, -lead_exp - 1);
-        return write_upto(out, end, p, size_t(num_digits));
+        w.write('0');
+        w.write('.');
+        w.write_zeros(-lead_exp - 1);
+        return w.write(p, num_digits);
       }
       int point_pos = lead_exp + 1;
       if (point_pos >= num_digits) {  // integer, e.g. 12300
-        out = write_upto(out, end, p, size_t(num_digits));
-        return zero_upto(out, end, point_pos - num_digits);
+        w.write(p, num_digits);
+        return w.write_zeros(point_pos - num_digits);
       }
-      out = write_upto(out, end, p, size_t(point_pos));
-      if (out < end) *out++ = '.';
-      return write_upto(out, end, p + point_pos,
-                        size_t(num_digits - point_pos));
+      w.write(p, point_pos);
+      w.write('.');
+      return w.write(p + point_pos, num_digits - point_pos);
     }
     // Otherwise fall through to scientific notation below.
   }
@@ -1785,15 +1795,15 @@ auto write_big(double value, int precision, char* out, size_t n,
   // Emit d.ddd...e±XX. In scientific format pad to `precision` fractional
   // digits; in general format emit only the significant digits. Neither emits a
   // decimal point when there are no fractional digits (e.g. 1e+00).
-  if (out < end) *out++ = p[0];
+  w.write(p[0]);
   if (general ? num_digits > 1 : precision != 0) {
-    if (out < end) *out++ = '.';
-    out = write_upto(out, end, p + 1, size_t(num_digits - 1));
-    if (!general) out = zero_upto(out, end, precision - num_digits + 1);
+    w.write('.');
+    w.write(p + 1, num_digits - 1);
+    if (!general) w.write_zeros(precision - num_digits + 1);
   }
   char exp[8];
   char* exp_end = write_exp<double>(exp, lead_exp);
-  return write_upto(out, end, exp, size_t(exp_end - exp));
+  return w.write(exp, int(exp_end - exp));
 }
 
 template <typename Float>
