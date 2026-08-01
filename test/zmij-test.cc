@@ -86,7 +86,7 @@ TEST(float_test, fixed_with_zeros) {
 }
 
 #if !ZMIJ_C
-// Writes `value` with `precision` significant digits in scientific format.
+// Writes `value` with `precision` digits after the point in scientific format.
 static auto to_scientific(float value, int precision) -> std::string {
   char buffer[zmij::buffer_sizes<float>::scientific];
   return {buffer,
@@ -129,25 +129,26 @@ TEST(float_test, to_chars_format) {
   auto result = zmij::to_chars(buffer, buffer + sizeof(buffer), 1.5f,
                                zmij::chars_format::scientific, 2);
   EXPECT_EQ(result.ec, std::errc());
-  EXPECT_EQ(std::string(buffer, result.ptr), "1.5e+00");
+  EXPECT_EQ(std::string(buffer, result.ptr), "1.50e+00");
 
   // Precision out of range: nothing written, ptr == first, invalid_argument.
+  // Scientific caps at 17 fractional digits (18 significant).
   char small[4] = {'?', '?', '?', '?'};
   result = zmij::to_chars(small, small + sizeof(small), 1.5f,
-                          zmij::chars_format::scientific, 0);
+                          zmij::chars_format::scientific, 18);
   EXPECT_EQ(result.ec, std::errc::invalid_argument);
   EXPECT_EQ(result.ptr, small);
   EXPECT_EQ(std::string(small, sizeof(small)), "????");
 }
 
 TEST(float_test, write_precision) {
-  EXPECT_EQ(to_scientific(1.5f, 2), "1.5e+00");
-  EXPECT_EQ(to_scientific(9.99f, 2), "1.0e+01");   // carry
-  EXPECT_EQ(to_scientific(2.5f, 1), "2e+00");      // round half to even
-  EXPECT_EQ(to_scientific(-1.5f, 2), "-1.5e+00");  // sign preserved
-  EXPECT_EQ(to_scientific(std::numeric_limits<float>::denorm_min(), 1),
+  EXPECT_EQ(to_scientific(1.5f, 1), "1.5e+00");
+  EXPECT_EQ(to_scientific(9.99f, 1), "1.0e+01");   // carry
+  EXPECT_EQ(to_scientific(2.5f, 0), "2e+00");      // round half to even
+  EXPECT_EQ(to_scientific(-1.5f, 1), "-1.5e+00");  // sign preserved
+  EXPECT_EQ(to_scientific(std::numeric_limits<float>::denorm_min(), 0),
             "1e-45");  // subnormal path
-  EXPECT_EQ(to_scientific(std::numeric_limits<float>::max(), 9),
+  EXPECT_EQ(to_scientific(std::numeric_limits<float>::max(), 8),
             "3.40282347e+38");
 }
 
@@ -364,14 +365,16 @@ TEST(double_test, to_chars_format) {
   };
   EXPECT_EQ(fmt(zmij::chars_format::fixed, 2, 1.5), "1.50");
   EXPECT_EQ(fmt(zmij::chars_format::fixed, 0, 2.5), "2");  // ties to even
-  EXPECT_EQ(fmt(zmij::chars_format::scientific, 4, 1234.5678), "1.235e+03");
+  EXPECT_EQ(fmt(zmij::chars_format::scientific, 4, 1234.5678), "1.2346e+03");
+  EXPECT_EQ(fmt(zmij::chars_format::scientific, 0, 2.5), "2e+00");
   EXPECT_EQ(fmt(zmij::chars_format::general, 6, 1234.5678), "1234.57");
 
   // Precision out of range: nothing written, ptr == first, invalid_argument.
+  // Scientific caps at 17 fractional digits (18 significant).
   char small[8];
   memset(small, '?', sizeof(small));
   auto result = zmij::to_chars(small, small + sizeof(small), 1.5,
-                               zmij::chars_format::scientific, 0);
+                               zmij::chars_format::scientific, 18);
   EXPECT_EQ(result.ec, std::errc::invalid_argument);
   EXPECT_EQ(result.ptr, small);
   result = zmij::to_chars(small, small + sizeof(small), 1.5,
@@ -413,46 +416,45 @@ TEST(double_test, to_decimal) {
 }
 
 TEST(double_test, write_precision) {
-  EXPECT_EQ(to_scientific(1.5, 2), "1.5e+00");
-  EXPECT_EQ(to_scientific(1.0, 1), "1e+00");       // no point when precision 1
-  EXPECT_EQ(to_scientific(0.0, 5), "0.0000e+00");  // zero
-  EXPECT_EQ(to_scientific(std::numeric_limits<double>::infinity(), 3), "inf");
+  EXPECT_EQ(to_scientific(1.5, 1), "1.5e+00");
+  EXPECT_EQ(to_scientific(1.0, 0), "1e+00");       // no point when precision 0
+  EXPECT_EQ(to_scientific(0.0, 4), "0.0000e+00");  // zero
+  EXPECT_EQ(to_scientific(std::numeric_limits<double>::infinity(), 2), "inf");
 
-  // Overshoot: the integral part carries precision + 1 digits, so the extra
-  // digit is dropped and the exponent bumped up.
-  EXPECT_EQ(to_scientific(12.0, 2), "1.2e+01");
-  EXPECT_EQ(to_scientific(123.0, 3), "1.23e+02");
-  EXPECT_EQ(to_scientific(12345.678, 3), "1.23e+04");
+  // Overshoot: values >= 10 still normalize to a single leading digit.
+  EXPECT_EQ(to_scientific(12.0, 1), "1.2e+01");
+  EXPECT_EQ(to_scientific(123.0, 2), "1.23e+02");
+  EXPECT_EQ(to_scientific(12345.678, 2), "1.23e+04");
 
   // Carry: rounding 9...9 up rolls into a new leading digit.
-  EXPECT_EQ(to_scientific(9.99, 2), "1.0e+01");
-  EXPECT_EQ(to_scientific(99.9, 2), "1.0e+02");
+  EXPECT_EQ(to_scientific(9.99, 1), "1.0e+01");
+  EXPECT_EQ(to_scientific(99.9, 1), "1.0e+02");
 
   // Round half-to-even.
-  EXPECT_EQ(to_scientific(0.125, 2), "1.2e-01");  // 1.25 -> 1.2
-  EXPECT_EQ(to_scientific(2.5, 1), "2e+00");      // -> 2 (even)
-  EXPECT_EQ(to_scientific(3.5, 1), "4e+00");      // -> 4 (even)
+  EXPECT_EQ(to_scientific(0.125, 1), "1.2e-01");  // 1.25 -> 1.2
+  EXPECT_EQ(to_scientific(2.5, 0), "2e+00");      // -> 2 (even)
+  EXPECT_EQ(to_scientific(3.5, 0), "4e+00");      // -> 4 (even)
 
   // Sign is carried through.
-  EXPECT_EQ(to_scientific(-9.99, 2), "-1.0e+01");
+  EXPECT_EQ(to_scientific(-9.99, 1), "-1.0e+01");
 
   // Subnormals take a separate normalization path, so check both boundaries
   // (smallest and largest) at low and full precision.
-  EXPECT_EQ(to_scientific(5e-324, 1), "5e-324");    // DBL_TRUE_MIN
-  EXPECT_EQ(to_scientific(-5e-324, 1), "-5e-324");  // sign preserved
+  EXPECT_EQ(to_scientific(5e-324, 0), "5e-324");    // DBL_TRUE_MIN
+  EXPECT_EQ(to_scientific(-5e-324, 0), "-5e-324");  // sign preserved
   // Smallest subnormal at full precision (exercises the widened table top).
-  EXPECT_EQ(to_scientific(5e-324, 18), "4.94065645841246544e-324");
+  EXPECT_EQ(to_scientific(5e-324, 17), "4.94065645841246544e-324");
   // Largest subnormal, round-tripped at full precision.
-  EXPECT_EQ(to_scientific(2.2250738585072009e-308, 17),
+  EXPECT_EQ(to_scientific(2.2250738585072009e-308, 16),
             "2.2250738585072009e-308");
-  EXPECT_EQ(to_scientific(2.2250738585072009e-308, 6), "2.22507e-308");
+  EXPECT_EQ(to_scientific(2.2250738585072009e-308, 5), "2.22507e-308");
 
   // Large values at low precision reach the low end of the table.
-  EXPECT_EQ(to_scientific(1.7976931348623157e308, 1), "2e+308");  // DBL_MAX
-  EXPECT_EQ(to_scientific(1.7976931348623157e308, 2), "1.8e+308");
+  EXPECT_EQ(to_scientific(1.7976931348623157e308, 0), "2e+308");  // DBL_MAX
+  EXPECT_EQ(to_scientific(1.7976931348623157e308, 1), "1.8e+308");
 
   // Full-precision round trip.
-  EXPECT_EQ(to_scientific(6.62607015e-34, 9), "6.62607015e-34");
+  EXPECT_EQ(to_scientific(6.62607015e-34, 8), "6.62607015e-34");
 }
 
 TEST(double_test, write_precision_irregular) {
@@ -460,9 +462,9 @@ TEST(double_test, write_precision_irregular) {
     uint64_t bits = exp << 52;
     double value = 0;
     memcpy(&value, &bits, sizeof(double));
-    for (int precision = 1; precision <= 18; ++precision) {
+    for (int precision = 0; precision <= 18; ++precision) {
       char expected[32];
-      snprintf(expected, sizeof(expected), "%.*e", precision - 1, value);
+      snprintf(expected, sizeof(expected), "%.*e", precision, value);
       EXPECT_EQ(to_scientific(value, precision), expected)
           << "value=" << value << " precision=" << precision;
     }

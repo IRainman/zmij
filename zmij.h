@@ -108,39 +108,39 @@ inline auto write(char* out, size_t n, double value) noexcept -> char* {
   return out + size;
 }
 
-/// Writes `value` in scientific format with exactly `precision` significant
-/// digits (e.g. 1.234e+05) to `out` without a null terminator. Returns a
-/// pointer past the last character written; if the representation exceeds `n`
-/// characters, only the first `n` are written. `precision` must be at least 1;
-/// values below 1 are clamped to 1.
+/// Writes `value` in scientific format with `precision` digits after the
+/// decimal point (e.g. 1.234e+05) to `out` without a null terminator, like
+/// printf's %e. Returns a pointer past the last character written; if the
+/// representation exceeds `n` characters, only the first `n` are written.
+/// `precision` must be non-negative; negative values are clamped to 0.
 inline auto write_scientific(char* out, size_t n, float value,
                              int precision) noexcept -> char* {
-  if (precision < 1) precision = 1;
-  if (precision > 18)
+  if (precision < 0) precision = 0;
+  if (precision >= 18)
     return detail::write_scientific_big(value, precision, out, n);
   if (n >= buffer_sizes<float>::scientific)
-    return detail::write_scientific(value, precision, out);
+    return detail::write_scientific(value, precision + 1, out);
   char buffer[buffer_sizes<float>::scientific];
-  size_t size = detail::write_scientific(value, precision, buffer) - buffer;
+  size_t size = detail::write_scientific(value, precision + 1, buffer) - buffer;
   if (size > n) size = n;
   memcpy(out, buffer, size);
   return out + size;
 }
 
-/// Writes `value` in scientific format with exactly `precision` significant
-/// digits (e.g. 1.234e+05) to `out` without a null terminator. Returns a
-/// pointer past the last character written; if the representation exceeds `n`
-/// characters, only the first `n` are written. `precision` must be at least 1;
-/// values below 1 are clamped to 1.
+/// Writes `value` in scientific format with `precision` digits after the
+/// decimal point (e.g. 1.234e+05) to `out` without a null terminator, like
+/// printf's %e. Returns a pointer past the last character written; if the
+/// representation exceeds `n` characters, only the first `n` are written.
+/// `precision` must be non-negative; negative values are clamped to 0.
 inline auto write_scientific(char* out, size_t n, double value,
                              int precision) noexcept -> char* {
-  if (precision < 1) precision = 1;
-  if (precision > 18)
+  if (precision < 0) precision = 0;
+  if (precision >= 18)
     return detail::write_scientific_big(value, precision, out, n);
   if (n >= buffer_sizes<double>::scientific)
-    return detail::write_scientific(value, precision, out);
+    return detail::write_scientific(value, precision + 1, out);
   char buffer[buffer_sizes<double>::scientific];
-  size_t size = detail::write_scientific(value, precision, buffer) - buffer;
+  size_t size = detail::write_scientific(value, precision + 1, buffer) - buffer;
   if (size > n) size = n;
   memcpy(out, buffer, size);
   return out + size;
