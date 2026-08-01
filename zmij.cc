@@ -1160,6 +1160,13 @@ ZMIJ_INLINE auto zero_upto(char* dst, char* end, int n) noexcept -> char* {
   return dst + take;
 }
 
+// Returns true if any character in [first, last) is not '0'.
+auto any_nonzero(const char* first, const char* last) noexcept -> bool {
+  for (; first < last; ++first)
+    if (*first != '0') return true;
+  return false;
+}
+
 // Writes zero in fixed notation, e.g. "0.000" (or "0" when precision is 0).
 ZMIJ_INLINE auto write_zero(char* buffer, int precision) noexcept -> char* {
   *buffer++ = '0';
@@ -1645,6 +1652,7 @@ auto write_big(double value, int precision, char* out, size_t n,
                format fmt) noexcept -> char* {
   bool general = fmt == format::general;
   bool fixed = fmt == format::fixed;
+  assert(precision >= general);
   using traits = float_traits<double>;
   auto bits = traits::to_bits(value);
   auto raw_exp = traits::get_exp(bits);
@@ -1691,20 +1699,13 @@ auto write_big(double value, int precision, char* out, size_t n,
     int max_digits = precision + !general;
     if (fixed) max_digits += lead_exp;
     // Round to max_digits significant digits, ties to even.
-    if (fixed && max_digits < 1) {
+    if (max_digits < 1) {
       // |value| < 10**-precision: rounds to 0, or up to 10**-precision when the
       // discarded part exceeds half a unit (a tie rounds to even, i.e. 0).
       bool round_up = false;
-      if (max_digits == 0) {  // the rounded-away part starts at the lead digit
-        round_up = p[0] > '5';
-        if (p[0] == '5') {
-          for (char* q = p + 1; q < p + num_digits; ++q) {
-            if (*q != '0') {
-              round_up = true;
-              break;
-            }
-          }
-        }
+      if (max_digits == 0) {  // The rounded-away part starts at the lead digit.
+        round_up = p[0] > '5' ||
+                   (p[0] == '5' && any_nonzero(p + 1, p + num_digits));
       }
       digits[0] = char('0' + round_up);
       p = digits;
@@ -1715,13 +1716,8 @@ auto write_big(double value, int precision, char* out, size_t n,
       bool round_up = dropped > '5';
       // A dropped 5 is a tie unless a lower nonzero digit makes it sticky.
       if (dropped == '5') {
-        round_up = (p[max_digits - 1] - '0') & 1;
-        for (char* q = p + max_digits + 1; q < p + num_digits; ++q) {
-          if (*q != '0') {
-            round_up = true;
-            break;
-          }
-        }
+        round_up = ((p[max_digits - 1] - '0') & 1) ||
+                   any_nonzero(p + max_digits + 1, p + num_digits);
       }
       num_digits = max_digits;
       if (round_up) {
@@ -1786,9 +1782,8 @@ auto write_big(double value, int precision, char* out, size_t n,
     // Otherwise fall through to scientific notation below.
   }
 
-  // Emit d.ddd...e±XX, writing at most `end - out` characters. In scientific
-  // mode pad to `precision` fractional digits; in general mode emit only the
-  // significant digits with no padding.
+  // Emit d.ddd...e±XX. In scientific format pad to `precision` fractional
+  // digits; in general format emit only the significant digits.
   if (out < end) *out++ = p[0];
   if (!general || num_digits > 1) {
     if (out < end) *out++ = '.';
