@@ -1789,18 +1789,24 @@ auto write_big(double value, int precision, char* out, size_t n,
       w.write('.');
       return w.write(p + point_pos, num_digits - point_pos);
     }
-    // Otherwise fall through to scientific notation below.
+
+    // %g scientific: d.ddde±XX with only the significant digits.
+    w.write(p[0]);
+    if (num_digits > 1) {
+      w.write('.');
+      w.write(p + 1, num_digits - 1);
+    }
+  } else {
+    // %e scientific: d.ddde±XX padded to `precision` fractional digits.
+    w.write(p[0]);
+    if (precision != 0) {
+      w.write('.');
+      w.write(p + 1, num_digits - 1);
+      w.write_zeros(precision - num_digits + 1);
+    }
   }
 
-  // Emit d.ddd...e±XX. In scientific format pad to `precision` fractional
-  // digits; in general format emit only the significant digits. Neither emits a
-  // decimal point when there are no fractional digits (e.g. 1e+00).
-  w.write(p[0]);
-  if (general ? num_digits > 1 : precision != 0) {
-    w.write('.');
-    w.write(p + 1, num_digits - 1);
-    if (!general) w.write_zeros(precision - num_digits + 1);
-  }
+  // Shared exponent, e.g. e+00.
   char exp[8];
   char* exp_end = write_exp<double>(exp, lead_exp);
   return w.write(exp, int(exp_end - exp));
