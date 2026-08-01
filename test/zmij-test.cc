@@ -165,6 +165,11 @@ TEST(float_test, write_big) {
     snprintf(ref, sizeof(ref), "%.*g", precision, double(value));
     EXPECT_EQ(std::string(buf, end), std::string(ref))
         << "general value=" << value << " precision=" << precision;
+    end = zmij::detail::write_big(double(value), precision, buf, sizeof(buf),
+                                  zmij::format::fixed);
+    snprintf(ref, sizeof(ref), "%.*f", precision, double(value));
+    EXPECT_EQ(std::string(buf, end), std::string(ref))
+        << "fixed value=" << value << " precision=" << precision;
   };
   const float values[] = {1.0f, 0.1f, 1.5f, 3.14159f, 3.4028235e38f, 1.4e-45f};
   for (float value : values) {
@@ -480,7 +485,7 @@ TEST(double_test, write_precision_irregular) {
 // write_big; both must match printf's %e and %g.
 TEST(double_test, write_big) {
   auto check = [](double value, int precision) {
-    char buf[1100], ref[1100];
+    char buf[1200], ref[1200];
     char* end = zmij::write_scientific(buf, sizeof(buf), value, precision);
     snprintf(ref, sizeof(ref), "%.*e", precision, value);
     EXPECT_EQ(std::string(buf, end), std::string(ref))
@@ -489,6 +494,11 @@ TEST(double_test, write_big) {
     snprintf(ref, sizeof(ref), "%.*g", precision, value);
     EXPECT_EQ(std::string(buf, end), std::string(ref))
         << "general value=" << value << " precision=" << precision;
+    end = zmij::detail::write_big(value, precision, buf, sizeof(buf),
+                                  zmij::format::fixed);
+    snprintf(ref, sizeof(ref), "%.*f", precision, value);
+    EXPECT_EQ(std::string(buf, end), std::string(ref))
+        << "fixed value=" << value << " precision=" << precision;
   };
   const double values[] = {1.0,
                            2.0,

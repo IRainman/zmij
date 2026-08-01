@@ -1644,6 +1644,7 @@ auto write(Float value, char* buffer) noexcept -> char* {
 auto write_big(double value, int precision, char* out, size_t n,
                format fmt) noexcept -> char* {
   bool general = fmt == format::general;
+  bool fixed = fmt == format::fixed;
   using traits = float_traits<double>;
   auto bits = traits::to_bits(value);
   auto raw_exp = traits::get_exp(bits);
@@ -1685,9 +1686,31 @@ auto write_big(double value, int precision, char* out, size_t n,
     num_digits = int(digits + sizeof(digits) - p);
     lead_exp = num_digits - 1 + base_exp;
 
-    int max_digits = general ? precision : precision + 1;
+    // Significant digits to keep: precision, a leading digit for %e/%f, and the
+    // remaining integer digits (lead_exp) for %f; %g counts significant digits.
+    int max_digits = precision + !general;
+    if (fixed) max_digits += lead_exp;
     // Round to max_digits significant digits, ties to even.
-    if (num_digits > max_digits) {
+    if (fixed && max_digits < 1) {
+      // |value| < 10**-precision: rounds to 0, or up to 10**-precision when the
+      // discarded part exceeds half a unit (a tie rounds to even, i.e. 0).
+      bool round_up = false;
+      if (max_digits == 0) {  // the rounded-away part starts at the lead digit
+        round_up = p[0] > '5';
+        if (p[0] == '5') {
+          for (char* q = p + 1; q < p + num_digits; ++q) {
+            if (*q != '0') {
+              round_up = true;
+              break;
+            }
+          }
+        }
+      }
+      digits[0] = char('0' + round_up);
+      p = digits;
+      num_digits = 1;
+      lead_exp = round_up ? -precision : 0;
+    } else if (num_digits > max_digits) {
       char dropped = p[max_digits];
       bool round_up = dropped > '5';
       // A dropped 5 is a tie unless a lower nonzero digit makes it sticky.
@@ -1714,6 +1737,29 @@ auto write_big(double value, int precision, char* out, size_t n,
         }
       }
     }
+  }
+
+  if (fixed) {
+    // %f: emit exactly `precision` fractional digits, zero-padding as needed.
+    int point_pos = lead_exp + 1;  // digits before the decimal point
+    if (point_pos <= 0) {          // |value| < 1, e.g. 0.00123
+      if (out < end) *out++ = '0';
+    } else {
+      int int_digits = num_digits < point_pos ? num_digits : point_pos;
+      out = write_upto(out, end, p, size_t(int_digits));
+      out = zero_upto(out, end, point_pos - int_digits);  // e.g. 12300
+    }
+    if (precision == 0) return out;
+    if (out < end) *out++ = '.';
+    int lead_zeros = point_pos < 0 ? -point_pos : 0;
+    out = zero_upto(out, end, lead_zeros);  // 0.00...
+    int frac_start = point_pos > 0 ? point_pos : 0;
+    int frac_digits = num_digits - frac_start;
+    if (frac_digits > 0)
+      out = write_upto(out, end, p + frac_start, size_t(frac_digits));
+    else
+      frac_digits = 0;
+    return zero_upto(out, end, precision - lead_zeros - frac_digits);
   }
 
   if (general) {
