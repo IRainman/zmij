@@ -1746,58 +1746,50 @@ auto write_big(double value, int precision, char* out, size_t n,
     }
   }
 
+  bool has_point = precision != 0;  // %e: a point iff fractional digits
   if (general) {
     // Drop trailing zeros and pick fixed or scientific.
     while (num_digits > 1 && p[num_digits - 1] == '0') --num_digits;
     fixed = lead_exp >= -4 && lead_exp < precision;
+    has_point = num_digits > 1;  // a point iff significant fractional digits
   }
 
-  if (fixed) {
-    int point_pos = lead_exp + 1;  // digits before the decimal point
-    if (point_pos <= 0) {          // |value| < 1, e.g. 0.00123
-      w.write('0');
-    } else {
-      int int_digits = num_digits < point_pos ? num_digits : point_pos;
-      w.write(p, int_digits);
-      w.write_zeros(point_pos - int_digits);  // integer zeros, e.g. 12300
-    }
-    // %f emits exactly `precision` fractional digits; %g only significant ones.
-    int frac_width = general ? num_digits - point_pos : precision;
-    if (frac_width <= 0) return w.out;  // no fractional part
-    w.write('.');
-    int lead_zeros = point_pos < 0 ? -point_pos : 0;
-    w.write_zeros(lead_zeros);  // 0.00...
-    int frac_start = point_pos > 0 ? point_pos : 0;
-    int frac_digits = num_digits - frac_start;
-    if (frac_digits > 0)
-      w.write(p + frac_start, frac_digits);
-    else
-      frac_digits = 0;
-    return w.write_zeros(frac_width - lead_zeros - frac_digits);
-  }
-
-  // Scientific notation.
-  if (general) {
-    // %g: d.ddde±XX with only the significant digits.
+  if (!fixed) {
+    // Scientific d.ddde±XX: %e pads to `precision` fractional digits, %g emits
+    // only the significant ones.
     w.write(p[0]);
-    if (num_digits > 1) {
+    if (has_point) {
       w.write('.');
       w.write(p + 1, num_digits - 1);
+      if (!general) w.write_zeros(precision - num_digits + 1);
     }
+    char exp[8];
+    char* exp_end = write_exp<double>(exp, lead_exp);
+    return w.write(exp, int(exp_end - exp));
+  }
+
+  // Fixed notation.
+  int point_pos = lead_exp + 1;  // digits before the decimal point
+  if (point_pos <= 0) {          // |value| < 1, e.g. 0.00123
+    w.write('0');
   } else {
-    // %e: d.ddde±XX padded to `precision` fractional digits.
-    w.write(p[0]);
-    if (precision != 0) {
-      w.write('.');
-      w.write(p + 1, num_digits - 1);
-      w.write_zeros(precision - num_digits + 1);
-    }
+    int int_digits = num_digits < point_pos ? num_digits : point_pos;
+    w.write(p, int_digits);
+    w.write_zeros(point_pos - int_digits);  // integer zeros, e.g. 12300
   }
-
-  // Shared exponent, e.g. e+00.
-  char exp[8];
-  char* exp_end = write_exp<double>(exp, lead_exp);
-  return w.write(exp, int(exp_end - exp));
+  // %f emits exactly `precision` fractional digits; %g only significant ones.
+  int frac_width = general ? num_digits - point_pos : precision;
+  if (frac_width <= 0) return w.out;  // no fractional part
+  w.write('.');
+  int lead_zeros = point_pos < 0 ? -point_pos : 0;
+  w.write_zeros(lead_zeros);  // 0.00...
+  int frac_start = point_pos > 0 ? point_pos : 0;
+  int frac_digits = num_digits - frac_start;
+  if (frac_digits > 0)
+    w.write(p + frac_start, frac_digits);
+  else
+    frac_digits = 0;
+  return w.write_zeros(frac_width - lead_zeros - frac_digits);
 }
 
 template <typename Float>
