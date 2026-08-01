@@ -1715,8 +1715,8 @@ auto write_big(double value, int precision, char* out, size_t n,
       // discarded part exceeds half a unit (a tie rounds to even, i.e. 0).
       bool round_up = false;
       if (max_digits == 0) {  // The rounded-away part starts at the lead digit.
-        round_up = p[0] > '5' ||
-                   (p[0] == '5' && any_nonzero(p + 1, p + num_digits));
+        round_up =
+            p[0] > '5' || (p[0] == '5' && any_nonzero(p + 1, p + num_digits));
       }
       digits[0] = char('0' + round_up);
       p = digits;
@@ -1746,17 +1746,24 @@ auto write_big(double value, int precision, char* out, size_t n,
     }
   }
 
+  if (general) {
+    // Drop trailing zeros and pick fixed or scientific.
+    while (num_digits > 1 && p[num_digits - 1] == '0') --num_digits;
+    fixed = lead_exp >= -4 && lead_exp < precision;
+  }
+
   if (fixed) {
-    // %f: emit exactly `precision` fractional digits, zero-padding as needed.
     int point_pos = lead_exp + 1;  // digits before the decimal point
     if (point_pos <= 0) {          // |value| < 1, e.g. 0.00123
       w.write('0');
     } else {
       int int_digits = num_digits < point_pos ? num_digits : point_pos;
       w.write(p, int_digits);
-      w.write_zeros(point_pos - int_digits);  // e.g. 12300
+      w.write_zeros(point_pos - int_digits);  // integer zeros, e.g. 12300
     }
-    if (precision == 0) return w.out;
+    // %f emits exactly `precision` fractional digits; %g only significant ones.
+    int frac_width = general ? num_digits - point_pos : precision;
+    if (frac_width <= 0) return w.out;  // no fractional part
     w.write('.');
     int lead_zeros = point_pos < 0 ? -point_pos : 0;
     w.write_zeros(lead_zeros);  // 0.00...
@@ -1766,38 +1773,19 @@ auto write_big(double value, int precision, char* out, size_t n,
       w.write(p + frac_start, frac_digits);
     else
       frac_digits = 0;
-    return w.write_zeros(precision - lead_zeros - frac_digits);
+    return w.write_zeros(frac_width - lead_zeros - frac_digits);
   }
 
+  // Scientific notation.
   if (general) {
-    // %g: drop insignificant trailing zeros and pick fixed or scientific.
-    while (num_digits > 1 && p[num_digits - 1] == '0') --num_digits;
-
-    if (lead_exp >= -4 && lead_exp < precision) {  // fixed notation
-      if (lead_exp < 0) {  // leading 0.00..., lead_exp in [-4, -1]
-        w.write('0');
-        w.write('.');
-        w.write_zeros(-lead_exp - 1);
-        return w.write(p, num_digits);
-      }
-      int point_pos = lead_exp + 1;
-      if (point_pos >= num_digits) {  // integer, e.g. 12300
-        w.write(p, num_digits);
-        return w.write_zeros(point_pos - num_digits);
-      }
-      w.write(p, point_pos);
-      w.write('.');
-      return w.write(p + point_pos, num_digits - point_pos);
-    }
-
-    // %g scientific: d.ddde±XX with only the significant digits.
+    // %g: d.ddde±XX with only the significant digits.
     w.write(p[0]);
     if (num_digits > 1) {
       w.write('.');
       w.write(p + 1, num_digits - 1);
     }
   } else {
-    // %e scientific: d.ddde±XX padded to `precision` fractional digits.
+    // %e: d.ddde±XX padded to `precision` fractional digits.
     w.write(p[0]);
     if (precision != 0) {
       w.write('.');
