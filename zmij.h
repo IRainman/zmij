@@ -38,13 +38,6 @@ auto write_general(Float value, int precision, char* buffer) noexcept -> char*;
 template <typename Float>
 auto write_fixed(Float value, int precision, char* buffer) noexcept -> char*;
 
-/// Clamps `precision` to the range [0, 18] supported by write_fixed.
-inline auto clamp_precision(int precision) noexcept -> int {
-  if (precision < 0) return 0;
-  if (precision > 18) return 18;
-  return precision;
-}
-
 }  // namespace detail
 
 enum {
@@ -195,11 +188,13 @@ inline auto write_general(char* out, size_t n, double value,
 /// is the exact value correctly rounded to the given precision (ties to even),
 /// matching printf's %f for every finite input. Returns a pointer past the last
 /// character written; if the representation exceeds `n` characters, only the
-/// first `n` are written. `precision` must be in [0, 18]; out-of-range values
-/// are clamped.
+/// first `n` are written. `precision` must be non-negative; negative values are
+/// clamped to 0.
 inline auto write_fixed(char* out, size_t n, float value,
                         int precision) noexcept -> char* {
-  precision = detail::clamp_precision(precision);
+  if (precision < 0) precision = 0;
+  if (precision > 18)
+    return detail::write_big(value, precision, out, n, format::fixed);
   if (n >= buffer_sizes<float>::fixed)
     return detail::write_fixed(value, precision, out);
   char buffer[buffer_sizes<float>::fixed];
@@ -214,11 +209,13 @@ inline auto write_fixed(char* out, size_t n, float value,
 /// is the exact value correctly rounded to the given precision (ties to even),
 /// matching printf's %f for every finite input. Returns a pointer past the last
 /// character written; if the representation exceeds `n` characters, only the
-/// first `n` are written. `precision` must be in [0, 18]; out-of-range values
-/// are clamped.
+/// first `n` are written. `precision` must be non-negative; negative values are
+/// clamped to 0.
 inline auto write_fixed(char* out, size_t n, double value,
                         int precision) noexcept -> char* {
-  precision = detail::clamp_precision(precision);
+  if (precision < 0) precision = 0;
+  if (precision > 18)
+    return detail::write_big(value, precision, out, n, format::fixed);
   if (n >= buffer_sizes<double>::fixed)
     return detail::write_fixed(value, precision, out);
   char buffer[buffer_sizes<double>::fixed];

@@ -152,8 +152,8 @@ TEST(float_test, write_precision) {
             "3.40282347e+38");
 }
 
-// Big precision (> 18) routes write_scientific and write_general through
-// write_big; both must match printf's %e and %g.
+// Big precision (> 18) routes write_scientific, write_general, and write_fixed
+// through write_big; all must match printf's %e, %g, and %f.
 TEST(float_test, write_big) {
   auto check = [](float value, int precision) {
     char buf[200], ref[200];
@@ -165,8 +165,7 @@ TEST(float_test, write_big) {
     snprintf(ref, sizeof(ref), "%.*g", precision, double(value));
     EXPECT_EQ(std::string(buf, end), std::string(ref))
         << "general value=" << value << " precision=" << precision;
-    end = zmij::detail::write_big(double(value), precision, buf, sizeof(buf),
-                                  zmij::format::fixed);
+    end = zmij::write_fixed(buf, sizeof(buf), value, precision);
     snprintf(ref, sizeof(ref), "%.*f", precision, double(value));
     EXPECT_EQ(std::string(buf, end), std::string(ref))
         << "fixed value=" << value << " precision=" << precision;
@@ -481,8 +480,8 @@ TEST(double_test, write_precision_irregular) {
   }
 }
 
-// Big precision (> 18) routes write_scientific and write_general through
-// write_big; both must match printf's %e and %g.
+// Big precision (> 18) routes write_scientific, write_general, and write_fixed
+// through write_big; all must match printf's %e, %g, and %f.
 TEST(double_test, write_big) {
   auto check = [](double value, int precision) {
     char buf[1200], ref[1200];
@@ -494,8 +493,7 @@ TEST(double_test, write_big) {
     snprintf(ref, sizeof(ref), "%.*g", precision, value);
     EXPECT_EQ(std::string(buf, end), std::string(ref))
         << "general value=" << value << " precision=" << precision;
-    end = zmij::detail::write_big(value, precision, buf, sizeof(buf),
-                                  zmij::format::fixed);
+    end = zmij::write_fixed(buf, sizeof(buf), value, precision);
     snprintf(ref, sizeof(ref), "%.*f", precision, value);
     EXPECT_EQ(std::string(buf, end), std::string(ref))
         << "fixed value=" << value << " precision=" << precision;
@@ -534,6 +532,12 @@ TEST(double_test, write_big_truncated) {
   memset(buf, '?', sizeof(buf));
   end = zmij::write_general(buf, 5, 0.1, 30);
   EXPECT_EQ(std::string(buf, end), "0.100");  // first 5 of 0.10000...
+  EXPECT_EQ(end, buf + 5);
+  EXPECT_EQ(buf[5], '?');
+
+  memset(buf, '?', sizeof(buf));
+  end = zmij::write_fixed(buf, 5, 1.5, 30);
+  EXPECT_EQ(std::string(buf, end), "1.500");  // first 5 of 1.5000...
   EXPECT_EQ(end, buf + 5);
   EXPECT_EQ(buf[5], '?');
 }
