@@ -723,17 +723,31 @@ TEST(zmij_impl_test, bigint) {
   bigint b = make_bigint(1);
   b.shift_left(80);
   EXPECT_EQ(to_string(b), "1208925819614629174706176");
+}
 
-  // shift_right_round divides by 2**bits, rounding ties to even.
-  auto rshift = [](uint64_t value, int bits) {
-    bigint n = make_bigint(value);
-    n.shift_right_round(bits);
-    return to_string(n);
+TEST(zmij_impl_test, shift_right_round) {
+  // Divides a 128-bit value by 2**bits, rounding ties to even.
+  auto rshift = [](uint128_t value, int bits) {
+    return uint64_t(shift_right_round(value, bits));
   };
-  EXPECT_EQ(rshift(6, 1), "3");  // 3.0 -> 3 (exact)
-  EXPECT_EQ(rshift(5, 1), "2");  // 2.5 -> 2 (tie to even)
-  EXPECT_EQ(rshift(7, 1), "4");  // 3.5 -> 4 (tie to even)
-  EXPECT_EQ(rshift(3, 1), "2");  // 1.5 -> 2 (tie to even)
+  // Ties round to even.
+  EXPECT_EQ(rshift(6, 1), 3u);  // 3.0 -> 3 (exact)
+  EXPECT_EQ(rshift(5, 1), 2u);  // 2.5 -> 2 (tie down to even)
+  EXPECT_EQ(rshift(7, 1), 4u);  // 3.5 -> 4 (tie up to even)
+  EXPECT_EQ(rshift(3, 1), 2u);  // 1.5 -> 2 (tie up to even)
+  // Non-ties round to nearest.
+  EXPECT_EQ(rshift(1, 2), 0u);  // 0.25 -> 0
+  EXPECT_EQ(rshift(3, 2), 1u);  // 0.75 -> 1
+  // Shifts crossing the 64-bit boundary.
+  EXPECT_EQ(rshift(uint128_t(1) << 63, 64), 0u);  // 0.5 -> 0 (tie to even)
+  EXPECT_EQ(rshift(uint128_t(3) << 62, 64), 1u);  // 0.75 -> 1
+  // A full-width value: (2**64 - 1)**2 >> 64 = 2**64 - 2, remainder rounds down.
+  EXPECT_EQ(rshift(umul128(~uint64_t(0), ~uint64_t(0)), 64), ~uint64_t(0) - 1);
+  // n >= 128 shifts everything out; 2**127 is the only in-range tie.
+  EXPECT_EQ(rshift(uint128_t(1) << 126, 128), 0u);  // 0.25 -> 0
+  EXPECT_EQ(rshift(uint128_t(1) << 127, 128), 0u);  // 0.5 -> 0 (tie to even)
+  EXPECT_EQ(rshift(uint128_t(3) << 126, 128), 1u);  // 0.75 -> 1
+  EXPECT_EQ(rshift(uint128_t(1) << 127, 200), 0u);  // far past the width
 }
 
 TEST(zmij_impl_test, bigint_divmod_1e9) {

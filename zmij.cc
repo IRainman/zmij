@@ -240,15 +240,30 @@ struct uint128 {
   uint64_t hi;
   uint64_t lo;
 
-  [[ZMIJ_MAYBE_UNUSED]] explicit constexpr operator uint64_t() const noexcept {
-    return lo;
-  }
+  uint128() = default;
+  constexpr uint128(uint64_t hi, uint64_t lo) noexcept : hi(hi), lo(lo) {}
+  constexpr uint128(uint64_t lo) noexcept : hi(0), lo(lo) {}
 
-  [[ZMIJ_MAYBE_UNUSED]] constexpr auto operator>>(int shift) const noexcept
-      -> uint128 {
-    if (shift == 32) return {hi >> 32, (hi << 32) | (lo >> 32)};
-    assert(shift >= 64 && shift < 128);
-    return {0, hi >> (shift - 64)};
+  explicit constexpr operator uint64_t() const noexcept { return lo; }
+
+  constexpr auto operator<<(int s) const noexcept -> uint128 {
+    if (s == 0) return *this;
+    if (s < 64) return {hi << s | lo >> (64 - s), lo << s};
+    if (s < 128) return {lo << (s - 64), 0};
+    return {0, 0};
+  }
+  constexpr auto operator>>(int s) const noexcept -> uint128 {
+    if (s == 0) return *this;
+    if (s < 64) return {hi >> s, lo >> s | hi << (64 - s)};
+    if (s < 128) return {0, hi >> (s - 64)};
+    return {0, 0};
+  }
+  constexpr auto operator<(uint128 o) const noexcept -> bool {
+    return hi != o.hi ? hi < o.hi : lo < o.lo;
+  }
+  auto operator++() noexcept -> uint128& {
+    if (++lo == 0) ++hi;
+    return *this;
   }
 };
 
@@ -1370,29 +1385,6 @@ struct bigint {
     while (num_limbs > 0 && limbs[num_limbs - 1] == 0) --num_limbs;
   }
 
-  auto bit(int pos) const noexcept -> uint32_t {
-    int limb_index = pos >> 5;
-    return limb_index < num_limbs ? (limbs[limb_index] >> (pos & 31)) & 1 : 0;
-  }
-
-  // Returns true if any bit strictly below `pos` is set.
-  auto any_below(int pos) const noexcept -> bool {
-    int limb_index = pos >> 5, b = pos & 31;
-    for (int i = 0; i < limb_index && i < num_limbs; ++i) {
-      if (limbs[i] != 0) return true;
-    }
-    return limb_index < num_limbs &&
-           (limbs[limb_index] & ((uint32_t(1) << b) - 1)) != 0;
-  }
-
-  void increment() noexcept {
-    for (int i = 0; i < num_limbs; ++i) {
-      if (++limbs[i] != 0) return;  // No carry out of this limb.
-    }
-    assert(num_limbs < max_limbs);
-    limbs[num_limbs++] = 1;  // Carry into a new top limb.
-  }
-
   // Shifts left by `n`; requires enough spare limbs.
   void shift_left(int n) noexcept {
     assert(n >= 0);
@@ -1413,33 +1405,6 @@ struct bigint {
     }
     for (int i = 0; i < limb_shift; ++i) limbs[i] = 0;
     trim();
-  }
-
-  // Shifts right by `n`, rounding to nearest with ties to even.
-  void shift_right_round(int n) noexcept {
-    assert(n >= 0);
-    if (n == 0) return;
-    bool round_bit = bit(n - 1) != 0;
-    bool sticky = any_below(n - 1);
-    int limb_shift = n >> 5, bit_shift = n & 31;
-    if (limb_shift >= num_limbs) {
-      num_limbs = 0;
-    } else if (bit_shift == 0) {
-      for (int i = 0; i < num_limbs - limb_shift; ++i)
-        limbs[i] = limbs[i + limb_shift];
-      num_limbs -= limb_shift;
-    } else {
-      int new_size = num_limbs - limb_shift;
-      for (int i = 0; i < new_size - 1; ++i) {
-        uint32_t hi = limbs[i + limb_shift + 1] << (32 - bit_shift);
-        limbs[i] = limbs[i + limb_shift] >> bit_shift | hi;
-      }
-      limbs[new_size - 1] = limbs[num_limbs - 1] >> bit_shift;
-      num_limbs = new_size;
-      trim();
-    }
-    bool lsb = num_limbs > 0 && (limbs[0] & 1) != 0;
-    if (round_bit && (sticky || lsb)) increment();
   }
 
   // Divides by 10**9 in place and returns the remainder.
@@ -1482,6 +1447,20 @@ struct bigint {
   }
 };
 
+// Returns the 128-bit `value` shifted right by `n` bits (n >= 1), rounded to
+// nearest with ties to even.
+auto shift_right_round(uint128_t value, int n) noexcept -> uint128_t {
+  if (n >= 128) {  // everything shifts out; 2**127 is the only in-range tie
+    uint128_t half = uint128_t(1) << 127;
+    return n == 128 && half < value ? uint128_t(1) : uint128_t(0);
+  }
+  uint128_t q = value >> n;
+  uint128_t rem = (value << (128 - n)) >> (128 - n);  // discarded low n bits
+  uint128_t half = uint128_t(1) << (n - 1);
+  if (half < rem || ((uint64_t(q) & 1) && !(rem < half))) ++q;
+  return q;
+}
+
 // Emits n's decimal digits (most significant first) ending at `end`, consuming
 // n, and returns a pointer to the first (most significant) digit.
 auto write_digits(bigint& n, char* end) noexcept -> char* {
@@ -1501,11 +1480,9 @@ auto write_digits(bigint& n, char* end) noexcept -> char* {
 // digits, correctly rounded (ties to even) via exact big-integer arithmetic.
 auto write_fixed_big(char* buffer, uint64_t bin_sig, int bin_exp,
                      int precision) noexcept -> char* {
-  bigint n(umul128(bin_sig, pow10s[precision]));
-  if (bin_exp >= 0)
-    n.shift_left(bin_exp);
-  else
-    n.shift_right_round(-bin_exp);
+  uint128_t product = umul128(bin_sig, pow10s[precision]);
+  bigint n(bin_exp < 0 ? shift_right_round(product, -bin_exp) : product);
+  if (bin_exp >= 0) n.shift_left(bin_exp);
 
   // n <= round(DBL_MAX * 10**18): DBL_MAX has 309 integer digits and precision
   // adds at most 18 more.
