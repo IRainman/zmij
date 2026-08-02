@@ -1657,13 +1657,14 @@ auto write(Float value, char* buffer) noexcept -> char* {
 
 // Writes `value` via exact big-integer arithmetic, correctly rounded (ties to
 // even), truncating into `out` after `n` bytes.
-auto write_big(double value, int precision, char* out, size_t n,
+template <typename Float>
+auto write_big(Float value, int precision, char* out, size_t n,
                format fmt) noexcept -> char* {
   bool general = fmt == format::general;
   bool fixed = fmt == format::fixed;
   assert(precision >= general);
 
-  using traits = float_traits<double>;
+  using traits = float_traits<Float>;
   auto bits = traits::to_bits(value);
   auto raw_exp = traits::get_exp(bits);
   auto bin_sig = traits::get_sig(bits);
@@ -1680,7 +1681,7 @@ auto write_big(double value, int precision, char* out, size_t n,
   bool is_normal = unsigned(raw_exp - 1) < unsigned(traits::exp_mask - 1);
   if (!is_normal) [[ZMIJ_UNLIKELY]] {
     if (raw_exp != 0) return w.write(bin_sig != 0 ? "nan" : "inf", 3);
-    if (bin_sig != 0) normalize<double>(bin_sig, raw_exp);
+    if (bin_sig != 0) normalize<Float>(bin_sig, raw_exp);
     bin_sig ^= traits::implicit_bit;
   }
   bin_sig ^= traits::implicit_bit;
@@ -1764,7 +1765,7 @@ auto write_big(double value, int precision, char* out, size_t n,
       if (!general) w.write_zeros(precision - num_digits + 1);
     }
     char exp[8];
-    char* exp_end = write_exp<double>(exp, lead_exp);
+    char* exp_end = write_exp<Float>(exp, lead_exp);
     return w.write(exp, int(exp_end - exp));
   }
 
@@ -1974,6 +1975,9 @@ template auto write_fixed(float value, int precision, char* buffer) noexcept
     -> char*;
 template auto write_fixed(double value, int precision, char* buffer) noexcept
     -> char*;
+
+template auto write_big(double value, int precision, char* out, size_t n,
+                        format fmt) noexcept -> char*;
 
 }  // namespace detail
 }  // namespace zmij

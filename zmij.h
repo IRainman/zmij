@@ -25,8 +25,14 @@ namespace detail {
 template <typename Float>
 auto write(Float value, char* buffer) noexcept -> char*;
 
-auto write_big(double value, int precision, char* out, size_t n,
+template <typename Float>
+auto write_big(Float value, int precision, char* out, size_t n,
                format fmt) noexcept -> char*;
+template <>
+inline auto write_big(float value, int precision, char* out, size_t n,
+                      format fmt) noexcept -> char* {
+  return write_big(double(value), precision, out, n, fmt);
+}
 
 template <typename Float>
 auto write_scientific(Float value, int precision, char* buffer) noexcept
