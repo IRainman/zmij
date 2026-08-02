@@ -466,21 +466,22 @@ TEST(double_test, write_precision) {
   EXPECT_EQ(to_scientific(6.62607015e-34, 8), "6.62607015e-34");
 }
 
-// A negative precision defaults to 6, like printf (and 0 means 1 for %g).
 TEST(double_test, negative_precision) {
+  // Pass the same negative/zero precision to printf, which defaults it to 6
+  // (and treats 0 as 1 for %g), and check we produce identical output.
   double value = 1234.5678;
   char buf[64], ref[64];
   char* end = zmij::write_scientific(buf, sizeof(buf), value, -1);
-  snprintf(ref, sizeof(ref), "%.*e", 6, value);
+  snprintf(ref, sizeof(ref), "%.*e", -1, value);
   EXPECT_EQ(std::string(buf, end), ref);
   end = zmij::write_fixed(buf, sizeof(buf), value, -5);
-  snprintf(ref, sizeof(ref), "%.*f", 6, value);
+  snprintf(ref, sizeof(ref), "%.*f", -5, value);
   EXPECT_EQ(std::string(buf, end), ref);
   end = zmij::write_general(buf, sizeof(buf), value, -1);
-  snprintf(ref, sizeof(ref), "%.*g", 6, value);
+  snprintf(ref, sizeof(ref), "%.*g", -1, value);
   EXPECT_EQ(std::string(buf, end), ref);
   end = zmij::write_general(buf, sizeof(buf), value, 0);
-  snprintf(ref, sizeof(ref), "%.*g", 1, value);
+  snprintf(ref, sizeof(ref), "%.*g", 0, value);
   EXPECT_EQ(std::string(buf, end), ref);
 }
 
