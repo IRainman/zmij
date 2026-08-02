@@ -107,10 +107,10 @@ inline auto write(char* out, size_t n, double value) noexcept -> char* {
 /// decimal point (e.g. 1.234e+05) to `out` without a null terminator, like
 /// printf's %e. Returns a pointer past the last character written; if the
 /// representation exceeds `n` characters, only the first `n` are written.
-/// `precision` must be non-negative; negative values are clamped to 0.
+/// A negative `precision` defaults to 6, matching printf.
 inline auto write_scientific(char* out, size_t n, float value,
                              int precision) noexcept -> char* {
-  if (precision < 0) precision = 0;
+  if (precision < 0) precision = 6;
   if (precision >= 18)
     return detail::write_big(value, precision, out, n, format::scientific);
   if (n >= buffer_sizes<float>::scientific)
@@ -126,10 +126,10 @@ inline auto write_scientific(char* out, size_t n, float value,
 /// decimal point (e.g. 1.234e+05) to `out` without a null terminator, like
 /// printf's %e. Returns a pointer past the last character written; if the
 /// representation exceeds `n` characters, only the first `n` are written.
-/// `precision` must be non-negative; negative values are clamped to 0.
+/// A negative `precision` defaults to 6, matching printf.
 inline auto write_scientific(char* out, size_t n, double value,
                              int precision) noexcept -> char* {
-  if (precision < 0) precision = 0;
+  if (precision < 0) precision = 6;
   if (precision >= 18)
     return detail::write_big(value, precision, out, n, format::scientific);
   if (n >= buffer_sizes<double>::scientific)
@@ -146,11 +146,11 @@ inline auto write_scientific(char* out, size_t n, double value,
 /// terminator. Fixed notation is used when `value`'s decimal exponent is in
 /// [-4, precision), and scientific otherwise. Returns a pointer past the last
 /// character written; if the representation exceeds `n` characters, only the
-/// first `n` are written. `precision` must be at least 1; smaller values are
-/// clamped to 1.
+/// first `n` are written. A negative `precision` defaults to 6 and zero is
+/// treated as 1, matching printf.
 inline auto write_general(char* out, size_t n, float value,
                           int precision) noexcept -> char* {
-  if (precision < 1) precision = 1;
+  if (precision <= 1) precision = precision < 0 ? 6 : 1;
   if (precision > 18)
     return detail::write_big(value, precision, out, n, format::general);
   if (n >= buffer_sizes<float>::scientific)
@@ -167,11 +167,11 @@ inline auto write_general(char* out, size_t n, float value,
 /// terminator. Fixed notation is used when `value`'s decimal exponent is in
 /// [-4, precision), and scientific otherwise. Returns a pointer past the last
 /// character written; if the representation exceeds `n` characters, only the
-/// first `n` are written. `precision` must be at least 1; smaller values are
-/// clamped to 1.
+/// first `n` are written. A negative `precision` defaults to 6 and zero is
+/// treated as 1, matching printf.
 inline auto write_general(char* out, size_t n, double value,
                           int precision) noexcept -> char* {
-  if (precision < 1) precision = 1;
+  if (precision <= 1) precision = precision < 0 ? 6 : 1;
   if (precision > 18)
     return detail::write_big(value, precision, out, n, format::general);
   if (n >= buffer_sizes<double>::scientific)
@@ -188,10 +188,10 @@ inline auto write_general(char* out, size_t n, double value,
 /// is the exact value correctly rounded to the given precision (ties to even),
 /// matching printf's %f. Returns a pointer past the last character written; if
 /// the representation exceeds `n` characters, only the first `n` are written.
-/// `precision` must be non-negative; negative values are clamped to 0.
+/// A negative `precision` defaults to 6, matching printf.
 inline auto write_fixed(char* out, size_t n, float value,
                         int precision) noexcept -> char* {
-  if (precision < 0) precision = 0;
+  if (precision < 0) precision = 6;
   if (precision > 18)
     return detail::write_big(value, precision, out, n, format::fixed);
   if (n >= buffer_sizes<float>::fixed)
@@ -208,10 +208,10 @@ inline auto write_fixed(char* out, size_t n, float value,
 /// is the exact value correctly rounded to the given precision (ties to even),
 /// matching printf's %f. Returns a pointer past the last character written; if
 /// the representation exceeds `n` characters, only the first `n` are written.
-/// `precision` must be non-negative; negative values are clamped to 0.
+/// A negative `precision` defaults to 6, matching printf.
 inline auto write_fixed(char* out, size_t n, double value,
                         int precision) noexcept -> char* {
-  if (precision < 0) precision = 0;
+  if (precision < 0) precision = 6;
   if (precision > 18)
     return detail::write_big(value, precision, out, n, format::fixed);
   if (n >= buffer_sizes<double>::fixed)
