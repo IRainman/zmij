@@ -1671,16 +1671,15 @@ auto write_big(double value, int precision, char* out, size_t n,
   writer w = {out, out + n};
   if (traits::is_negative(bits)) w.write('-');
 
-  char digits[805];  // num < 2**2668 has <= 804 digits, plus a carry digit.
+  char digits[805];  // num < 2**2668 has at most 804 digits, plus a carry.
   digits[0] = '0';
   char* p = digits;
-  int num_digits = 1;  // significant digits to emit (>= 1)
-  int lead_exp = 0;    // exponent of the leading digit
+  int num_digits = 1;
+  int lead_exp = 0;  // exponent of the leading digit
 
   bool is_normal = unsigned(raw_exp - 1) < unsigned(traits::exp_mask - 1);
   if (!is_normal) [[ZMIJ_UNLIKELY]] {
-    if (raw_exp != 0)  // inf or nan
-      return w.write(bin_sig != 0 ? "nan" : "inf", 3);
+    if (raw_exp != 0) return w.write(bin_sig != 0 ? "nan" : "inf", 3);
     if (bin_sig != 0) normalize<double>(bin_sig, raw_exp);
     bin_sig ^= traits::implicit_bit;
   }
@@ -1705,16 +1704,15 @@ auto write_big(double value, int precision, char* out, size_t n,
     num_digits = int(digits + sizeof(digits) - p);
     lead_exp = num_digits - 1 + base_exp;
 
-    // Significant digits to keep: precision, a leading digit for %e/%f, and the
-    // remaining integer digits (lead_exp) for %f; %g counts significant digits.
-    int max_digits = precision + !general;
-    if (fixed) max_digits += lead_exp;
+    // Significant digits to keep: precision for %g. For %e/%f it counts
+    // fractional digits, so add one leading digit; %f adds lead_exp more.
+    int max_digits = precision + !general + (fixed ? lead_exp : 0);
     // Round to max_digits significant digits, ties to even.
     if (max_digits < 1) {
       // |value| < 10**-precision: rounds to 0, or up to 10**-precision when the
       // discarded part exceeds half a unit (a tie rounds to even, i.e. 0).
       bool round_up = false;
-      if (max_digits == 0) {  // The rounded-away part starts at the lead digit.
+      if (max_digits == 0) {
         round_up =
             p[0] > '5' || (p[0] == '5' && any_nonzero(p + 1, p + num_digits));
       }
@@ -1725,7 +1723,7 @@ auto write_big(double value, int precision, char* out, size_t n,
     } else if (num_digits > max_digits) {
       char dropped = p[max_digits];
       bool round_up = dropped > '5';
-      // A dropped 5 is a tie unless a lower nonzero digit makes it sticky.
+      // A dropped 5 ties to even unless a lower nonzero digit rounds up.
       if (dropped == '5') {
         round_up = ((p[max_digits - 1] - '0') & 1) ||
                    any_nonzero(p + max_digits + 1, p + num_digits);
@@ -1747,16 +1745,18 @@ auto write_big(double value, int precision, char* out, size_t n,
   }
 
   bool has_point = precision != 0;  // %e: a point iff fractional digits
+  int num_frac_places = precision;  // fractional digit positions to emit
   if (general) {
     // Drop trailing zeros and pick fixed or scientific.
     while (num_digits > 1 && p[num_digits - 1] == '0') --num_digits;
     fixed = lead_exp >= -4 && lead_exp < precision;
     has_point = num_digits > 1;
+    num_frac_places = num_digits - lead_exp - 1;
   }
 
   if (!fixed) {
-    // Scientific d.ddde±XX: %e pads to `precision` fractional digits, %g emits
-    // only the significant ones.
+    // Emit scientific notation d.ddde±XX: %e pads to `precision` fractional
+    // digits, %g emits only the significant ones.
     w.write(p[0]);
     if (has_point) {
       w.write('.');
@@ -1768,7 +1768,7 @@ auto write_big(double value, int precision, char* out, size_t n,
     return w.write(exp, int(exp_end - exp));
   }
 
-  // Fixed notation.
+  // Emit fixed notation.
   int point_pos = lead_exp + 1;
   int num_int_digits = 0;  // significant digits before the point
   if (point_pos <= 0) {    // |value| < 1, e.g. 0.00123
@@ -1778,16 +1778,13 @@ auto write_big(double value, int precision, char* out, size_t n,
     w.write(p, num_int_digits);
     w.write_zeros(point_pos - num_int_digits);  // integer zeros, e.g. 12300
   }
-  // Characters after the decimal point: `precision` for %f (zero-padded), or
-  // just the significant fractional digits for %g.
-  int frac_width = general ? num_digits - point_pos : precision;
-  if (frac_width <= 0) return w.out;  // no fractional part
+  if (num_frac_places <= 0) return w.out;
   w.write('.');
-  int lead_zeros = point_pos < 0 ? -point_pos : 0;
-  w.write_zeros(lead_zeros);  // 0.00...
+  int num_lead_zeros = point_pos < 0 ? -point_pos : 0;
+  w.write_zeros(num_lead_zeros);  // 0.00...
   int num_frac_digits = num_digits - num_int_digits;
   w.write(p + num_int_digits, num_frac_digits);
-  return w.write_zeros(frac_width - lead_zeros - num_frac_digits);
+  return w.write_zeros(num_frac_places - num_lead_zeros - num_frac_digits);
 }
 
 template <typename Float>
