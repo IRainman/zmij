@@ -694,33 +694,31 @@ TEST(zmij_impl_test, utilities) {
   EXPECT_EQ(count_trailing_nonzeros(0x09000000'00000000ull), 8);
 }
 
-static auto make_bigint(uint64_t value) -> bigint {
-  return bigint(umul128(value, 1));
-}
-
-static auto to_string(bigint n) -> std::string {
+static auto to_string(const bigint& value) -> std::string {
+  bigint n(0, value.num_limbs);  // A mutable copy to consume via divmod_1e9.
+  n.num_limbs = value.num_limbs;
+  memcpy(n.limbs, value.limbs, size_t(n.num_limbs) * sizeof(*n.limbs));
   std::string s;
-  while (n.num_limbs != 0) {
-    char buf[16];
-    snprintf(buf, sizeof(buf), "%09u", n.divmod_1e9());
+  while (n.num_limbs != 0) {  // Extract 9-digit groups, least significant first.
+    uint32_t group = n.divmod_1e9();
+    char buf[16];  // The most significant group is unpadded, the rest are not.
+    snprintf(buf, sizeof(buf), n.num_limbs != 0 ? "%09u" : "%u", group);
     s.insert(0, buf);
   }
-  size_t start = s.find_first_not_of('0');  // Remove leading zeros.
-  return start == std::string::npos ? "0" : s.substr(start);
+  return s.empty() ? "0" : s;
 }
 
 TEST(zmij_impl_test, bigint) {
   // Construction from a 128-bit value and base-10**9 output.
-  EXPECT_EQ(to_string(make_bigint(0)), "0");
-  EXPECT_EQ(to_string(make_bigint(123456789)), "123456789");
-  EXPECT_EQ(to_string(make_bigint(1000000000000000000ull)),
-            "1000000000000000000");
+  EXPECT_EQ(to_string(bigint(0)), "0");
+  EXPECT_EQ(to_string(bigint(123456789)), "123456789");
+  EXPECT_EQ(to_string(bigint(1000000000000000000ull)), "1000000000000000000");
 
   // shift_left multiplies by 2**bits (word-aligned and unaligned).
-  bigint a = make_bigint(1);
+  bigint a(1);
   a.shift_left(64);
   EXPECT_EQ(to_string(a), "18446744073709551616");
-  bigint b = make_bigint(1);
+  bigint b(1);
   b.shift_left(80);
   EXPECT_EQ(to_string(b), "1208925819614629174706176");
 }
@@ -741,7 +739,8 @@ TEST(zmij_impl_test, shift_right_round) {
   // Shifts crossing the 64-bit boundary.
   EXPECT_EQ(rshift(uint128_t(1) << 63, 64), 0u);  // 0.5 -> 0 (tie to even)
   EXPECT_EQ(rshift(uint128_t(3) << 62, 64), 1u);  // 0.75 -> 1
-  // A full-width value: (2**64 - 1)**2 >> 64 = 2**64 - 2, remainder rounds down.
+  // A full-width value: (2**64 - 1)**2 >> 64 = 2**64 - 2, remainder rounds
+  // down.
   EXPECT_EQ(rshift(umul128(~uint64_t(0), ~uint64_t(0)), 64), ~uint64_t(0) - 1);
   // n >= 128 shifts everything out; 2**127 is the only in-range tie.
   EXPECT_EQ(rshift(uint128_t(1) << 126, 128), 0u);  // 0.25 -> 0
@@ -752,38 +751,38 @@ TEST(zmij_impl_test, shift_right_round) {
 
 TEST(zmij_impl_test, bigint_divmod_1e9) {
   // Returns value % 10**9 and leaves value / 10**9 in place.
-  bigint n = make_bigint(123456789012345678ull);
+  bigint n(123456789012345678ull);
   EXPECT_EQ(n.divmod_1e9(), 12345678u);  // Low 9 digits.
   EXPECT_EQ(to_string(n), "123456789");  // Remaining high digits.
 
   // A value below 10**9 becomes empty, returning the value itself.
-  bigint small = make_bigint(42);
+  bigint small(42);
   EXPECT_EQ(small.divmod_1e9(), 42u);
   EXPECT_EQ(small.num_limbs, 0);
 
   // An exact multiple of 10**9 yields a zero remainder.
-  bigint exact = make_bigint(3000000000ull);
+  bigint exact(3000000000ull);
   EXPECT_EQ(exact.divmod_1e9(), 0u);
   EXPECT_EQ(to_string(exact), "3");
 }
 
 TEST(zmij_impl_test, bigint_mul) {
   // mul multiplies by a factor below 2**32, carrying across limbs.
-  bigint a = make_bigint(1);
+  bigint a(1);
   a.mul(1'000'000'000u);
   EXPECT_EQ(to_string(a), "1000000000");
-  bigint b = make_bigint(0xffffffffull);  // Forces a carry into a new limb.
+  bigint b(0xffffffffull);  // Forces a carry into a new limb.
   b.mul(0xffffffffu);
   EXPECT_EQ(to_string(b), "18446744065119617025");
 
   // mul_pow5 multiplies by 5**n across the 5**13 chunk boundary.
-  bigint c = make_bigint(1);
+  bigint c(1);
   c.mul_pow5(1);
   EXPECT_EQ(to_string(c), "5");
-  bigint d = make_bigint(1);
+  bigint d(1);
   d.mul_pow5(13);
   EXPECT_EQ(to_string(d), "1220703125");
-  bigint e = make_bigint(1);
+  bigint e(1);
   e.mul_pow5(27);  // 5**27, spanning two full chunks and a remainder.
   EXPECT_EQ(to_string(e), "7450580596923828125");
 }

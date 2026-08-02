@@ -19,6 +19,7 @@ struct dec_fp {
 #include <assert.h>  // assert
 #include <stddef.h>  // size_t
 #include <stdint.h>  // uint64_t
+#include <stdlib.h>  // malloc, free
 #include <string.h>  // memcpy
 
 #include <limits>       // std::numeric_limits
@@ -1392,16 +1393,25 @@ auto to_decimal(uint64_t bin_sig, int bin_exp, int precision) noexcept
   return {dec_sig * pow10s[18 - precision], dec_exp + precision - 1};
 }
 
-// A minimal fixed-capacity binary big integer (little-endian base-2**32 limbs).
+// A minimal binary big integer (little-endian base-2**32 limbs) with small-
+// buffer optimization.
 struct bigint {
-  // Widest value is the exact significand for scientific big output: a
-  // normalized double reaches bin_sig * 5**1126 < 2**53 * 5**1126 < 2**2668,
-  // i.e. 84 limbs (the fixed path's bin_sig * 10**18 << 971 needs far fewer).
-  static constexpr int max_limbs = 84;
-  uint32_t limbs[max_limbs];
-  int num_limbs;  // Number of significant limbs; 0 represents the value zero.
+  // Inline storage fits any finite double exactly: a normalized double reaches
+  // bin_sig * 5**1126 < 2**53 * 5**1126 < 2**2668, i.e. 84 limbs (the fixed
+  // path's bin_sig * 10**18 << 971 needs far fewer).
+  static constexpr int inline_capacity = 84;
+  uint32_t* limbs = inline_limbs;
+  int num_limbs;  // Significant limbs; 0 represents zero.
+  int capacity;   // Allocated limbs in `limbs`.
+  uint32_t inline_limbs[inline_capacity];
 
-  explicit bigint(uint128_t value) noexcept {
+  // Preallocates storage for `max_limbs` limbs, staying inline when it fits and
+  // allocating once on the heap otherwise. Callers must size `max_limbs` for
+  // the largest value the number will reach; it never grows afterwards.
+  explicit bigint(uint128_t value, int max_limbs = inline_capacity) noexcept
+      : capacity(max_limbs) {
+    if (capacity > inline_capacity)
+      limbs = static_cast<uint32_t*>(malloc(size_t(capacity) * sizeof(*limbs)));
     uint64_t lo = uint64_t(value), hi = uint64_t(value >> 64);
     limbs[0] = uint32_t(lo);
     limbs[1] = uint32_t(lo >> 32);
@@ -1411,16 +1421,23 @@ struct bigint {
     trim();
   }
 
+  bigint(const bigint&) = delete;
+  bigint& operator=(const bigint&) = delete;
+
+  ~bigint() noexcept {
+    if (limbs != inline_limbs) free(limbs);
+  }
+
   void trim() noexcept {
     while (num_limbs > 0 && limbs[num_limbs - 1] == 0) --num_limbs;
   }
 
-  // Shifts left by `n`; requires enough spare limbs.
+  // Shifts left by `n`.
   void shift_left(int n) noexcept {
     assert(n >= 0);
     if (num_limbs == 0) return;
     int limb_shift = n >> 5, bit_shift = n & 31;
-    assert(num_limbs + limb_shift + (bit_shift != 0) <= max_limbs);
+    assert(num_limbs + limb_shift + (bit_shift != 0) <= capacity);
     if (bit_shift == 0) {
       for (int i = num_limbs - 1; i >= 0; --i) limbs[i + limb_shift] = limbs[i];
       num_limbs += limb_shift;
@@ -1459,7 +1476,7 @@ struct bigint {
       carry = product >> 32;
     }
     if (carry == 0) return;
-    assert(num_limbs < max_limbs);
+    assert(num_limbs < capacity);
     limbs[num_limbs++] = uint32_t(carry);
   }
 
@@ -1655,9 +1672,6 @@ auto write(Float value, char* buffer) noexcept -> char* {
   return write_exp<Float>(buffer, dec_exp);
 }
 
-// Writes num * 2**bin_exp (num is zero for +-0), correctly rounded (ties to
-// even), truncating into `out` after `n` bytes. This is the Float-independent
-// core of write_big; num holds the significand with the implicit bit set.
 auto write_big(bool negative, bigint& num, int bin_exp, int precision,
                char* out, size_t n, format fmt) noexcept -> char* {
   bool general = fmt == format::general;
@@ -1773,8 +1787,8 @@ auto write_big(bool negative, bigint& num, int bin_exp, int precision,
   return w.write_zeros(num_frac_places - num_lead_zeros - num_frac_digits);
 }
 
-// Decodes `value` into sign, significand, and exponent, then formats it via the
-// Float-independent core above.
+// Writes `value` in `fmt` notation with `precision` digits, correctly rounded
+// (ties to even), truncating into `out` after `n` bytes.
 template <typename Float>
 auto write_big(Float value, int precision, char* out, size_t n,
                format fmt) noexcept -> char* {
