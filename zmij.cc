@@ -1672,14 +1672,11 @@ auto write(Float value, char* buffer) noexcept -> char* {
   return write_exp<Float>(buffer, dec_exp);
 }
 
-auto write_big(bool negative, bigint& num, int bin_exp, int precision,
-               char* out, size_t n, format fmt) noexcept -> char* {
+auto write_big(writer w, bigint& num, int bin_exp, int precision,
+               format fmt) noexcept -> char* {
   bool general = fmt == format::general;
   bool fixed = fmt == format::fixed;
   assert(precision >= general);
-
-  writer w = {out, out + n};
-  if (negative) w.write('-');
 
   char digits[805];  // num < 2**2668 has at most 804 digits, plus a carry.
   digits[0] = '0';
@@ -1796,23 +1793,21 @@ auto write_big(Float value, int precision, char* out, size_t n,
   auto bits = traits::to_bits(value);
   auto bin_exp = traits::get_exp(bits);
   auto bin_sig = traits::get_sig(bits);
-  bool negative = traits::is_negative(bits);
+
+  writer w = {out, out + n};
+  if (traits::is_negative(bits)) w.write('-');
 
   bool is_normal = unsigned(bin_exp - 1) < unsigned(traits::exp_mask - 1);
   if (!is_normal) [[ZMIJ_UNLIKELY]] {
-    if (bin_exp != 0) {  // inf or nan
-      writer w = {out, out + n};
-      if (negative) w.write('-');
+    if (bin_exp != 0)  // inf or nan
       return w.write(bin_sig != 0 ? "nan" : "inf", 3);
-    }
     if (bin_sig != 0) normalize<Float>(bin_sig, bin_exp);
     bin_sig ^= traits::implicit_bit;
   }
   bin_sig ^= traits::implicit_bit;
 
   bigint num(bin_sig);
-  return write_big(negative, num, int(bin_exp - traits::exp_offset), precision,
-                   out, n, fmt);
+  return write_big(w, num, int(bin_exp - traits::exp_offset), precision, fmt);
 }
 
 template <typename Float>
