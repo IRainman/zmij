@@ -1691,7 +1691,7 @@ auto write_big(double value, int precision, char* out, size_t n,
     // num's. For bin_exp < 0 the identity 2**bin_exp = 5**-bin_exp *
     // 10**bin_exp keeps num integral via a power-of-five multiply.
     int bin_exp = int(raw_exp) - traits::exp_offset;
-    bigint num(umul128(bin_sig, 1));
+    bigint num(bin_sig);
     int base_exp = 0;
     if (bin_exp >= 0) {
       num.shift_left(bin_exp);
