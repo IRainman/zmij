@@ -1655,22 +1655,17 @@ auto write(Float value, char* buffer) noexcept -> char* {
   return write_exp<Float>(buffer, dec_exp);
 }
 
-// Writes `value` via exact big-integer arithmetic, correctly rounded (ties to
-// even), truncating into `out` after `n` bytes.
-template <typename Float>
-auto write_big(Float value, int precision, char* out, size_t n,
-               format fmt) noexcept -> char* {
+// Writes num * 2**bin_exp (num is zero for +-0), correctly rounded (ties to
+// even), truncating into `out` after `n` bytes. This is the Float-independent
+// core of write_big; num holds the significand with the implicit bit set.
+auto write_big(bool negative, bigint& num, int bin_exp, int precision,
+               char* out, size_t n, format fmt) noexcept -> char* {
   bool general = fmt == format::general;
   bool fixed = fmt == format::fixed;
   assert(precision >= general);
 
-  using traits = float_traits<Float>;
-  auto bits = traits::to_bits(value);
-  auto raw_exp = traits::get_exp(bits);
-  auto bin_sig = traits::get_sig(bits);
-
   writer w = {out, out + n};
-  if (traits::is_negative(bits)) w.write('-');
+  if (negative) w.write('-');
 
   char digits[805];  // num < 2**2668 has at most 804 digits, plus a carry.
   digits[0] = '0';
@@ -1678,21 +1673,11 @@ auto write_big(Float value, int precision, char* out, size_t n,
   int num_digits = 1;
   int lead_exp = 0;  // exponent of the leading digit
 
-  bool is_normal = unsigned(raw_exp - 1) < unsigned(traits::exp_mask - 1);
-  if (!is_normal) [[ZMIJ_UNLIKELY]] {
-    if (raw_exp != 0) return w.write(bin_sig != 0 ? "nan" : "inf", 3);
-    if (bin_sig != 0) normalize<Float>(bin_sig, raw_exp);
-    bin_sig ^= traits::implicit_bit;
-  }
-  bin_sig ^= traits::implicit_bit;
-
-  if (bin_sig != 0) {
+  if (num.num_limbs != 0) {
     // Represent the value exactly as an integer num times a power of ten:
     // value = sig * 2**bin_exp = num * 10**base_exp, so its decimal digits are
     // num's. For bin_exp < 0 the identity 2**bin_exp = 5**-bin_exp *
     // 10**bin_exp keeps num integral via a power-of-five multiply.
-    int bin_exp = int(raw_exp) - traits::exp_offset;
-    bigint num(bin_sig);
     int base_exp = 0;
     if (bin_exp >= 0) {
       num.shift_left(bin_exp);
@@ -1765,7 +1750,7 @@ auto write_big(Float value, int precision, char* out, size_t n,
       if (!general) w.write_zeros(precision - num_digits + 1);
     }
     char exp[8];
-    char* exp_end = write_exp<Float>(exp, lead_exp);
+    char* exp_end = write_exp<double>(exp, lead_exp);
     return w.write(exp, int(exp_end - exp));
   }
 
@@ -1786,6 +1771,34 @@ auto write_big(Float value, int precision, char* out, size_t n,
   int num_frac_digits = num_digits - num_int_digits;
   w.write(p + num_int_digits, num_frac_digits);
   return w.write_zeros(num_frac_places - num_lead_zeros - num_frac_digits);
+}
+
+// Decodes `value` into sign, significand, and exponent, then formats it via the
+// Float-independent core above.
+template <typename Float>
+auto write_big(Float value, int precision, char* out, size_t n,
+               format fmt) noexcept -> char* {
+  using traits = float_traits<Float>;
+  auto bits = traits::to_bits(value);
+  auto bin_exp = traits::get_exp(bits);
+  auto bin_sig = traits::get_sig(bits);
+  bool negative = traits::is_negative(bits);
+
+  bool is_normal = unsigned(bin_exp - 1) < unsigned(traits::exp_mask - 1);
+  if (!is_normal) [[ZMIJ_UNLIKELY]] {
+    if (bin_exp != 0) {  // inf or nan
+      writer w = {out, out + n};
+      if (negative) w.write('-');
+      return w.write(bin_sig != 0 ? "nan" : "inf", 3);
+    }
+    if (bin_sig != 0) normalize<Float>(bin_sig, bin_exp);
+    bin_sig ^= traits::implicit_bit;
+  }
+  bin_sig ^= traits::implicit_bit;
+
+  bigint num(bin_sig);
+  return write_big(negative, num, int(bin_exp - traits::exp_offset), precision,
+                   out, n, fmt);
 }
 
 template <typename Float>
@@ -1961,6 +1974,9 @@ auto write_fixed(Float value, int precision, char* buffer) noexcept -> char* {
 template auto write(float value, char* buffer) noexcept -> char*;
 template auto write(double value, char* buffer) noexcept -> char*;
 
+template auto write_big(double value, int precision, char* out, size_t n,
+                        format fmt) noexcept -> char*;
+
 template auto write_scientific(float value, int precision,
                                char* buffer) noexcept -> char*;
 template auto write_scientific(double value, int precision,
@@ -1975,9 +1991,6 @@ template auto write_fixed(float value, int precision, char* buffer) noexcept
     -> char*;
 template auto write_fixed(double value, int precision, char* buffer) noexcept
     -> char*;
-
-template auto write_big(double value, int precision, char* out, size_t n,
-                        format fmt) noexcept -> char*;
 
 }  // namespace detail
 }  // namespace zmij
