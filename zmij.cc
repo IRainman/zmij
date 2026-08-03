@@ -1858,9 +1858,14 @@ auto write_big(Float value, int precision, char* out, size_t n,
   bin_sig ^= traits::implicit_bit;
 
   bigint num(bin_sig, traits::big_limbs);
-  char digits[traits::big_digits];
-  return write_big(w, num, int(bin_exp - traits::exp_offset), precision, digits,
-                   traits::big_digits, fmt);
+  constexpr bool heap = traits::big_digits > float_traits<double>::big_digits;
+  char stack_digits[heap ? 1 : traits::big_digits];
+  char* digits =
+      heap ? static_cast<char*>(malloc(traits::big_digits)) : stack_digits;
+  char* result = write_big(w, num, int(bin_exp - traits::exp_offset), precision,
+                           digits, traits::big_digits, fmt);
+  if (heap) free(digits);
+  return result;
 }
 
 template <typename Float>
