@@ -239,12 +239,12 @@ ZMIJ_INLINE auto select(uint64_t condition, int64_t true_value,
 }
 
 struct uint128 {
-  uint64_t hi;
   uint64_t lo;
+  uint64_t hi;
 
   uint128() = default;
-  constexpr uint128(uint64_t hi, uint64_t lo) noexcept : hi(hi), lo(lo) {}
-  constexpr uint128(uint64_t lo) noexcept : hi(0), lo(lo) {}
+  constexpr uint128(uint64_t hi, uint64_t lo) noexcept : lo(lo), hi(hi) {}
+  constexpr uint128(uint64_t lo) noexcept : lo(lo), hi(0) {}
 
   explicit constexpr operator uint64_t() const noexcept { return lo; }
 
@@ -396,13 +396,6 @@ constexpr auto ilog2(int n) noexcept -> int {
   return n > 1 ? 1 + ilog2(n >> 1) : 0;
 }
 
-template <typename UInt> ZMIJ_INLINE auto fix_bits(UInt bits) noexcept -> UInt {
-  return bits;
-}
-ZMIJ_INLINE auto fix_bits(uint128 bits) noexcept -> uint128 {
-  return uint128(bits.lo, bits.hi);
-}
-
 template <typename Float> struct float_traits : std::numeric_limits<Float> {
   static_assert(float_traits::is_iec559, "IEEE 754 required");
 
@@ -438,7 +431,7 @@ template <typename Float> struct float_traits : std::numeric_limits<Float> {
   static auto to_bits(Float value) noexcept -> sig_type {
     sig_type bits = sig_type();
     memcpy(&bits, &value, sizeof(value));
-    return fix_bits(bits);
+    return bits;
   }
 
   static auto is_negative(sig_type bits) noexcept -> bool {
@@ -856,8 +849,8 @@ struct data {
 #  if ZMIJ_USE_SSE4_1
   uint128 neg100 = splat32(::neg100);
   uint128 neg10 = splat16((1 << 8) - 10);
-  uint128 bswap = uint128{pack8(15, 14, 13, 12, 11, 10, 9, 8),
-                          pack8(7, 6, 5, 4, 3, 2, 1, 0)};
+  uint128 bswap = uint128{pack8(7, 6, 5, 4, 3, 2, 1, 0),
+                          pack8(15, 14, 13, 12, 11, 10, 9, 8)};
 #  else
   uint128 hundred = splat32(100);
   uint128 moddiv10 = splat16(10 * (1 << 8) - 1);
@@ -1051,9 +1044,9 @@ ZMIJ_INLINE auto to_digits(uint64_t value, const data& d) noexcept
   uint32_t hi = uint32_t(value / 100'000'000);
   uint32_t lo = uint32_t(value % 100'000'000);
   auto hi_bcd = to_bcd8(hi);
-  if (lo == 0) return {{hi_bcd.bcd + zeros, zeros}, hi_bcd.len};
+  if (lo == 0) return {{zeros, hi_bcd.bcd + zeros}, hi_bcd.len};
   auto lo_bcd = to_bcd8(lo);
-  return {{hi_bcd.bcd + zeros, lo_bcd.bcd + zeros}, 8 + lo_bcd.len};
+  return {{lo_bcd.bcd + zeros, hi_bcd.bcd + zeros}, 8 + lo_bcd.len};
 #elif ZMIJ_USE_NEON
   auto unshuffled_digits = to_unshuffled_digits(value, d);
   uint8x16_t digits = vrev64q_u8(unshuffled_digits);
