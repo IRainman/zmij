@@ -239,12 +239,12 @@ ZMIJ_INLINE auto select(uint64_t condition, int64_t true_value,
 }
 
 struct uint128 {
-  uint64_t hi;
   uint64_t lo;
+  uint64_t hi;
 
   uint128() = default;
-  constexpr uint128(uint64_t hi, uint64_t lo) noexcept : hi(hi), lo(lo) {}
-  constexpr uint128(uint64_t lo) noexcept : hi(0), lo(lo) {}
+  constexpr uint128(uint64_t hi, uint64_t lo) noexcept : lo(lo), hi(hi) {}
+  constexpr uint128(uint64_t lo) noexcept : lo(lo), hi(0) {}
 
   explicit constexpr operator uint64_t() const noexcept { return lo; }
 
