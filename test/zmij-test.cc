@@ -617,6 +617,37 @@ TEST(long_double_test, write_fixed) {
   }
 }
 
+// Exercise the actual extended-precision path (x87 80-bit / IEEE binary128) with
+// values carrying more precision and range than double. snprintf's %L output is
+// the oracle, so the test also holds where long double is just double.
+TEST(long_double_test, extended) {
+  char buf[8192], ref[8192];
+  long double values[] = {
+      3.14159265358979323846264338327950288L,   // pi beyond double precision
+      1.0L + 0x1p-60L,                           // differs from 1.0 only when extended
+      1.23456789012345678901234567890123L,       // 33 significant digits
+      std::numeric_limits<long double>::max(),         // extreme range
+      std::numeric_limits<long double>::denorm_min(),  // smallest subnormal
+  };
+  for (long double value : values) {
+    for (int precision : {-1, 0, 1, 20, 40}) {
+      int p = precision < 0 ? 6 : precision;
+      char* end = zmij::write_scientific(buf, sizeof(buf), value, precision);
+      snprintf(ref, sizeof(ref), "%.*Le", p, value);
+      EXPECT_EQ(std::string(buf, end), std::string(ref))
+          << "scientific value=" << value << " precision=" << precision;
+      end = zmij::write_fixed(buf, sizeof(buf), value, precision);
+      snprintf(ref, sizeof(ref), "%.*Lf", p, value);
+      EXPECT_EQ(std::string(buf, end), std::string(ref))
+          << "fixed value=" << value << " precision=" << precision;
+      end = zmij::write_general(buf, sizeof(buf), value, precision);
+      snprintf(ref, sizeof(ref), "%.*Lg", p, value);
+      EXPECT_EQ(std::string(buf, end), std::string(ref))
+          << "general value=" << value << " precision=" << precision;
+    }
+  }
+}
+
 TEST(float_test, write_general) {
   EXPECT_EQ(to_general(1.5f, 6), "1.5");
   EXPECT_EQ(to_general(0.0001f, 6), "0.0001");  // exp10 == -4 -> fixed
