@@ -589,6 +589,31 @@ TEST(long_double_test, write_scientific) {
   }
 }
 
+TEST(long_double_test, write_general) {
+  char buf[360], ref[360];
+  for (long double value : {1.5L, 0.0L, 123456.0L, 1e300L, 5e-324L}) {
+    for (int precision : {-1, 0, 1, 6, 20}) {
+      char* end = zmij::write_general(buf, sizeof(buf), value, precision);
+      int p = precision < 0 ? 6 : precision;
+      snprintf(ref, sizeof(ref), "%.*Lg", p, value);
+      EXPECT_EQ(std::string(buf, end), std::string(ref))
+          << "value=" << double(value) << " precision=" << precision;
+    }
+  }
+}
+
+TEST(long_double_test, write_fixed) {
+  char buf[360], ref[360];
+  for (long double value : {1.5L, 0.0L, 123456.0L, 5e-324L}) {
+    for (int precision : {-1, 0, 6, 20}) {
+      char* end = zmij::write_fixed(buf, sizeof(buf), value, precision);
+      snprintf(ref, sizeof(ref), "%.*Lf", precision < 0 ? 6 : precision, value);
+      EXPECT_EQ(std::string(buf, end), std::string(ref))
+          << "value=" << double(value) << " precision=" << precision;
+    }
+  }
+}
+
 TEST(float_test, write_general) {
   EXPECT_EQ(to_general(1.5f, 6), "1.5");
   EXPECT_EQ(to_general(0.0001f, 6), "0.0001");  // exp10 == -4 -> fixed
