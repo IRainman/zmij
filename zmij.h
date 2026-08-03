@@ -155,6 +155,17 @@ inline auto write_scientific(char* out, size_t n, double value,
   return out + size;
 }
 
+/// Writes `value` in scientific format with `precision` digits after the
+/// decimal point (e.g. 1.234e+05) to `out` without a null terminator, like
+/// printf's %e. Returns a pointer past the last character written; if the
+/// representation exceeds `n` characters, only the first `n` are written.
+/// A negative `precision` defaults to 6, matching printf.
+inline auto write_scientific(char* out, size_t n, long double value,
+                             int precision) noexcept -> char* {
+  if (precision < 0) precision = 6;
+  return detail::write_big(value, precision, out, n, format::scientific);
+}
+
 /// Writes `value` in general format with up to `precision` significant digits
 /// and no trailing zeros (e.g. 1.5 or 1.5e+20) to `out` without a null
 /// terminator. Fixed notation is used when `value`'s decimal exponent is in

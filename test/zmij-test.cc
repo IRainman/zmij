@@ -577,16 +577,12 @@ TEST(double_test, write_big_no_point) {
   }
 }
 
-// write_big is instantiated for long double too. Where long double is wider
-// than double it uses a heap-backed bigint and a larger digit buffer; where it
-// equals double (e.g. arm64, MSVC) this simply exercises the third Float type.
-TEST(long_double_test, write_big) {
+TEST(long_double_test, write_scientific) {
   char buf[80], ref[80];
-  for (long double value : {1.0L, 2.5L, 0.1L, 1e300L, 5e-324L}) {
-    for (int precision : {20, 30, 40}) {
-      char* end = zmij::detail::write_big(value, precision, buf, sizeof(buf),
-                                          zmij::format::scientific);
-      snprintf(ref, sizeof(ref), "%.*Le", precision, value);
+  for (long double value : {1.5L, 0.0L, 1e300L, 5e-324L}) {
+    for (int precision : {-1, 0, 6, 20}) {
+      char* end = zmij::write_scientific(buf, sizeof(buf), value, precision);
+      snprintf(ref, sizeof(ref), "%.*Le", precision < 0 ? 6 : precision, value);
       EXPECT_EQ(std::string(buf, end), std::string(ref))
           << "value=" << double(value) << " precision=" << precision;
     }
