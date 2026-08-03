@@ -17,6 +17,7 @@ struct dec_fp {
 #endif
 
 #include <assert.h>  // assert
+#include <float.h>   // DBL_MANT_DIG, LDBL_MANT_DIG
 #include <stddef.h>  // size_t
 #include <stdint.h>  // uint64_t
 #include <stdlib.h>  // malloc, free
@@ -388,6 +389,16 @@ template <typename Float> struct float_traits : std::numeric_limits<Float> {
 
   using sig_type = std::conditional_t<num_bits == 64, uint64_t, uint32_t>;
   static constexpr sig_type implicit_bit = sig_type(1) << num_sig_bits;
+
+  // Bounds for the exact big-integer path (write_big): the significand times
+  // 5**k (k up to exp_offset + num_sig_bits - 1) fits in big_bits bits, hence
+  // big_limbs base-2**32 limbs and big_digits decimal digits. 2322/1000 and
+  // 30103/100000 over-approximate log2(5) and log10(2); the +2 rounds the digit
+  // count up and reserves one carry digit.
+  static constexpr int big_bits =
+      num_sig_bits + 2 + (exp_offset + num_sig_bits - 1) * 2322 / 1000;
+  static constexpr int big_limbs = (big_bits + 31) / 32;
+  static constexpr int big_digits = big_bits * 30103 / 100000 + 2;
 
   static auto to_bits(Float value) noexcept -> sig_type {
     sig_type bits;
@@ -1396,10 +1407,7 @@ auto to_decimal(uint64_t bin_sig, int bin_exp, int precision) noexcept
 // A minimal binary big integer (little-endian base-2**32 limbs) with small-
 // buffer optimization.
 struct bigint {
-  // Inline storage fits any finite double exactly: a normalized double reaches
-  // bin_sig * 5**1126 < 2**53 * 5**1126 < 2**2668, i.e. 84 limbs (the fixed
-  // path's bin_sig * 10**18 << 971 needs far fewer).
-  static constexpr int inline_capacity = 84;
+  static constexpr int inline_capacity = float_traits<double>::big_limbs;
   uint32_t* limbs = inline_limbs;
   int num_limbs;  // Significant limbs; 0 represents zero.
   int capacity;   // Allocated limbs in `limbs`.
@@ -1672,13 +1680,12 @@ auto write(Float value, char* buffer) noexcept -> char* {
   return write_exp<Float>(buffer, dec_exp);
 }
 
-auto write_big(writer w, bigint& num, int bin_exp, int precision,
-               format fmt) noexcept -> char* {
+auto write_big(writer w, bigint& num, int bin_exp, int precision, char* digits,
+               int digits_size, format fmt) noexcept -> char* {
   bool general = fmt == format::general;
   bool fixed = fmt == format::fixed;
   assert(precision >= general);
 
-  char digits[805];  // num < 2**2668 has at most 804 digits, plus a carry.
   digits[0] = '0';
   char* p = digits;
   int num_digits = 1;
@@ -1697,8 +1704,8 @@ auto write_big(writer w, bigint& num, int bin_exp, int precision,
       base_exp = bin_exp;
     }
 
-    p = write_digits(num, digits + sizeof(digits));
-    num_digits = int(digits + sizeof(digits) - p);
+    p = write_digits(num, digits + digits_size);
+    num_digits = int(digits + digits_size - p);
     lead_exp = num_digits - 1 + base_exp;
 
     // Significant digits to keep: precision for %g. For %e/%f it counts
@@ -1806,8 +1813,10 @@ auto write_big(Float value, int precision, char* out, size_t n,
   }
   bin_sig ^= traits::implicit_bit;
 
-  bigint num(bin_sig);
-  return write_big(w, num, int(bin_exp - traits::exp_offset), precision, fmt);
+  bigint num(bin_sig, traits::big_limbs);
+  char digits[traits::big_digits];
+  return write_big(w, num, int(bin_exp - traits::exp_offset), precision, digits,
+                   int(sizeof(digits)), fmt);
 }
 
 template <typename Float>
@@ -1985,6 +1994,10 @@ template auto write(double value, char* buffer) noexcept -> char*;
 
 template auto write_big(double value, int precision, char* out, size_t n,
                         format fmt) noexcept -> char*;
+#if LDBL_MANT_DIG != DBL_MANT_DIG
+template auto write_big(long double value, int precision, char* out, size_t n,
+                        format fmt) noexcept -> char*;
+#endif
 
 template auto write_scientific(float value, int precision,
                                char* buffer) noexcept -> char*;

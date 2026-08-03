@@ -7,6 +7,7 @@
 #ifndef ZMIJ_H_
 #define ZMIJ_H_
 
+#include <float.h>   // DBL_MANT_DIG, LDBL_MANT_DIG
 #include <stddef.h>  // size_t
 #include <string.h>  // memcpy
 
@@ -33,6 +34,13 @@ inline auto write_big(float value, int precision, char* out, size_t n,
                       format fmt) noexcept -> char* {
   return write_big(double(value), precision, out, n, fmt);
 }
+#if LDBL_MANT_DIG == DBL_MANT_DIG
+template <>
+inline auto write_big(long double value, int precision, char* out, size_t n,
+                      format fmt) noexcept -> char* {
+  return write_big(double(value), precision, out, n, fmt);
+}
+#endif
 
 template <typename Float>
 auto write_scientific(Float value, int precision, char* buffer) noexcept
