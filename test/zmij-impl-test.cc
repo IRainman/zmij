@@ -694,8 +694,16 @@ TEST(zmij_impl_test, utilities) {
   EXPECT_EQ(count_trailing_nonzeros(0x09000000'00000000ull), 8);
 }
 
+// A bigint backed by its own inline storage, for tests that stay within the
+// range of double.
+struct fixed_bigint : bigint {
+  uint32_t storage[float_traits<double>::big_limbs];
+  explicit fixed_bigint(uint128_t value) noexcept
+      : bigint(value, storage, float_traits<double>::big_limbs) {}
+};
+
 static auto to_string(const bigint& value) -> std::string {
-  bigint n(0, value.num_limbs);  // A mutable copy to consume via divmod_1e9.
+  fixed_bigint n(0);  // A mutable copy to consume via divmod_1e9.
   n.num_limbs = value.num_limbs;
   memcpy(n.limbs, value.limbs, size_t(n.num_limbs) * sizeof(*n.limbs));
   std::string s;
@@ -710,15 +718,15 @@ static auto to_string(const bigint& value) -> std::string {
 
 TEST(zmij_impl_test, bigint) {
   // Construction from a 128-bit value and base-10**9 output.
-  EXPECT_EQ(to_string(bigint(0)), "0");
-  EXPECT_EQ(to_string(bigint(123456789)), "123456789");
-  EXPECT_EQ(to_string(bigint(1000000000000000000ull)), "1000000000000000000");
+  EXPECT_EQ(to_string(fixed_bigint(0)), "0");
+  EXPECT_EQ(to_string(fixed_bigint(123456789)), "123456789");
+  EXPECT_EQ(to_string(fixed_bigint(1000000000000000000ull)), "1000000000000000000");
 
   // shift_left multiplies by 2**bits (word-aligned and unaligned).
-  bigint a(1);
+  fixed_bigint a(1);
   a.shift_left(64);
   EXPECT_EQ(to_string(a), "18446744073709551616");
-  bigint b(1);
+  fixed_bigint b(1);
   b.shift_left(80);
   EXPECT_EQ(to_string(b), "1208925819614629174706176");
 }
@@ -751,38 +759,38 @@ TEST(zmij_impl_test, shift_right_round) {
 
 TEST(zmij_impl_test, bigint_divmod_1e9) {
   // Returns value % 10**9 and leaves value / 10**9 in place.
-  bigint n(123456789012345678ull);
+  fixed_bigint n(123456789012345678ull);
   EXPECT_EQ(n.divmod_1e9(), 12345678u);  // Low 9 digits.
   EXPECT_EQ(to_string(n), "123456789");  // Remaining high digits.
 
   // A value below 10**9 becomes empty, returning the value itself.
-  bigint small(42);
+  fixed_bigint small(42);
   EXPECT_EQ(small.divmod_1e9(), 42u);
   EXPECT_EQ(small.num_limbs, 0);
 
   // An exact multiple of 10**9 yields a zero remainder.
-  bigint exact(3000000000ull);
+  fixed_bigint exact(3000000000ull);
   EXPECT_EQ(exact.divmod_1e9(), 0u);
   EXPECT_EQ(to_string(exact), "3");
 }
 
 TEST(zmij_impl_test, bigint_mul) {
   // mul multiplies by a factor below 2**32, carrying across limbs.
-  bigint a(1);
+  fixed_bigint a(1);
   a.mul(1'000'000'000u);
   EXPECT_EQ(to_string(a), "1000000000");
-  bigint b(0xffffffffull);  // Forces a carry into a new limb.
+  fixed_bigint b(0xffffffffull);  // Forces a carry into a new limb.
   b.mul(0xffffffffu);
   EXPECT_EQ(to_string(b), "18446744065119617025");
 
   // mul_pow5 multiplies by 5**n across the 5**13 chunk boundary.
-  bigint c(1);
+  fixed_bigint c(1);
   c.mul_pow5(1);
   EXPECT_EQ(to_string(c), "5");
-  bigint d(1);
+  fixed_bigint d(1);
   d.mul_pow5(13);
   EXPECT_EQ(to_string(d), "1220703125");
-  bigint e(1);
+  fixed_bigint e(1);
   e.mul_pow5(27);  // 5**27, spanning two full chunks and a remainder.
   EXPECT_EQ(to_string(e), "7450580596923828125");
 }

@@ -1448,22 +1448,16 @@ auto to_decimal(uint64_t bin_sig, int bin_exp, int precision) noexcept
   return {dec_sig * pow10s[18 - precision], dec_exp + precision - 1};
 }
 
-// A minimal binary big integer (little-endian base-2**32 limbs) with small-
-// buffer optimization.
+// A minimal binary big integer (little-endian base-2**32 limbs) over caller-
+// provided storage.
 struct bigint {
-  static constexpr int inline_capacity = float_traits<double>::big_limbs;
-  uint32_t* limbs = inline_limbs;
+  uint32_t* limbs;
   int num_limbs;  // Significant limbs; 0 represents zero.
-  int capacity;   // Allocated limbs in `limbs`.
-  uint32_t inline_limbs[inline_capacity];
+  int max_limbs;  // Available limbs in `limbs`.
 
-  // Preallocates storage for `max_limbs` limbs, staying inline when it fits and
-  // allocating once on the heap otherwise. Callers must size `max_limbs` for
-  // the largest value the number will reach; it never grows afterwards.
-  explicit bigint(uint128_t value, int max_limbs = inline_capacity) noexcept
-      : capacity(max_limbs) {
-    if (capacity > inline_capacity)
-      limbs = static_cast<uint32_t*>(malloc(size_t(capacity) * sizeof(*limbs)));
+  // Callers must size `max_limbs` for the largest value the number will reach.
+  bigint(uint128_t value, uint32_t* buffer, int max_limbs) noexcept
+      : limbs(buffer), max_limbs(max_limbs) {
     uint64_t lo = uint64_t(value), hi = uint64_t(value >> 64);
     limbs[0] = uint32_t(lo);
     limbs[1] = uint32_t(lo >> 32);
@@ -1471,13 +1465,6 @@ struct bigint {
     limbs[3] = uint32_t(hi >> 32);
     num_limbs = 4;
     trim();
-  }
-
-  bigint(const bigint&) = delete;
-  bigint& operator=(const bigint&) = delete;
-
-  ~bigint() noexcept {
-    if (limbs != inline_limbs) free(limbs);
   }
 
   void trim() noexcept {
@@ -1489,7 +1476,7 @@ struct bigint {
     assert(n >= 0);
     if (num_limbs == 0) return;
     int limb_shift = n >> 5, bit_shift = n & 31;
-    assert(num_limbs + limb_shift + (bit_shift != 0) <= capacity);
+    assert(num_limbs + limb_shift + (bit_shift != 0) <= max_limbs);
     if (bit_shift == 0) {
       for (int i = num_limbs - 1; i >= 0; --i) limbs[i + limb_shift] = limbs[i];
       num_limbs += limb_shift;
@@ -1528,7 +1515,7 @@ struct bigint {
       carry = product >> 32;
     }
     if (carry == 0) return;
-    assert(num_limbs < capacity);
+    assert(num_limbs < max_limbs);
     limbs[num_limbs++] = uint32_t(carry);
   }
 
@@ -1548,7 +1535,7 @@ struct bigint {
 
 // Emits n's decimal digits (most significant first) ending at `end`, consuming
 // n, and returns a pointer to the first (most significant) digit.
-auto write_digits(bigint& n, char* end) noexcept -> char* {
+auto write_digits(bigint n, char* end) noexcept -> char* {
   char* p = end;
   uint32_t group = n.divmod_1e9();
   while (n.num_limbs != 0) {  // Lower groups keep all 9 digits.
@@ -1566,7 +1553,9 @@ auto write_digits(bigint& n, char* end) noexcept -> char* {
 auto write_fixed_big(char* buffer, uint64_t bin_sig, int bin_exp,
                      int precision) noexcept -> char* {
   uint128_t product = umul128(bin_sig, pow10s[precision]);
-  bigint n(bin_exp < 0 ? shift_right_round(product, -bin_exp) : product);
+  uint32_t limbs[float_traits<double>::big_limbs];
+  bigint n(bin_exp < 0 ? shift_right_round(product, -bin_exp) : product, limbs,
+           float_traits<double>::big_limbs);
   if (bin_exp >= 0) n.shift_left(bin_exp);
 
   // n <= round(DBL_MAX * 10**18): DBL_MAX has 309 integer digits and precision
@@ -1724,7 +1713,7 @@ auto write(Float value, char* buffer) noexcept -> char* {
   return write_exp<Float>(buffer, dec_exp);
 }
 
-auto write_big(writer w, bigint& num, int bin_exp, int precision, char* digits,
+auto write_big(writer w, bigint num, int bin_exp, int precision, char* digits,
                int digits_size, format fmt) noexcept -> char* {
   bool general = fmt == format::general;
   bool fixed = fmt == format::fixed;
@@ -1857,14 +1846,21 @@ auto write_big(Float value, int precision, char* out, size_t n,
   }
   bin_sig ^= traits::implicit_bit;
 
-  bigint num(bin_sig, traits::big_limbs);
+  // One scratch block holds the big integer's limbs followed by the decimal
+  // digits. It stays on the stack except for the extended long double case,
+  // which is too large (~11.6 KB).
+  constexpr int digit_words = (traits::big_digits + 3) / 4;
+  constexpr int scratch_words = traits::big_limbs + digit_words;
   constexpr bool heap = traits::big_digits > float_traits<double>::big_digits;
-  char stack_digits[heap ? 1 : traits::big_digits];
-  char* digits =
-      heap ? static_cast<char*>(malloc(traits::big_digits)) : stack_digits;
+  uint32_t stack_scratch[heap ? 1 : scratch_words];
+  uint32_t* scratch =
+      heap ? static_cast<uint32_t*>(malloc(size_t(scratch_words) * 4))
+           : stack_scratch;
+  bigint num(bin_sig, scratch, traits::big_limbs);
+  char* digits = reinterpret_cast<char*>(scratch + traits::big_limbs);
   char* result = write_big(w, num, int(bin_exp - traits::exp_offset), precision,
                            digits, traits::big_digits, fmt);
-  if (heap) free(digits);
+  if (heap) free(scratch);
   return result;
 }
 
