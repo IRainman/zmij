@@ -13,7 +13,8 @@ A fast double-to-string conversion library with implementations in C and C++
 * High [performance](#performance)
 * Small binary size
 * Fast [compile time](#compile-time)
-* IEEE 754 `double` and `float` support
+* `float`, `double`, and `long double` support (IEEE 754 binary32/64/128 and
+  x87 80-bit extended)
 * Safer API than classic `dtoa`
 * Optional [`std::to_chars`][to-chars]-style API, several times faster than
   common standard library implementations
