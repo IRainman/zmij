@@ -239,12 +239,12 @@ ZMIJ_INLINE auto select(uint64_t condition, int64_t true_value,
 }
 
 struct uint128 {
-  uint64_t lo;
   uint64_t hi;
+  uint64_t lo;
 
   uint128() = default;
-  constexpr uint128(uint64_t hi, uint64_t lo) noexcept : lo(lo), hi(hi) {}
-  constexpr uint128(uint64_t lo) noexcept : lo(lo), hi(0) {}
+  constexpr uint128(uint64_t hi, uint64_t lo) noexcept : hi(hi), lo(lo) {}
+  constexpr uint128(uint64_t lo) noexcept : hi(0), lo(lo) {}
 
   explicit constexpr operator uint64_t() const noexcept { return lo; }
 
@@ -396,6 +396,13 @@ constexpr auto ilog2(int n) noexcept -> int {
   return n > 1 ? 1 + ilog2(n >> 1) : 0;
 }
 
+template <typename UInt> ZMIJ_INLINE auto fix_bits(UInt bits) noexcept -> UInt {
+  return bits;
+}
+ZMIJ_INLINE auto fix_bits(uint128 bits) noexcept -> uint128 {
+  return uint128(bits.lo, bits.hi);
+}
+
 template <typename Float> struct float_traits : std::numeric_limits<Float> {
   static_assert(float_traits::is_iec559, "IEEE 754 required");
 
@@ -429,9 +436,9 @@ template <typename Float> struct float_traits : std::numeric_limits<Float> {
   static constexpr int big_digits = big_bits * 30103 / 100000 + 2;
 
   static auto to_bits(Float value) noexcept -> sig_type {
-    sig_type bits;
+    sig_type bits = sig_type();
     memcpy(&bits, &value, sizeof(value));
-    return bits;
+    return fix_bits(bits);
   }
 
   static auto is_negative(sig_type bits) noexcept -> bool {
