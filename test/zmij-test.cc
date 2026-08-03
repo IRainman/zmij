@@ -577,9 +577,12 @@ TEST(double_test, write_big_no_point) {
   }
 }
 
+// Use double-exact values (plain double literals) so the expected output is the
+// same whether long double is the x87 80-bit, IEEE binary128 or double format,
+// keeping the test portable across platforms.
 TEST(long_double_test, write_scientific) {
   char buf[80], ref[80];
-  for (long double value : {1.5L, 0.0L, 1e300L, 5e-324L}) {
+  for (long double value : {1.5, 0.0, 1e300, 5e-324}) {
     for (int precision : {-1, 0, 6, 20}) {
       char* end = zmij::write_scientific(buf, sizeof(buf), value, precision);
       snprintf(ref, sizeof(ref), "%.*Le", precision < 0 ? 6 : precision, value);
@@ -591,7 +594,7 @@ TEST(long_double_test, write_scientific) {
 
 TEST(long_double_test, write_general) {
   char buf[360], ref[360];
-  for (long double value : {1.5L, 0.0L, 123456.0L, 1e300L, 5e-324L}) {
+  for (long double value : {1.5, 0.0, 123456.0, 1e300, 5e-324}) {
     for (int precision : {-1, 0, 1, 6, 20}) {
       char* end = zmij::write_general(buf, sizeof(buf), value, precision);
       int p = precision < 0 ? 6 : precision;
@@ -604,7 +607,7 @@ TEST(long_double_test, write_general) {
 
 TEST(long_double_test, write_fixed) {
   char buf[360], ref[360];
-  for (long double value : {1.5L, 0.0L, 123456.0L, 5e-324L}) {
+  for (long double value : {1.5, 0.0, 123456.0, 5e-324}) {
     for (int precision : {-1, 0, 6, 20}) {
       char* end = zmij::write_fixed(buf, sizeof(buf), value, precision);
       snprintf(ref, sizeof(ref), "%.*Lf", precision < 0 ? 6 : precision, value);

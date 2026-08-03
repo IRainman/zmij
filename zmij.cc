@@ -260,11 +260,29 @@ struct uint128 {
     if (s < 128) return {0, hi >> (s - 64)};
     return {0, 0};
   }
+  constexpr auto operator&(uint128 o) const noexcept -> uint128 {
+    return {hi & o.hi, lo & o.lo};
+  }
+  constexpr auto operator-(uint128 o) const noexcept -> uint128 {
+    uint64_t d = lo - o.lo;
+    return {hi - o.hi - (d > lo), d};
+  }
+
   constexpr auto operator<(uint128 o) const noexcept -> bool {
     return hi != o.hi ? hi < o.hi : lo < o.lo;
   }
+  constexpr auto operator!=(uint128 o) const noexcept -> bool {
+    return hi != o.hi || lo != o.lo;
+  }
+
   auto operator++() noexcept -> uint128& {
     if (++lo == 0) ++hi;
+    return *this;
+  }
+  auto operator<<=(int s) noexcept -> uint128& { return *this = *this << s; }
+  auto operator^=(uint128 o) noexcept -> uint128& {
+    hi ^= o.hi;
+    lo ^= o.lo;
     return *this;
   }
 };
@@ -374,12 +392,20 @@ constexpr auto compute_dec_exp(int bin_exp, bool regular = true) noexcept
   return (bin_exp * log10_2_sig - !regular * log10_3_over_4_sig) >> log10_2_exp;
 }
 
+constexpr auto ilog2(int n) noexcept -> int {
+  return n > 1 ? 1 + ilog2(n >> 1) : 0;
+}
+
 template <typename Float> struct float_traits : std::numeric_limits<Float> {
   static_assert(float_traits::is_iec559, "IEEE 754 required");
 
-  static constexpr int num_bits = float_traits::digits == 53 ? 64 : 32;
+  // x87 80-bit stores the integer bit explicitly (digits == 64), so its
+  // exponent sits one bit higher than the implicit-bit binary32/64/128 layouts.
   static constexpr int num_sig_bits = float_traits::digits - 1;
-  static constexpr int num_exp_bits = num_bits - num_sig_bits - 1;
+  static constexpr int num_exp_bits = ilog2(float_traits::max_exponent) + 1;
+  static constexpr int exp_shift =
+      num_sig_bits + (float_traits::digits == 64 ? 1 : 0);
+  static constexpr int num_bits = exp_shift + num_exp_bits + 1;
   static constexpr int exp_mask = (1 << num_exp_bits) - 1;
   static constexpr int exp_bias = (1 << (num_exp_bits - 1)) - 1;
   static constexpr int exp_offset = exp_bias + num_sig_bits;
@@ -387,7 +413,9 @@ template <typename Float> struct float_traits : std::numeric_limits<Float> {
   static constexpr int max_fixed_dec_exp =
       compute_dec_exp(float_traits::digits + 1) - 1;
 
-  using sig_type = std::conditional_t<num_bits == 64, uint64_t, uint32_t>;
+  using sig_type = std::conditional_t<
+      num_bits <= 32, uint32_t,
+      std::conditional_t<num_bits <= 64, uint64_t, uint128_t>>;
   static constexpr sig_type implicit_bit = sig_type(1) << num_sig_bits;
 
   // Bounds for the exact big-integer path (write_big): the significand times
@@ -407,13 +435,13 @@ template <typename Float> struct float_traits : std::numeric_limits<Float> {
   }
 
   static auto is_negative(sig_type bits) noexcept -> bool {
-    return bits >> (num_bits - 1);
+    return ((bits >> (num_bits - 1)) & 1) != 0;
   }
   static auto get_sig(sig_type bits) noexcept -> sig_type {
     return bits & (implicit_bit - 1);
   }
   static auto get_exp(sig_type bits) noexcept -> int64_t {
-    return int64_t((bits << 1) >> (num_sig_bits + 1));
+    return int64_t(uint64_t(bits >> exp_shift) & unsigned(exp_mask));
   }
 };
 
@@ -1204,13 +1232,19 @@ ZMIJ_INLINE auto write_exp(char* buffer, int dec_exp) noexcept -> char* {
   if (is_big_endian) e_sign = e_sign << 8 | e_sign >> 8;
   memcpy(buffer, &e_sign, 2);
   buffer += 2;
-  uint32_t exp = dec_exp >= 0 ? dec_exp : -dec_exp;
+  uint32_t exp = dec_exp >= 0 ? uint32_t(dec_exp) : uint32_t(-dec_exp);
   if (float_traits<Float>::max_exponent10 >= 100) {
-    uint32_t digit = use_umul128_hi64 ? umul128_hi64(exp, 0x290000000000000)
-                                      : (exp * div100_sig) >> div100_exp;
-    *buffer = '0' + digit;
+    constexpr bool wide = float_traits<Float>::max_exponent10 >= 1000;
+    uint32_t hi = use_umul128_hi64 && !wide
+                      ? umul128_hi64(exp, 0x290000000000000)
+                      : (exp * div100_sig) >> div100_exp;
+    if (wide) {
+      *buffer = char('0' + hi / 10);
+      buffer += hi >= 10;
+    }
+    *buffer = char('0' + (wide ? hi % 10 : hi));
     buffer += exp >= 100;
-    exp -= digit * 100;
+    exp -= hi * 100;
   }
   memcpy(buffer, digits2(exp), 2);
   return buffer + 2;
@@ -1218,8 +1252,18 @@ ZMIJ_INLINE auto write_exp(char* buffer, int dec_exp) noexcept -> char* {
 
 template <typename Float, typename UInt>
 ZMIJ_INLINE void normalize(UInt& bin_sig, int64_t& bin_exp) noexcept {
-  // clz operates on 64 bits, so measure from bit 63.
-  int shift = clz(bin_sig) - (63 - float_traits<Float>::num_sig_bits);
+  // clz counts from the top of its operand, so measure from that width.
+  int lz, width;
+  if (sizeof(UInt) > 8) {
+    uint128_t v = bin_sig;
+    uint64_t hi = uint64_t(v >> 64);
+    lz = hi != 0 ? clz(hi) : 64 + clz(uint64_t(v));
+    width = 128;
+  } else {
+    lz = clz(uint64_t(bin_sig));
+    width = 64;
+  }
+  int shift = lz - (width - 1 - float_traits<Float>::num_sig_bits);
   bin_sig <<= shift;
   bin_exp = 1 - shift;
 }
@@ -1768,8 +1812,8 @@ auto write_big(writer w, bigint& num, int bin_exp, int precision, char* digits,
       if (!general) w.write_zeros(precision - num_digits + 1);
     }
     char exp[8];
-    char* exp_end = write_exp<double>(exp, lead_exp);
-    return w.write(exp, int(exp_end - exp));
+    char* end = write_exp<long double>(exp, lead_exp);
+    return w.write(exp, int(end - exp));
   }
 
   // Emit fixed notation.
@@ -1816,7 +1860,7 @@ auto write_big(Float value, int precision, char* out, size_t n,
   bigint num(bin_sig, traits::big_limbs);
   char digits[traits::big_digits];
   return write_big(w, num, int(bin_exp - traits::exp_offset), precision, digits,
-                   int(sizeof(digits)), fmt);
+                   traits::big_digits, fmt);
 }
 
 template <typename Float>
