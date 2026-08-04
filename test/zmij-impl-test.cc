@@ -682,6 +682,132 @@ TEST(zmij_impl_test, pow10) {
   }
 }
 
+// A copyable, inline-storage bigint for tests. bigint holds a raw limbs pointer,
+// so the copy re-points at this object's own storage.
+struct fixed_bigint : bigint {
+  // Holds the widest pow10_compute value: 10**max_exp times a result_bits
+  // number.
+  static constexpr int cap =
+      (pow10::max_exp * 34 / 10 + pow10::result_bits) / 32 + 4;
+  uint32_t storage[cap];
+
+  explicit fixed_bigint(uint128_t value = 0) noexcept
+      : bigint(value, storage, cap) {}
+  fixed_bigint(const fixed_bigint& other) noexcept : bigint(0, storage, cap) {
+    num_limbs = other.num_limbs;
+    memcpy(storage, other.storage, size_t(num_limbs) * sizeof(uint32_t));
+  }
+  auto operator=(const fixed_bigint& other) noexcept -> fixed_bigint& {
+    if (this == &other) return *this;
+    num_limbs = other.num_limbs;
+    memcpy(storage, other.storage, size_t(num_limbs) * sizeof(uint32_t));
+    return *this;
+  }
+
+  // Builds the value from n little-endian uint64 limbs.
+  static auto from_u64s(const uint64_t* v, int n) -> fixed_bigint {
+    fixed_bigint r;
+    r.num_limbs = 2 * n;
+    for (int i = 0; i < n; ++i) {
+      r.limbs[2 * i] = uint32_t(v[i]);
+      r.limbs[2 * i + 1] = uint32_t(v[i] >> 32);
+    }
+    r.trim();
+    return r;
+  }
+
+  void add(uint32_t k) noexcept {
+    uint64_t carry = k;
+    for (int i = 0; i < num_limbs && carry != 0; ++i) {
+      uint64_t s = uint64_t(limbs[i]) + carry;
+      limbs[i] = uint32_t(s);
+      carry = s >> 32;
+    }
+    if (carry != 0) {
+      assert(num_limbs < max_limbs);
+      limbs[num_limbs++] = uint32_t(carry);
+    }
+  }
+};
+
+static auto mul(const bigint& a, const bigint& b) -> fixed_bigint {
+  fixed_bigint r;
+  if (a.num_limbs == 0 || b.num_limbs == 0) return r;
+  r.num_limbs = a.num_limbs + b.num_limbs;
+  assert(r.num_limbs <= r.max_limbs);
+  for (int i = 0; i < r.num_limbs; ++i) r.limbs[i] = 0;
+  for (int i = 0; i < a.num_limbs; ++i) {
+    uint64_t carry = 0;
+    for (int j = 0; j < b.num_limbs; ++j) {
+      uint64_t cur =
+          uint64_t(r.limbs[i + j]) + uint64_t(a.limbs[i]) * b.limbs[j] + carry;
+      r.limbs[i + j] = uint32_t(cur);
+      carry = cur >> 32;
+    }
+    r.limbs[i + b.num_limbs] = uint32_t(carry);
+  }
+  r.trim();
+  return r;
+}
+
+// Three-way comparison of two nonnegative bigints.
+static auto cmp(const bigint& a, const bigint& b) -> int {
+  if (a.num_limbs != b.num_limbs) return a.num_limbs < b.num_limbs ? -1 : 1;
+  for (int i = a.num_limbs; i-- > 0;) {
+    if (a.limbs[i] != b.limbs[i]) return a.limbs[i] < b.limbs[i] ? -1 : 1;
+  }
+  return 0;
+}
+
+// pow10::compute(x, m) must return e with m == floor(10**x / 2**e) exactly and
+// m normalized (top bit set), over the whole supported range |x| <= max_exp (a
+// superset of every x write_big can pass). Checked against exact big integers
+// with no floating point.
+TEST(zmij_impl_test, pow10_compute) {
+  constexpr int xmax = pow10::max_exp;
+
+  // Non-negative exponents: 10**x is the integer P, grown one power per step.
+  fixed_bigint p(1);
+  for (int x = 0; x <= xmax; ++x) {
+    if (x != 0) p.mul(10);  // p == 10**x
+    uint64_t m[pow10::result_limbs];
+    int e = pow10::compute(x, m);
+    ASSERT_NE(m[pow10::result_limbs - 1] >> 63, 0u) << "x=" << x;  // normalized
+    fixed_bigint mm = fixed_bigint::from_u64s(m, pow10::result_limbs);
+    if (e >= 0) {  // floor(P / 2**e): mm*2**e <= P < (mm+1)*2**e
+      fixed_bigint lo = mm;
+      lo.shl(e);
+      fixed_bigint hi = mm;
+      hi.add(1);
+      hi.shl(e);
+      ASSERT_LE(cmp(lo, p), 0) << "x=" << x;
+      ASSERT_LT(cmp(p, hi), 0) << "x=" << x;
+    } else {  // 10**x * 2**(-e) is integral and must equal mm exactly
+      fixed_bigint exact = p;
+      exact.shl(-e);
+      ASSERT_EQ(cmp(mm, exact), 0) << "x=" << x;
+    }
+  }
+
+  // Negative exponents: e < 0, so 2**(-e) is integral and 10**|x| = q.
+  // m == floor(2**(-e) / q): mm*q <= 2**(-e) < (mm+1)*q.
+  fixed_bigint q(1);
+  for (int x = -1; x >= -xmax; --x) {
+    q.mul(10);  // q == 10**|x|
+    uint64_t m[pow10::result_limbs];
+    int e = pow10::compute(x, m);
+    ASSERT_LT(e, 0) << "x=" << x;
+    ASSERT_NE(m[pow10::result_limbs - 1] >> 63, 0u) << "x=" << x;  // normalized
+    fixed_bigint mm = fixed_bigint::from_u64s(m, pow10::result_limbs);
+    fixed_bigint two(1);
+    two.shl(-e);
+    fixed_bigint mmp1 = mm;
+    mmp1.add(1);
+    ASSERT_LE(cmp(mul(mm, q), two), 0) << "x=" << x;
+    ASSERT_LT(cmp(two, mul(mmp1, q)), 0) << "x=" << x;
+  }
+}
+
 TEST(zmij_impl_test, utilities) {
   EXPECT_EQ(clz(1), 63);
   EXPECT_EQ(clz(~0ull), 0);
@@ -694,20 +820,13 @@ TEST(zmij_impl_test, utilities) {
   EXPECT_EQ(count_trailing_nonzeros(0x09000000'00000000ull), 8);
 }
 
-// A bigint backed by its own inline storage, for tests that stay within the
-// range of double.
-struct fixed_bigint : bigint {
-  uint32_t storage[float_traits<double>::big_limbs];
-  explicit fixed_bigint(uint128_t value) noexcept
-      : bigint(value, storage, float_traits<double>::big_limbs) {}
-};
-
 static auto to_string(const bigint& value) -> std::string {
   fixed_bigint n(0);  // A mutable copy to consume via divmod_1e9.
   n.num_limbs = value.num_limbs;
   memcpy(n.limbs, value.limbs, size_t(n.num_limbs) * sizeof(*n.limbs));
   std::string s;
-  while (n.num_limbs != 0) {  // Extract 9-digit groups, least significant first.
+  // Extract 9-digit groups, least significant first.
+  while (n.num_limbs != 0) {
     uint32_t group = n.divmod_1e9();
     char buf[16];  // The most significant group is unpadded, the rest are not.
     snprintf(buf, sizeof(buf), n.num_limbs != 0 ? "%09u" : "%u", group);
@@ -722,19 +841,19 @@ TEST(zmij_impl_test, bigint) {
   EXPECT_EQ(to_string(fixed_bigint(123456789)), "123456789");
   EXPECT_EQ(to_string(fixed_bigint(1000000000000000000ull)), "1000000000000000000");
 
-  // shift_left multiplies by 2**bits (word-aligned and unaligned).
+  // shl multiplies by 2**bits (word-aligned and unaligned).
   fixed_bigint a(1);
-  a.shift_left(64);
+  a.shl(64);
   EXPECT_EQ(to_string(a), "18446744073709551616");
   fixed_bigint b(1);
-  b.shift_left(80);
+  b.shl(80);
   EXPECT_EQ(to_string(b), "1208925819614629174706176");
 }
 
-TEST(zmij_impl_test, shift_right_round) {
+TEST(zmij_impl_test, shr_round_even) {
   // Divides a 128-bit value by 2**bits, rounding ties to even.
   auto rshift = [](uint128_t value, int bits) {
-    return uint64_t(shift_right_round(value, bits));
+    return uint64_t(shr_round_even(value, bits));
   };
   // Ties round to even.
   EXPECT_EQ(rshift(6, 1), 3u);  // 3.0 -> 3 (exact)

@@ -358,9 +358,122 @@ inline auto umul192_hi128(uint64_t x_hi, uint64_t x_lo, uint64_t y) noexcept
   return {uint64_t(p >> 64) + (lo < uint64_t(p)), lo};
 }
 
+// Computes a power of ten on the fly (no tables): 10**k = 5**k * 2**k. We raise
+// 5 (or 1/5 for k < 0) to the k as a fixed-width significand * 2**exp, top bit
+// set in work_limbs little-endian limbs, folding 2**k into the exponent.
+namespace pow10 {
+constexpr int work_bits = 320;                  // internal working precision
+constexpr int work_limbs = work_bits / 64;      // working limbs (5)
+constexpr int result_bits = 256;                // bits kept in a returned power
+constexpr int result_limbs = result_bits / 64;  // result limbs (4)
+constexpr int max_exp = 6000;
+
+// out[0..na+nb) = a[0..na) * b[0..nb), base 2**64, little endian.
+void mul(const uint64_t* a, int na, const uint64_t* b, int nb,
+         uint64_t* out) noexcept {
+  memset(out, 0, size_t(na + nb) * sizeof(*out));
+  for (int i = 0; i < na; ++i) {
+    uint64_t carry = 0;
+    for (int j = 0; j < nb; ++j) {
+      uint128_t p = umul128(a[i], b[j]);
+      uint64_t lo = uint64_t(p), hi = uint64_t(p >> 64);
+      uint64_t s = out[i + j] + lo;
+      uint64_t c = uint64_t(s < lo);
+      s += carry;
+      c += uint64_t(s < carry);
+      out[i + j] = s;
+      carry = hi + c;
+    }
+    out[i + nb] = carry;  // this limb is still zero: prior rows stop at i+nb-1
+  }
+}
+
+// out[0..outn) = bits [shift, shift + 64*outn) of a[0..n), truncating low bits.
+void extract(const uint64_t* a, int n, int shift, uint64_t* out,
+             int outn) noexcept {
+  int ws = shift >> 6, bs = shift & 63;
+  for (int i = 0; i < outn; ++i) {
+    uint64_t lo = ws + i < n ? a[ws + i] : 0;
+    uint64_t hi = ws + i + 1 < n ? a[ws + i + 1] : 0;
+    out[i] = bs != 0 ? (lo >> bs | hi << (64 - bs)) : lo;
+  }
+}
+
+// r = a * b kept to work_bits (floor); returns the extra binary exponent shift.
+auto fmul(const uint64_t* a, const uint64_t* b, uint64_t* r) noexcept -> int {
+  uint64_t prod[2 * work_limbs];
+  mul(a, work_limbs, b, work_limbs, prod);
+  // Both operands are normalized, so the product's MSB is bit 638 or 639.
+  int shift = work_bits - 1 + int(prod[2 * work_limbs - 1] >> 63);
+  extract(prod, 2 * work_limbs, shift, r, work_limbs);
+  return shift;
+}
+
+// Computes base**n (n >= 0) to work_bits, truncating after each multiply, and
+// returns rexp with r * 2**rexp <= base**n (a lower approximation). Squares base
+// in place, so it is clobbered on return.
+auto fpow(uint64_t* base, int base_exp, int n, uint64_t* r) noexcept -> int {
+  memset(r, 0, work_limbs * sizeof(*r));
+  r[work_limbs - 1] = uint64_t(1) << 63;  // 1.0
+  int rexp = 1 - work_bits;
+  while (n != 0) {
+    if ((n & 1) != 0) rexp += base_exp + fmul(r, base, r);
+    n >>= 1;
+    if (n != 0) base_exp = 2 * base_exp + fmul(base, base, base);
+  }
+  return rexp;
+}
+
+// Returns e such that m[0..result_limbs) = floor(10**x / 2**e), with m
+// normalized to result_bits (top bit set). Requires |x| <= max_exp.
+auto compute(int x, uint64_t* m) noexcept -> int {
+  assert(x >= -max_exp && x <= max_exp);
+  uint64_t p[work_limbs];
+  int pe;
+  if (x >= 0) {
+    uint64_t five[work_limbs] = {};
+    five[work_limbs - 1] = uint64_t(5) << 61;  // value 5, top bit set
+    pe = fpow(five, 3 - work_bits, x, p);
+  } else {
+    uint64_t inv5[work_limbs];
+    for (auto& limb : inv5) limb = 0xccccccccccccccccu;  // floor(2**322 / 5)
+    pe = fpow(inv5, -work_bits - 2, -x, p);  // 1/5, exponent -(work_bits + 2)
+  }
+  // Truncate p to result_bits; guard bits absorb fpow rounding to exact floor.
+  for (int k = 0; k < result_limbs; ++k)
+    m[k] = p[k + (work_limbs - result_limbs)];
+  return pe + (work_limbs - result_limbs) * 64 + x;  // 10**x = 5**x * 2**x
+}
+
+// round(in[0..n) / 2**r), ties up (r > 0, n <= 2 * work_limbs). Writes up to n
+// out limbs; returns the significant limb count.
+auto shr_round_up(const uint64_t* in, int n, int r, uint64_t* out) noexcept
+    -> int {
+  assert(r > 0 && n <= 2 * work_limbs);
+  uint64_t tmp[2 * work_limbs + 1];
+  for (int i = 0; i < n; ++i) tmp[i] = in[i];
+  tmp[n] = 0;
+  int wi = (r - 1) >> 6, bi = (r - 1) & 63;  // add the rounding bit 2**(r-1)
+  uint64_t carry = uint64_t(1) << bi;
+  for (int i = wi; carry != 0 && i <= n; ++i) {
+    tmp[i] += carry;
+    carry = uint64_t(tmp[i] < carry);
+  }
+  int ws = r >> 6, bs = r & 63, outn = 0;
+  int count = n - ws + (bs == 0 ? 1 : 0);  // limbs to write, <= n since r > 0
+  for (int i = 0; i < count; ++i) {
+    uint64_t lo = tmp[i + ws];
+    uint64_t hi = i + ws + 1 <= n ? tmp[i + ws + 1] : 0;
+    out[i] = bs != 0 ? (lo >> bs | hi << (64 - bs)) : lo;
+    if (out[i] != 0) outn = i + 1;
+  }
+  return outn;
+}
+}  // namespace pow10
+
 // Returns the 128-bit `value` shifted right by `n` bits (n >= 1), rounded to
 // nearest with ties to even.
-auto shift_right_round(uint128_t value, int n) noexcept -> uint128_t {
+auto shr_round_even(uint128_t value, int n) noexcept -> uint128_t {
   if (n >= 128) {  // everything shifts out; 2**127 is the only in-range tie
     uint128_t half = uint128_t(1) << 127;
     return n == 128 && half < value ? uint128_t(1) : uint128_t(0);
@@ -1472,7 +1585,7 @@ struct bigint {
   }
 
   // Shifts left by `n`.
-  void shift_left(int n) noexcept {
+  void shl(int n) noexcept {
     assert(n >= 0);
     if (num_limbs == 0) return;
     int limb_shift = n >> 5, bit_shift = n & 31;
@@ -1554,9 +1667,9 @@ auto write_fixed_big(char* buffer, uint64_t bin_sig, int bin_exp,
                      int precision) noexcept -> char* {
   uint128_t product = umul128(bin_sig, pow10s[precision]);
   uint32_t limbs[float_traits<double>::big_limbs];
-  bigint n(bin_exp < 0 ? shift_right_round(product, -bin_exp) : product, limbs,
+  bigint n(bin_exp < 0 ? shr_round_even(product, -bin_exp) : product, limbs,
            float_traits<double>::big_limbs);
-  if (bin_exp >= 0) n.shift_left(bin_exp);
+  if (bin_exp >= 0) n.shl(bin_exp);
 
   // n <= round(DBL_MAX * 10**18): DBL_MAX has 309 integer digits and precision
   // adds at most 18 more.
@@ -1731,7 +1844,7 @@ auto write_big(writer w, bigint num, int bin_exp, int precision, char* digits,
     // 10**bin_exp keeps num integral via a power-of-five multiply.
     int base_exp = 0;
     if (bin_exp >= 0) {
-      num.shift_left(bin_exp);
+      num.shl(bin_exp);
     } else {
       num.mul_pow5(-bin_exp);
       base_exp = bin_exp;
