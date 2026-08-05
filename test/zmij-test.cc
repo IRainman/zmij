@@ -31,8 +31,9 @@ auto write(char* out, size_t n, float value) noexcept -> char* {
 #include <gtest/gtest.h>
 #include <stdint.h>  // uint64_t
 #include <stdio.h>   // snprintf
-#include <stdlib.h>  // atoi
+#include <stdlib.h>  // atoi, strtold
 
+#include <cmath>   // std::ldexpl, std::isinf
 #include <limits>  // std::numeric_limits
 #include <string>  // std::string
 
@@ -647,6 +648,82 @@ TEST(long_double_test, extended) {
     }
   }
 }
+
+#if LDBL_MANT_DIG != DBL_MANT_DIG
+// Number of significant decimal digits in a shortest-formatted string.
+static int count_sig_digits(const std::string& s) {
+  size_t e = s.find_first_of("eE");
+  std::string m = s.substr(0, e == std::string::npos ? s.size() : e);
+  std::string d;
+  for (char c : m)
+    if (c >= '0' && c <= '9') d += c;
+  size_t first = d.find_first_not_of('0');
+  if (first == std::string::npos) return 1;  // the value 0
+  size_t last = d.find_last_not_of('0');
+  return int(last - first + 1);
+}
+
+// Exercises the extended-precision shortest path: every output must round-trip
+// through strtold, and dropping a significant digit must break the round-trip
+// (minimality). Uses random full-width significands not exactly representable
+// as double, so it drives write_big (shortest) rather than the double fast path.
+TEST(long_double_test, write_shortest) {
+  auto check = [](long double value) {
+    char buf[zmij::long_double_buffer_size + 1];
+    memset(buf, '?', sizeof(buf));
+    char* end = zmij::write(buf + 1, sizeof(buf) - 1, value);
+    ASSERT_EQ(buf[0], '?') << "buffer underrun";
+    std::string s(buf + 1, end);
+    EXPECT_EQ(strtold(s.c_str(), nullptr), value) << "roundtrip " << s;
+    int digits = count_sig_digits(s);
+    if (digits > 1) {  // a shorter decimal must not round-trip
+      char ref[64];
+      snprintf(ref, sizeof(ref), "%.*Le", digits - 2, value);
+      EXPECT_NE(strtold(ref, nullptr), value) << "not minimal " << s;
+    }
+  };
+
+  long double edges[] = {
+      3.14159265358979323846264338327950288L,
+      1.0L + 0x1p-63L,
+      1.23456789012345678901234567890123L,
+      std::numeric_limits<long double>::max(),
+      std::numeric_limits<long double>::min(),
+      std::numeric_limits<long double>::denorm_min(),
+  };
+  for (long double value : edges) {
+    check(value);
+    check(-value);
+  }
+
+  // Powers of two exercise the irregular (asymmetric-gap) path over the full
+  // exponent range. A large one (2**13969 ~ 1.2246e4205) once produced a
+  // non-minimal result: its wide ulp overflowed the 128-bit trim comparison.
+  using lim = std::numeric_limits<long double>;
+  for (int e = lim::min_exponent - lim::digits; e < lim::max_exponent; ++e) {
+    long double value = std::ldexpl(1.0L, e - 1);
+    if (value == 0 || std::isinf(value)) continue;
+    check(value);
+    check(-value);
+  }
+
+  uint64_t state = 0x9e3779b97f4a7c15ull;
+  auto next = [&state] {  // xorshift64
+    state ^= state << 13;
+    state ^= state >> 7;
+    state ^= state << 17;
+    return state;
+  };
+  for (int i = 0; i < 200000; ++i) {
+    long double sig = (long double)next();
+    sig = sig * 0x1p64L + (long double)next();  // up to 128 significand bits
+    int exp = int(next() % 30000) - 15000;
+    long double value = std::ldexpl(sig, exp - 128);
+    if (value == 0 || std::isinf(value)) continue;
+    check((next() & 1) ? value : -value);
+  }
+}
+#endif  // LDBL_MANT_DIG != DBL_MANT_DIG
 
 TEST(float_test, write_general) {
   EXPECT_EQ(to_general(1.5f, 6), "1.5");

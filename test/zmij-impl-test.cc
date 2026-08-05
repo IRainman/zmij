@@ -7,8 +7,9 @@
 #include <gtest/gtest.h>
 #include <stdio.h>
 
+#include <cmath>   // std::isfinite
+#include <limits>  // std::numeric_limits
 #include <string>
-
 // Include zmij.cc instead of linking with the library to test internal
 // functions.
 #include "zmij.cc"
@@ -839,7 +840,8 @@ TEST(zmij_impl_test, bigint) {
   // Construction from a 128-bit value and base-10**9 output.
   EXPECT_EQ(to_string(fixed_bigint(0)), "0");
   EXPECT_EQ(to_string(fixed_bigint(123456789)), "123456789");
-  EXPECT_EQ(to_string(fixed_bigint(1000000000000000000ull)), "1000000000000000000");
+  EXPECT_EQ(to_string(fixed_bigint(1000000000000000000ull)),
+            "1000000000000000000");
 
   // shl multiplies by 2**bits (word-aligned and unaligned).
   fixed_bigint a(1);
@@ -912,4 +914,29 @@ TEST(zmij_impl_test, bigint_mul) {
   fixed_bigint e(1);
   e.mul_pow5(27);  // 5**27, spanning two full chunks and a remainder.
   EXPECT_EQ(to_string(e), "7450580596923828125");
+}
+
+// The on-the-fly shortest path must match the tested table-based fast path,
+// validating the pow10 kernel and trim logic.
+TEST(zmij_impl_test, shortest_big_double) {
+  double edges[] = {1.0,
+                    0.0,
+                    -0.0,
+                    43210.0,
+                    43210.1,
+                    10000.0,
+                    0.0001,
+                    0.00001,
+                    1234567.0,
+                    6.62607015e-34,
+                    5.444310685350916e+14,
+                    std::numeric_limits<double>::max(),
+                    std::numeric_limits<double>::min(),
+                    std::numeric_limits<double>::denorm_min()};
+  for (double v : edges) {
+    char fast[64], big[64];
+    EXPECT_EQ(std::string(big, zmij::detail::write_big(v, big, sizeof(big))),
+              std::string(fast, zmij::detail::write(v, fast)))
+        << v;
+  }
 }

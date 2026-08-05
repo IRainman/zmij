@@ -260,29 +260,49 @@ struct uint128 {
     if (s < 128) return {0, hi >> (s - 64)};
     return {0, 0};
   }
-  constexpr auto operator&(uint128 o) const noexcept -> uint128 {
-    return {hi & o.hi, lo & o.lo};
+  constexpr auto operator&(uint128 rhs) const noexcept -> uint128 {
+    return {hi & rhs.hi, lo & rhs.lo};
   }
-  constexpr auto operator-(uint128 o) const noexcept -> uint128 {
-    uint64_t d = lo - o.lo;
-    return {hi - o.hi - (d > lo), d};
+  constexpr auto operator|(uint128 rhs) const noexcept -> uint128 {
+    return {hi | rhs.hi, lo | rhs.lo};
+  }
+  constexpr auto operator^(uint128 rhs) const noexcept -> uint128 {
+    return {hi ^ rhs.hi, lo ^ rhs.lo};
+  }
+  constexpr auto operator+(uint128 rhs) const noexcept -> uint128 {
+    uint64_t s = lo + rhs.lo;
+    return {hi + rhs.hi + (s < lo), s};
+  }
+  constexpr auto operator-(uint128 rhs) const noexcept -> uint128 {
+    uint64_t d = lo - rhs.lo;
+    return {hi - rhs.hi - (d > lo), d};
+  }
+  constexpr auto operator%(uint32_t d) const noexcept -> uint64_t {
+    uint64_t m = (UINT64_MAX % d + 1) % d;  // 2**64 mod d, fits in 32 bits
+    return ((hi % d) * m + lo % d) % d;
   }
 
-  constexpr auto operator<(uint128 o) const noexcept -> bool {
-    return hi != o.hi ? hi < o.hi : lo < o.lo;
+  constexpr auto operator==(uint128 rhs) const noexcept -> bool {
+    return hi == rhs.hi && lo == rhs.lo;
   }
-  constexpr auto operator!=(uint128 o) const noexcept -> bool {
-    return hi != o.hi || lo != o.lo;
+  constexpr auto operator!=(uint128 rhs) const noexcept -> bool {
+    return hi != rhs.hi || lo != rhs.lo;
+  }
+  constexpr auto operator<(uint128 rhs) const noexcept -> bool {
+    return hi != rhs.hi ? hi < rhs.hi : lo < rhs.lo;
+  }
+  constexpr auto operator>(uint128 rhs) const noexcept -> bool {
+    return rhs < *this;
+  }
+  constexpr auto operator>=(uint128 rhs) const noexcept -> bool {
+    return !(*this < rhs);
+  }
+  constexpr auto operator<=(uint128 rhs) const noexcept -> bool {
+    return !(rhs < *this);
   }
 
   auto operator++() noexcept -> uint128& {
     if (++lo == 0) ++hi;
-    return *this;
-  }
-  auto operator<<=(int s) noexcept -> uint128& { return *this = *this << s; }
-  auto operator^=(uint128 o) noexcept -> uint128& {
-    hi ^= o.hi;
-    lo ^= o.lo;
     return *this;
   }
 };
@@ -300,6 +320,23 @@ using uint128_t = unsigned __int128;
 #else
 using uint128_t = uint128;
 #endif  // ZMIJ_USE_INT128
+
+// Divides x by 10 in place and returns the remainder.
+ZMIJ_INLINE auto divmod10(uint128_t& x) noexcept -> uint64_t {
+#if ZMIJ_USE_INT128
+  uint64_t r = uint64_t(x % 10);
+  x /= 10;
+  return r;
+#else
+  auto div = [](uint64_t& w, uint64_t rem) -> uint64_t {
+    uint64_t hi = rem << 32 | w >> 32;
+    uint64_t lo = (hi % 10) << 32 | uint32_t(w);
+    w = (hi / 10) << 32 | (lo / 10);
+    return lo % 10;
+  };
+  return div(x.lo, div(x.hi, 0));
+#endif
+}
 
 #if ZMIJ_USE_INT128 && defined(__APPLE__)
 constexpr bool use_umul128_hi64 = true;  // Use umul128_hi64 for division.
@@ -410,8 +447,8 @@ auto fmul(const uint64_t* a, const uint64_t* b, uint64_t* r) noexcept -> int {
 }
 
 // Computes base**n (n >= 0) to work_bits, truncating after each multiply, and
-// returns rexp with r * 2**rexp <= base**n (a lower approximation). Squares base
-// in place, so it is clobbered on return.
+// returns rexp with r * 2**rexp <= base**n (a lower approximation). Squares
+// base in place, so it is clobbered on return.
 auto fpow(uint64_t* base, int base_exp, int n, uint64_t* r) noexcept -> int {
   memset(r, 0, work_limbs * sizeof(*r));
   r[work_limbs - 1] = uint64_t(1) << 63;  // 1.0
@@ -443,31 +480,6 @@ auto compute(int x, uint64_t* m) noexcept -> int {
   for (int k = 0; k < result_limbs; ++k)
     m[k] = p[k + (work_limbs - result_limbs)];
   return pe + (work_limbs - result_limbs) * 64 + x;  // 10**x = 5**x * 2**x
-}
-
-// round(in[0..n) / 2**r), ties up (r > 0, n <= 2 * work_limbs). Writes up to n
-// out limbs; returns the significant limb count.
-auto shr_round_up(const uint64_t* in, int n, int r, uint64_t* out) noexcept
-    -> int {
-  assert(r > 0 && n <= 2 * work_limbs);
-  uint64_t tmp[2 * work_limbs + 1];
-  for (int i = 0; i < n; ++i) tmp[i] = in[i];
-  tmp[n] = 0;
-  int wi = (r - 1) >> 6, bi = (r - 1) & 63;  // add the rounding bit 2**(r-1)
-  uint64_t carry = uint64_t(1) << bi;
-  for (int i = wi; carry != 0 && i <= n; ++i) {
-    tmp[i] += carry;
-    carry = uint64_t(tmp[i] < carry);
-  }
-  int ws = r >> 6, bs = r & 63, outn = 0;
-  int count = n - ws + (bs == 0 ? 1 : 0);  // limbs to write, <= n since r > 0
-  for (int i = 0; i < count; ++i) {
-    uint64_t lo = tmp[i + ws];
-    uint64_t hi = i + ws + 1 <= n ? tmp[i + ws + 1] : 0;
-    out[i] = bs != 0 ? (lo >> bs | hi << (64 - bs)) : lo;
-    if (out[i] != 0) outn = i + 1;
-  }
-  return outn;
 }
 }  // namespace pow10
 
@@ -557,6 +569,10 @@ template <typename Float> struct float_traits : std::numeric_limits<Float> {
     return int64_t(uint64_t(bits >> exp_shift) & unsigned(exp_mask));
   }
 };
+
+template <typename Float>
+constexpr
+    typename float_traits<Float>::sig_type float_traits<Float>::implicit_bit;
 
 constexpr uint64_t pow10s[] = {
     1,
@@ -1377,7 +1393,7 @@ ZMIJ_INLINE void normalize(UInt& bin_sig, int64_t& bin_exp) noexcept {
     width = 64;
   }
   int shift = lz - (width - 1 - float_traits<Float>::num_sig_bits);
-  bin_sig <<= shift;
+  bin_sig = bin_sig << shift;
   bin_exp = 1 - shift;
 }
 
@@ -1955,9 +1971,9 @@ auto write_big(Float value, int precision, char* out, size_t n,
     if (bin_exp != 0)  // inf or nan
       return w.write(bin_sig != 0 ? "nan" : "inf", 3);
     if (bin_sig != 0) normalize<Float>(bin_sig, bin_exp);
-    bin_sig ^= traits::implicit_bit;
+    bin_sig = bin_sig ^ traits::implicit_bit;
   }
-  bin_sig ^= traits::implicit_bit;
+  bin_sig = bin_sig ^ traits::implicit_bit;
 
   // One scratch block holds the big integer's limbs followed by the decimal
   // digits. It stays on the stack except for the extended long double case,
@@ -1974,6 +1990,134 @@ auto write_big(Float value, int precision, char* out, size_t n,
   char* result = write_big(w, num, int(bin_exp - traits::exp_offset), precision,
                            digits, traits::big_digits, fmt);
   if (heap) free(scratch);
+  return result;
+}
+
+// Writes the shortest decimal representation of `value`, correctly rounded
+// (ties to even), truncating into `out` after `n` bytes.
+template <typename Float>
+auto write_big(Float value, char* out, size_t n) noexcept -> char* {
+  using traits = float_traits<Float>;
+  auto bits = traits::to_bits(value);
+  auto raw_exp = traits::get_exp(bits);
+  auto bin_sig = traits::get_sig(bits);
+
+  writer w = {out, out + n};
+  if (traits::is_negative(bits)) w.write('-');
+
+  bool is_normal = unsigned(raw_exp - 1) < unsigned(traits::exp_mask - 1);
+  if (!is_normal) [[ZMIJ_UNLIKELY]] {
+    if (raw_exp != 0) return w.write(bin_sig != 0 ? "nan" : "inf", 3);
+    if (bin_sig == 0) return w.write('0');
+    raw_exp = 1;
+    bin_sig = bin_sig | traits::implicit_bit;
+  }
+
+  bool regular = bin_sig != 0;
+  bin_sig = bin_sig ^ traits::implicit_bit;
+  int bin_exp = raw_exp - traits::exp_offset;
+
+  // dec_exp = floor(bin_exp * log10(2) [+ log10(3/4) at a power of two]);
+  // scaling by 10**-dec_exp puts the ulp in [1, 10) so the shortest form is the
+  // integral part or a neighbor.
+  constexpr int64_t log10_2_sig = 20'201'781;   // round(log10(2) * 2**26)
+  constexpr int64_t log10_3_4_sig = 8'384'497;  // round(-log10(3/4) * 2**26)
+  constexpr int64_t log10_2_exp = 26;
+  int dec_exp = int((bin_exp * log10_2_sig - (regular ? 0 : log10_3_4_sig)) >>
+                    log10_2_exp);
+
+  uint64_t p10_sig[pow10::result_limbs];
+  int p10_exp = pow10::compute(-dec_exp, p10_sig);
+  // value * 10**-dec_exp = bin_sig * p10_sig / 2**shift
+  int shift = -(bin_exp + p10_exp);
+  assert(shift >= 128 && shift <= 256);
+
+  // Scale by a power of 10 and split into integral and fractional parts.
+  uint64_t sig64[2] = {uint64_t(bin_sig), uint64_t(uint128_t(bin_sig) >> 64)};
+  uint64_t product[2 + pow10::result_limbs], scaled[4];
+  pow10::mul(sig64, 2, p10_sig, pow10::result_limbs, product);
+  pow10::extract(product, 2 + pow10::result_limbs, shift - 128, scaled, 4);
+  uint128_t integral = uint128_t(scaled[3]) << 64 | scaled[2];
+  uint128_t fractional = uint128_t(scaled[1]) << 64 | scaled[0];
+  uint64_t last_digit = uint64_t(integral % 10);
+
+  // half_ulp = floor(p10_sig / 2**(shift-123)): half a binary ulp in c units.
+  uint64_t half_ulp64[2];
+  pow10::extract(p10_sig, pow10::result_limbs, shift - 123, half_ulp64, 2);
+  uint128_t half_ulp = uint128_t(half_ulp64[1]) << 64 | half_ulp64[0];
+
+  // Based on Yaoyuan Guo's (yy) method, adapted to long double.
+  uint128_t c = uint128_t(last_digit) << 124 | fractional >> 4;
+  uint128_t half = uint128_t(1) << 127;  // fixed point 1/2
+  bool even = (uint64_t(bin_sig) & 1) == 0;
+
+  // round_up keeps all digits and rounds the significand to nearest; trim_down
+  // drops the last digit; trim_up drops it and carries to the next ten. Exact
+  // boundaries are detected by equality and broken toward an even significand.
+  bool round_up, trim_down;
+  if (regular) {
+    round_up = fractional >= half;
+    if (fractional == half) round_up = (uint64_t(integral) & 1) != 0;
+    trim_down = c <= half_ulp;
+    if (c == half_ulp) trim_down = even;
+  } else {
+    round_up = fractional > half;
+    uint128_t quarter_ulp = half_ulp >> 1;
+    if ((fractional >> 4) > quarter_ulp) round_up = true;
+    trim_down = c <= quarter_ulp;
+  }
+
+  // trim_up iff value + half_ulp reaches the next ten, i.e. c + half_ulp
+  // reaches ten; compared as c >= ten - half_ulp so the sum can't overflow
+  // 128 bits. A boundary (gap in {0, 1}) breaks to even, guarded by
+  // dec_exp == 0 for the exact gap == 0 case.
+  uint128_t ten = uint128_t(10) << 124;  // the next ten in c units
+  bool trim_up = c >= ten - half_ulp;    // c + half_ulp >= ten
+  uint128_t gap = ten - half_ulp - c;    // wraps large if c + half_ulp > ten
+  if (gap <= 1 && (dec_exp == 0 || gap == 1)) trim_up = even;
+
+  // If a shorter form round-trips, drop the last digit (a multiple of ten, +10
+  // when it rounds up); otherwise keep all digits, rounding the ones place up.
+  uint128_t dec_sig = trim_down || trim_up
+                          ? integral - last_digit + trim_up * 10
+                          : integral + round_up;
+
+  // Convert the significand to digits, msb first, and drop trailing zeros.
+  char digits[40];
+  char* pnum = digits + sizeof(digits);
+  for (uint128_t x = dec_sig; x != uint128_t(0);)
+    *--pnum = char('0' + divmod10(x));
+  int len = int(digits + sizeof(digits) - pnum);
+  int lead_exp = dec_exp + len - 1;
+  while (len > 1 && pnum[len - 1] == '0') --len;
+
+  char* result;
+  if (lead_exp >= traits::min_fixed_dec_exp &&
+      lead_exp <= traits::max_fixed_dec_exp) {
+    int point_pos = lead_exp + 1;
+    if (point_pos <= 0) {  // |value| < 1, e.g. 0.00123
+      w.write('0');
+      w.write('.');
+      w.write_zeros(-point_pos);
+      w.write(pnum, len);
+    } else if (point_pos >= len) {  // integral, e.g. 12300
+      w.write(pnum, len);
+      w.write_zeros(point_pos - len);
+    } else {
+      w.write(pnum, point_pos);
+      w.write('.');
+      w.write(pnum + point_pos, len - point_pos);
+    }
+    result = w.out;
+  } else {  // scientific
+    w.write(pnum[0]);
+    if (len > 1) {
+      w.write('.');
+      w.write(pnum + 1, len - 1);
+    }
+    char exp[8];
+    result = w.write(exp, int(write_exp<Float>(exp, lead_exp) - exp));
+  }
   return result;
 }
 
@@ -2149,6 +2293,12 @@ auto write_fixed(Float value, int precision, char* buffer) noexcept -> char* {
 
 template auto write(float value, char* buffer) noexcept -> char*;
 template auto write(double value, char* buffer) noexcept -> char*;
+
+template auto write_big(double value, char* out, size_t n) noexcept -> char*;
+#if LDBL_MANT_DIG != DBL_MANT_DIG
+template auto write_big(long double value, char* out, size_t n) noexcept
+    -> char*;
+#endif
 
 template auto write_big(double value, int precision, char* out, size_t n,
                         format fmt) noexcept -> char*;

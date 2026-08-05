@@ -27,6 +27,9 @@ template <typename Float>
 auto write(Float value, char* buffer) noexcept -> char*;
 
 template <typename Float>
+auto write_big(Float value, char* out, size_t n) noexcept -> char*;
+
+template <typename Float>
 auto write_big(Float value, int precision, char* out, size_t n,
                format fmt) noexcept -> char*;
 template <>
@@ -72,8 +75,9 @@ struct dec_fp {
 auto to_decimal(double value) noexcept -> dec_fp;
 
 enum {
-  float_buffer_size = 17,   // shortest (write)
-  double_buffer_size = 34,  // shortest (write)
+  float_buffer_size = 17,        // shortest (write)
+  double_buffer_size = 34,       // shortest (write)
+  long_double_buffer_size = 48,  // shortest (write), extended long double
 };
 
 /// Buffer sizes for the write* functions, usable in generic code as
@@ -115,6 +119,20 @@ inline auto write(char* out, size_t n, double value) noexcept -> char* {
   if (size > n) size = n;
   memcpy(out, buffer, size);
   return out + size;
+}
+
+/// Writes the shortest correctly rounded decimal representation of `value` to
+/// `out` without a null terminator. Returns a pointer past the last character
+/// written; if the representation exceeds `n` characters, only the first `n`
+/// are written.
+inline auto write(char* out, size_t n, long double value) noexcept -> char* {
+#if LDBL_MANT_DIG == DBL_MANT_DIG
+  return write(out, n, double(value));
+#else
+  // Shortest cannot fall back to double: a double-shortest decimal may not
+  // round-trip at long double precision.
+  return detail::write_big(value, out, n);
+#endif
 }
 
 /// Writes `value` in scientific format with `precision` digits after the
