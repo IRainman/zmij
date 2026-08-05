@@ -40,6 +40,8 @@ auto write(char* out, size_t n, float value) noexcept -> char* {
 #include "dragonbox/dragonbox_to_chars.h"
 #include "fmt/format.h"
 
+typedef long double long_double;
+
 auto to_shortest(double value) -> std::string {
   char buffer[zmij::double_buffer_size + 1] = {};
   memset(buffer, '?', sizeof(buffer));
@@ -715,8 +717,8 @@ TEST(long_double_test, write_shortest) {
     return state;
   };
   for (int i = 0; i < 200000; ++i) {
-    long double sig = (long double)next();
-    sig = sig * 0x1p64L + (long double)next();  // up to 128 significand bits
+    long double sig = long_double(next());
+    sig = sig * 0x1p64L + long_double(next());  // up to 128 significand bits
     int exp = int(next() % 30000) - 15000;
     long double value = std::ldexpl(sig, exp - 128);
     if (value == 0 || std::isinf(value)) continue;

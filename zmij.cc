@@ -248,27 +248,6 @@ struct uint128 {
 
   explicit constexpr operator uint64_t() const noexcept { return lo; }
 
-  constexpr auto operator<<(int s) const noexcept -> uint128 {
-    if (s == 0) return *this;
-    if (s < 64) return {hi << s | lo >> (64 - s), lo << s};
-    if (s < 128) return {lo << (s - 64), 0};
-    return {0, 0};
-  }
-  constexpr auto operator>>(int s) const noexcept -> uint128 {
-    if (s == 0) return *this;
-    if (s < 64) return {hi >> s, lo >> s | hi << (64 - s)};
-    if (s < 128) return {0, hi >> (s - 64)};
-    return {0, 0};
-  }
-  constexpr auto operator&(uint128 rhs) const noexcept -> uint128 {
-    return {hi & rhs.hi, lo & rhs.lo};
-  }
-  constexpr auto operator|(uint128 rhs) const noexcept -> uint128 {
-    return {hi | rhs.hi, lo | rhs.lo};
-  }
-  constexpr auto operator^(uint128 rhs) const noexcept -> uint128 {
-    return {hi ^ rhs.hi, lo ^ rhs.lo};
-  }
   constexpr auto operator+(uint128 rhs) const noexcept -> uint128 {
     uint64_t s = lo + rhs.lo;
     return {hi + rhs.hi + (s < lo), s};
@@ -280,6 +259,27 @@ struct uint128 {
   constexpr auto operator%(uint32_t d) const noexcept -> uint64_t {
     uint64_t m = (UINT64_MAX % d + 1) % d;  // 2**64 mod d, fits in 32 bits
     return ((hi % d) * m + lo % d) % d;
+  }
+  constexpr auto operator&(uint128 rhs) const noexcept -> uint128 {
+    return {hi & rhs.hi, lo & rhs.lo};
+  }
+  constexpr auto operator|(uint128 rhs) const noexcept -> uint128 {
+    return {hi | rhs.hi, lo | rhs.lo};
+  }
+  constexpr auto operator^(uint128 rhs) const noexcept -> uint128 {
+    return {hi ^ rhs.hi, lo ^ rhs.lo};
+  }
+  constexpr auto operator<<(int s) const noexcept -> uint128 {
+    if (s == 0) return *this;
+    if (s < 64) return {hi << s | lo >> (64 - s), lo << s};
+    if (s < 128) return {lo << (s - 64), 0};
+    return {0, 0};
+  }
+  constexpr auto operator>>(int s) const noexcept -> uint128 {
+    if (s == 0) return *this;
+    if (s < 64) return {hi >> s, lo >> s | hi << (64 - s)};
+    if (s < 128) return {0, hi >> (s - 64)};
+    return {0, 0};
   }
 
   constexpr auto operator==(uint128 rhs) const noexcept -> bool {
@@ -294,11 +294,11 @@ struct uint128 {
   constexpr auto operator>(uint128 rhs) const noexcept -> bool {
     return rhs < *this;
   }
-  constexpr auto operator>=(uint128 rhs) const noexcept -> bool {
-    return !(*this < rhs);
-  }
   constexpr auto operator<=(uint128 rhs) const noexcept -> bool {
     return !(rhs < *this);
+  }
+  constexpr auto operator>=(uint128 rhs) const noexcept -> bool {
+    return !(*this < rhs);
   }
 
   auto operator++() noexcept -> uint128& {
@@ -1421,7 +1421,8 @@ struct shortest_decimal {
 
 // Here be 🐉s.
 // Converts a binary FP number bin_sig * 2**bin_exp to the shortest decimal
-// representation, where bin_exp = raw_exp - exp_offset.
+// representation, where bin_exp = raw_exp - exp_offset. The smallest normal may
+// be passed as irregular without affecting the result.
 template <typename Float, typename UInt>
 ZMIJ_INLINE auto to_decimal(UInt bin_sig, int64_t raw_exp, bool regular,
                             const data& d) noexcept -> shortest_decimal {
@@ -1842,6 +1843,135 @@ auto write(Float value, char* buffer) noexcept -> char* {
   return write_exp<Float>(buffer, dec_exp);
 }
 
+// Writes the shortest decimal representation of `value`, correctly rounded
+// (ties to even), truncating into `out` after `n` bytes.
+template <typename Float>
+auto write_big(Float value, char* out, size_t n) noexcept -> char* {
+  using traits = float_traits<Float>;
+  auto bits = traits::to_bits(value);
+  auto raw_exp = traits::get_exp(bits);
+  auto bin_sig = traits::get_sig(bits);
+
+  writer w = {out, out + n};
+  if (traits::is_negative(bits)) w.write('-');
+
+  bool is_normal = unsigned(raw_exp - 1) < unsigned(traits::exp_mask - 1);
+  if (!is_normal) [[ZMIJ_UNLIKELY]] {
+    if (raw_exp != 0) return w.write(bin_sig != 0 ? "nan" : "inf", 3);
+    if (bin_sig == 0) return w.write('0');
+    raw_exp = 1;
+    bin_sig = bin_sig | traits::implicit_bit;
+  }
+
+  // The smallest normal is treated as irregular, but the result is unaffected.
+  bool regular = bin_sig != 0;
+  bin_sig = bin_sig ^ traits::implicit_bit;
+  int bin_exp = raw_exp - traits::exp_offset;
+
+  // dec_exp = floor(bin_exp * log10(2) [+ log10(3/4) at a power of two]);
+  // scaling by 10**-dec_exp puts the ulp in [1, 10) so the shortest form is the
+  // integral part or a neighbor.
+  constexpr int64_t log10_2_sig = 20'201'781;   // round(log10(2) * 2**26)
+  constexpr int64_t log10_3_4_sig = 8'384'497;  // round(-log10(3/4) * 2**26)
+  constexpr int64_t log10_2_exp = 26;
+  int dec_exp = int((bin_exp * log10_2_sig - (regular ? 0 : log10_3_4_sig)) >>
+                    log10_2_exp);
+
+  uint64_t p10_sig[pow10::result_limbs];
+  int p10_exp = pow10::compute(-dec_exp, p10_sig);
+  // value * 10**-dec_exp = bin_sig * p10_sig / 2**shift
+  int shift = -(bin_exp + p10_exp);
+  assert(shift >= 128 && shift <= 256);
+
+  // Scale by a power of 10 and split into integral and fractional parts.
+  uint64_t sig64[2] = {uint64_t(bin_sig), uint64_t(uint128_t(bin_sig) >> 64)};
+  uint64_t product[2 + pow10::result_limbs], scaled[4];
+  pow10::mul(sig64, 2, p10_sig, pow10::result_limbs, product);
+  pow10::extract(product, 2 + pow10::result_limbs, shift - 128, scaled, 4);
+  uint128_t integral = uint128_t(scaled[3]) << 64 | scaled[2];
+  uint128_t fractional = uint128_t(scaled[1]) << 64 | scaled[0];
+  uint64_t last_digit = uint64_t(integral % 10);
+
+  // half_ulp = floor(p10_sig / 2**(shift-123)): half a binary ulp in c units.
+  uint64_t half_ulp64[2];
+  pow10::extract(p10_sig, pow10::result_limbs, shift - 123, half_ulp64, 2);
+  uint128_t half_ulp = uint128_t(half_ulp64[1]) << 64 | half_ulp64[0];
+
+  // Based on Yaoyuan Guo's (yy) method, adapted to long double.
+  uint128_t c = uint128_t(last_digit) << 124 | fractional >> 4;
+  uint128_t half = uint128_t(1) << 127;  // fixed point 1/2
+  bool even = (uint64_t(bin_sig) & 1) == 0;
+
+  // round_up keeps all digits and rounds the significand to nearest; trim_down
+  // drops the last digit; trim_up drops it and carries to the next ten. Exact
+  // boundaries are detected by equality and broken toward an even significand.
+  bool round_up, trim_down;
+  if (regular) {
+    round_up = fractional >= half;
+    if (fractional == half) round_up = (uint64_t(integral) & 1) != 0;
+    trim_down = c <= half_ulp;
+    if (c == half_ulp) trim_down = even;
+  } else {
+    round_up = fractional > half;
+    uint128_t quarter_ulp = half_ulp >> 1;
+    if ((fractional >> 4) > quarter_ulp) round_up = true;
+    trim_down = c <= quarter_ulp;
+  }
+
+  // trim_up iff value + half_ulp reaches the next ten, i.e. c + half_ulp
+  // reaches ten; compared as c >= ten - half_ulp so the sum can't overflow
+  // 128 bits. A boundary (gap in {0, 1}) breaks to even, guarded by
+  // dec_exp == 0 for the exact gap == 0 case.
+  uint128_t ten = uint128_t(10) << 124;  // the next ten in c units
+  bool trim_up = c >= ten - half_ulp;    // c + half_ulp >= ten
+  uint128_t gap = ten - half_ulp - c;    // wraps large if c + half_ulp > ten
+  if (gap <= 1 && (dec_exp == 0 || gap == 1)) trim_up = even;
+
+  // If a shorter form round-trips, drop the last digit (a multiple of ten, +10
+  // when it rounds up); otherwise keep all digits, rounding the ones place up.
+  uint128_t dec_sig = trim_down || trim_up
+                          ? integral - last_digit + trim_up * 10
+                          : integral + round_up;
+
+  // Convert the significand to digits, msb first, and drop trailing zeros.
+  char digits[40];
+  char* pnum = digits + sizeof(digits);
+  for (uint128_t x = dec_sig; x != uint128_t(0);)
+    *--pnum = char('0' + divmod10(x));
+  int len = int(digits + sizeof(digits) - pnum);
+  int lead_exp = dec_exp + len - 1;
+  while (len > 1 && pnum[len - 1] == '0') --len;
+
+  char* result;
+  if (lead_exp >= traits::min_fixed_dec_exp &&
+      lead_exp <= traits::max_fixed_dec_exp) {
+    int point_pos = lead_exp + 1;
+    if (point_pos <= 0) {  // |value| < 1, e.g. 0.00123
+      w.write('0');
+      w.write('.');
+      w.write_zeros(-point_pos);
+      w.write(pnum, len);
+    } else if (point_pos >= len) {  // integral, e.g. 12300
+      w.write(pnum, len);
+      w.write_zeros(point_pos - len);
+    } else {
+      w.write(pnum, point_pos);
+      w.write('.');
+      w.write(pnum + point_pos, len - point_pos);
+    }
+    result = w.out;
+  } else {  // scientific
+    w.write(pnum[0]);
+    if (len > 1) {
+      w.write('.');
+      w.write(pnum + 1, len - 1);
+    }
+    char exp[8];
+    result = w.write(exp, int(write_exp<Float>(exp, lead_exp) - exp));
+  }
+  return result;
+}
+
 auto write_big(writer w, bigint num, int bin_exp, int precision, char* digits,
                int digits_size, format fmt) noexcept -> char* {
   bool general = fmt == format::general;
@@ -1990,134 +2120,6 @@ auto write_big(Float value, int precision, char* out, size_t n,
   char* result = write_big(w, num, int(bin_exp - traits::exp_offset), precision,
                            digits, traits::big_digits, fmt);
   if (heap) free(scratch);
-  return result;
-}
-
-// Writes the shortest decimal representation of `value`, correctly rounded
-// (ties to even), truncating into `out` after `n` bytes.
-template <typename Float>
-auto write_big(Float value, char* out, size_t n) noexcept -> char* {
-  using traits = float_traits<Float>;
-  auto bits = traits::to_bits(value);
-  auto raw_exp = traits::get_exp(bits);
-  auto bin_sig = traits::get_sig(bits);
-
-  writer w = {out, out + n};
-  if (traits::is_negative(bits)) w.write('-');
-
-  bool is_normal = unsigned(raw_exp - 1) < unsigned(traits::exp_mask - 1);
-  if (!is_normal) [[ZMIJ_UNLIKELY]] {
-    if (raw_exp != 0) return w.write(bin_sig != 0 ? "nan" : "inf", 3);
-    if (bin_sig == 0) return w.write('0');
-    raw_exp = 1;
-    bin_sig = bin_sig | traits::implicit_bit;
-  }
-
-  bool regular = bin_sig != 0;
-  bin_sig = bin_sig ^ traits::implicit_bit;
-  int bin_exp = raw_exp - traits::exp_offset;
-
-  // dec_exp = floor(bin_exp * log10(2) [+ log10(3/4) at a power of two]);
-  // scaling by 10**-dec_exp puts the ulp in [1, 10) so the shortest form is the
-  // integral part or a neighbor.
-  constexpr int64_t log10_2_sig = 20'201'781;   // round(log10(2) * 2**26)
-  constexpr int64_t log10_3_4_sig = 8'384'497;  // round(-log10(3/4) * 2**26)
-  constexpr int64_t log10_2_exp = 26;
-  int dec_exp = int((bin_exp * log10_2_sig - (regular ? 0 : log10_3_4_sig)) >>
-                    log10_2_exp);
-
-  uint64_t p10_sig[pow10::result_limbs];
-  int p10_exp = pow10::compute(-dec_exp, p10_sig);
-  // value * 10**-dec_exp = bin_sig * p10_sig / 2**shift
-  int shift = -(bin_exp + p10_exp);
-  assert(shift >= 128 && shift <= 256);
-
-  // Scale by a power of 10 and split into integral and fractional parts.
-  uint64_t sig64[2] = {uint64_t(bin_sig), uint64_t(uint128_t(bin_sig) >> 64)};
-  uint64_t product[2 + pow10::result_limbs], scaled[4];
-  pow10::mul(sig64, 2, p10_sig, pow10::result_limbs, product);
-  pow10::extract(product, 2 + pow10::result_limbs, shift - 128, scaled, 4);
-  uint128_t integral = uint128_t(scaled[3]) << 64 | scaled[2];
-  uint128_t fractional = uint128_t(scaled[1]) << 64 | scaled[0];
-  uint64_t last_digit = uint64_t(integral % 10);
-
-  // half_ulp = floor(p10_sig / 2**(shift-123)): half a binary ulp in c units.
-  uint64_t half_ulp64[2];
-  pow10::extract(p10_sig, pow10::result_limbs, shift - 123, half_ulp64, 2);
-  uint128_t half_ulp = uint128_t(half_ulp64[1]) << 64 | half_ulp64[0];
-
-  // Based on Yaoyuan Guo's (yy) method, adapted to long double.
-  uint128_t c = uint128_t(last_digit) << 124 | fractional >> 4;
-  uint128_t half = uint128_t(1) << 127;  // fixed point 1/2
-  bool even = (uint64_t(bin_sig) & 1) == 0;
-
-  // round_up keeps all digits and rounds the significand to nearest; trim_down
-  // drops the last digit; trim_up drops it and carries to the next ten. Exact
-  // boundaries are detected by equality and broken toward an even significand.
-  bool round_up, trim_down;
-  if (regular) {
-    round_up = fractional >= half;
-    if (fractional == half) round_up = (uint64_t(integral) & 1) != 0;
-    trim_down = c <= half_ulp;
-    if (c == half_ulp) trim_down = even;
-  } else {
-    round_up = fractional > half;
-    uint128_t quarter_ulp = half_ulp >> 1;
-    if ((fractional >> 4) > quarter_ulp) round_up = true;
-    trim_down = c <= quarter_ulp;
-  }
-
-  // trim_up iff value + half_ulp reaches the next ten, i.e. c + half_ulp
-  // reaches ten; compared as c >= ten - half_ulp so the sum can't overflow
-  // 128 bits. A boundary (gap in {0, 1}) breaks to even, guarded by
-  // dec_exp == 0 for the exact gap == 0 case.
-  uint128_t ten = uint128_t(10) << 124;  // the next ten in c units
-  bool trim_up = c >= ten - half_ulp;    // c + half_ulp >= ten
-  uint128_t gap = ten - half_ulp - c;    // wraps large if c + half_ulp > ten
-  if (gap <= 1 && (dec_exp == 0 || gap == 1)) trim_up = even;
-
-  // If a shorter form round-trips, drop the last digit (a multiple of ten, +10
-  // when it rounds up); otherwise keep all digits, rounding the ones place up.
-  uint128_t dec_sig = trim_down || trim_up
-                          ? integral - last_digit + trim_up * 10
-                          : integral + round_up;
-
-  // Convert the significand to digits, msb first, and drop trailing zeros.
-  char digits[40];
-  char* pnum = digits + sizeof(digits);
-  for (uint128_t x = dec_sig; x != uint128_t(0);)
-    *--pnum = char('0' + divmod10(x));
-  int len = int(digits + sizeof(digits) - pnum);
-  int lead_exp = dec_exp + len - 1;
-  while (len > 1 && pnum[len - 1] == '0') --len;
-
-  char* result;
-  if (lead_exp >= traits::min_fixed_dec_exp &&
-      lead_exp <= traits::max_fixed_dec_exp) {
-    int point_pos = lead_exp + 1;
-    if (point_pos <= 0) {  // |value| < 1, e.g. 0.00123
-      w.write('0');
-      w.write('.');
-      w.write_zeros(-point_pos);
-      w.write(pnum, len);
-    } else if (point_pos >= len) {  // integral, e.g. 12300
-      w.write(pnum, len);
-      w.write_zeros(point_pos - len);
-    } else {
-      w.write(pnum, point_pos);
-      w.write('.');
-      w.write(pnum + point_pos, len - point_pos);
-    }
-    result = w.out;
-  } else {  // scientific
-    w.write(pnum[0]);
-    if (len > 1) {
-      w.write('.');
-      w.write(pnum + 1, len - 1);
-    }
-    char exp[8];
-    result = w.write(exp, int(write_exp<Float>(exp, lead_exp) - exp));
-  }
   return result;
 }
 
@@ -2294,8 +2296,8 @@ auto write_fixed(Float value, int precision, char* buffer) noexcept -> char* {
 template auto write(float value, char* buffer) noexcept -> char*;
 template auto write(double value, char* buffer) noexcept -> char*;
 
-template auto write_big(double value, char* out, size_t n) noexcept -> char*;
 #if LDBL_MANT_DIG != DBL_MANT_DIG
+// write_big is a template to emit no code where long double == double.
 template auto write_big(long double value, char* out, size_t n) noexcept
     -> char*;
 #endif
