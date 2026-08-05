@@ -1927,20 +1927,18 @@ auto write_big(Float value, char* out, size_t n) noexcept -> char* {
   uint128_t gap = ten - half_ulp - c;    // wraps large if c + half_ulp > ten
   if (gap <= 1 && (dec_exp == 0 || gap == 1)) trim_up = even;
 
-  // If a shorter form round-trips, drop the last digit (a multiple of ten, +10
-  // when it rounds up); otherwise keep all digits, rounding the ones place up.
   uint128_t dec_sig = trim_down || trim_up
                           ? integral - last_digit + trim_up * 10
                           : integral + round_up;
 
   // Convert the significand to digits, msb first, and drop trailing zeros.
   char digits[40];
-  char* pnum = digits + sizeof(digits);
+  char* start = digits + sizeof(digits);
   for (uint128_t x = dec_sig; x != uint128_t(0);)
-    *--pnum = char('0' + divmod10(x));
-  int len = int(digits + sizeof(digits) - pnum);
-  int lead_exp = dec_exp + len - 1;
-  while (len > 1 && pnum[len - 1] == '0') --len;
+    *--start = char('0' + divmod10(x));
+  int num_digits = int(digits + sizeof(digits) - start);
+  int lead_exp = dec_exp + num_digits - 1;
+  while (num_digits > 1 && start[num_digits - 1] == '0') --num_digits;
 
   char* result;
   if (lead_exp >= traits::min_fixed_dec_exp &&
@@ -1950,21 +1948,21 @@ auto write_big(Float value, char* out, size_t n) noexcept -> char* {
       w.write('0');
       w.write('.');
       w.write_zeros(-point_pos);
-      w.write(pnum, len);
-    } else if (point_pos >= len) {  // integral, e.g. 12300
-      w.write(pnum, len);
-      w.write_zeros(point_pos - len);
+      w.write(start, num_digits);
+    } else if (point_pos >= num_digits) {  // integral, e.g. 12300
+      w.write(start, num_digits);
+      w.write_zeros(point_pos - num_digits);
     } else {
-      w.write(pnum, point_pos);
+      w.write(start, point_pos);
       w.write('.');
-      w.write(pnum + point_pos, len - point_pos);
+      w.write(start + point_pos, num_digits - point_pos);
     }
     result = w.out;
   } else {  // scientific
-    w.write(pnum[0]);
-    if (len > 1) {
+    w.write(start[0]);
+    if (num_digits > 1) {
       w.write('.');
-      w.write(pnum + 1, len - 1);
+      w.write(start + 1, num_digits - 1);
     }
     char exp[8];
     result = w.write(exp, int(write_exp<Float>(exp, lead_exp) - exp));
