@@ -23,6 +23,9 @@ enum class format {
 
 namespace detail {
 
+// `buffer` params require at least buffer_sizes<Float> capacity;
+// `out`/`n` params write at most `n` characters.
+
 template <typename Float>
 auto write(Float value, char* buffer) noexcept -> char*;
 
