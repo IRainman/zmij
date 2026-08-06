@@ -160,10 +160,10 @@ inline auto write(char* out, size_t n, long double value) noexcept -> char* {
 }
 
 /// Writes `value` in scientific format with `precision` digits after the
-/// decimal point (e.g. 1.234e+05) to `out` without a null terminator, like
-/// printf's %e. Returns a pointer past the last character written; if the
-/// representation exceeds `n` characters, only the first `n` are written.
-/// A negative `precision` defaults to 6, matching printf.
+/// decimal point (e.g. 1.234e+05) to `out`, without a null terminator, like
+/// printf's %e; a negative `precision` defaults to 6. Returns a pointer past
+/// the last character written; if the representation exceeds `n` characters,
+/// only the first `n` are written.
 inline auto write_scientific(char* out, size_t n, float value,
                              int precision) noexcept -> char* {
   if (precision < 0) precision = 6;
@@ -181,10 +181,10 @@ inline auto write_scientific(char* out, size_t n, float value,
 }
 
 /// Writes `value` in scientific format with `precision` digits after the
-/// decimal point (e.g. 1.234e+05) to `out` without a null terminator, like
-/// printf's %e. Returns a pointer past the last character written; if the
-/// representation exceeds `n` characters, only the first `n` are written.
-/// A negative `precision` defaults to 6, matching printf.
+/// decimal point (e.g. 1.234e+05) to `out`, without a null terminator, like
+/// printf's %e; a negative `precision` defaults to 6. Returns a pointer past
+/// the last character written; if the representation exceeds `n` characters,
+/// only the first `n` are written.
 inline auto write_scientific(char* out, size_t n, double value,
                              int precision) noexcept -> char* {
   if (precision < 0) precision = 6;
@@ -202,11 +202,10 @@ inline auto write_scientific(char* out, size_t n, double value,
 }
 
 /// Writes `value` in scientific format with `precision` digits after the
-/// decimal point (e.g. 1.234e+05) to `out` without a null terminator, like
-/// printf's %e. Returns a pointer past the last character written; if the
+/// decimal point (e.g. 1.234e+05) to `out`, without a null terminator, like
+/// printf's %e; a negative `precision` defaults to 6. Returns a pointer past
+/// the last character written, or nullptr on allocation failure; if the
 /// representation exceeds `n` characters, only the first `n` are written.
-/// A negative `precision` defaults to 6, matching printf. Returns nullptr on
-/// allocation failure.
 inline auto write_scientific(char* out, size_t n, long double value,
                              int precision) noexcept -> char* {
   if (double(value) == value)
@@ -217,12 +216,12 @@ inline auto write_scientific(char* out, size_t n, long double value,
 }
 
 /// Writes `value` in general format with up to `precision` significant digits
-/// and no trailing zeros (e.g. 1.5 or 1.5e+20) to `out` without a null
+/// and no trailing zeros (e.g. 1.5 or 1.5e+20) to `out`, without a null
 /// terminator. Fixed notation is used when `value`'s decimal exponent is in
-/// [-4, precision), and scientific otherwise. Returns a pointer past the last
-/// character written; if the representation exceeds `n` characters, only the
-/// first `n` are written. A negative `precision` defaults to 6 and zero is
-/// treated as 1, matching printf.
+/// [-4, precision), and scientific otherwise. A negative `precision` defaults
+/// to 6 and zero is treated as 1, matching printf. Returns a pointer past the
+/// last character written; if the representation exceeds `n` characters, only
+/// the first `n` are written.
 inline auto write_general(char* out, size_t n, float value,
                           int precision) noexcept -> char* {
   if (precision <= 1) precision = precision < 0 ? 6 : 1;
@@ -240,12 +239,12 @@ inline auto write_general(char* out, size_t n, float value,
 }
 
 /// Writes `value` in general format with up to `precision` significant digits
-/// and no trailing zeros (e.g. 1.5 or 1.5e+20) to `out` without a null
+/// and no trailing zeros (e.g. 1.5 or 1.5e+20) to `out`, without a null
 /// terminator. Fixed notation is used when `value`'s decimal exponent is in
-/// [-4, precision), and scientific otherwise. Returns a pointer past the last
-/// character written; if the representation exceeds `n` characters, only the
-/// first `n` are written. A negative `precision` defaults to 6 and zero is
-/// treated as 1, matching printf.
+/// [-4, precision), and scientific otherwise. A negative `precision` defaults
+/// to 6 and zero is treated as 1, matching printf. Returns a pointer past the
+/// last character written; if the representation exceeds `n` characters, only
+/// the first `n` are written.
 inline auto write_general(char* out, size_t n, double value,
                           int precision) noexcept -> char* {
   if (precision <= 1) precision = precision < 0 ? 6 : 1;
@@ -263,12 +262,12 @@ inline auto write_general(char* out, size_t n, double value,
 }
 
 /// Writes `value` in general format with up to `precision` significant digits
-/// and no trailing zeros (e.g. 1.5 or 1.5e+20) to `out` without a null
+/// and no trailing zeros (e.g. 1.5 or 1.5e+20) to `out`, without a null
 /// terminator. Fixed notation is used when `value`'s decimal exponent is in
-/// [-4, precision), and scientific otherwise. Returns a pointer past the last
-/// character written; if the representation exceeds `n` characters, only the
-/// first `n` are written. A negative `precision` defaults to 6 and zero is
-/// treated as 1, matching printf. Returns nullptr on allocation failure.
+/// [-4, precision), and scientific otherwise. A negative `precision` defaults
+/// to 6 and zero is treated as 1, matching printf. Returns a pointer past the
+/// last character written, or nullptr on allocation failure; if the
+/// representation exceeds `n` characters, only the first `n` are written.
 inline auto write_general(char* out, size_t n, long double value,
                           int precision) noexcept -> char* {
   if (double(value) == value)
@@ -279,11 +278,11 @@ inline auto write_general(char* out, size_t n, long double value,
 }
 
 /// Writes `value` in fixed notation with exactly `precision` digits after the
-/// decimal point (e.g. 1.500), to `out` without a null terminator. The result
-/// is the exact value correctly rounded to the given precision (ties to even),
-/// matching printf's %f. Returns a pointer past the last character written; if
-/// the representation exceeds `n` characters, only the first `n` are written.
-/// A negative `precision` defaults to 6, matching printf.
+/// decimal point (e.g. 1.500) to `out`, without a null terminator. The result
+/// is the exact value correctly rounded (ties to even), matching printf's %f;
+/// a negative `precision` defaults to 6. Returns a pointer past the last
+/// character written; if the representation exceeds `n` characters, only the
+/// first `n` are written.
 inline auto write_fixed(char* out, size_t n, float value,
                         int precision) noexcept -> char* {
   if (precision < 0) precision = 6;
@@ -301,11 +300,11 @@ inline auto write_fixed(char* out, size_t n, float value,
 }
 
 /// Writes `value` in fixed notation with exactly `precision` digits after the
-/// decimal point (e.g. 1.500), to `out` without a null terminator. The result
-/// is the exact value correctly rounded to the given precision (ties to even),
-/// matching printf's %f. Returns a pointer past the last character written; if
-/// the representation exceeds `n` characters, only the first `n` are written.
-/// A negative `precision` defaults to 6, matching printf.
+/// decimal point (e.g. 1.500) to `out`, without a null terminator. The result
+/// is the exact value correctly rounded (ties to even), matching printf's %f;
+/// a negative `precision` defaults to 6. Returns a pointer past the last
+/// character written; if the representation exceeds `n` characters, only the
+/// first `n` are written.
 inline auto write_fixed(char* out, size_t n, double value,
                         int precision) noexcept -> char* {
   if (precision < 0) precision = 6;
@@ -323,12 +322,11 @@ inline auto write_fixed(char* out, size_t n, double value,
 }
 
 /// Writes `value` in fixed notation with exactly `precision` digits after the
-/// decimal point (e.g. 1.500), to `out` without a null terminator. The result
-/// is the exact value correctly rounded to the given precision (ties to even),
-/// matching printf's %f. Returns a pointer past the last character written; if
-/// the representation exceeds `n` characters, only the first `n` are written.
-/// A negative `precision` defaults to 6, matching printf. Returns nullptr on
-/// allocation failure.
+/// decimal point (e.g. 1.500) to `out`, without a null terminator. The result
+/// is the exact value correctly rounded (ties to even), matching printf's %f;
+/// a negative `precision` defaults to 6. Returns a pointer past the last
+/// character written, or nullptr on allocation failure; if the representation
+/// exceeds `n` characters, only the first `n` are written.
 inline auto write_fixed(char* out, size_t n, long double value,
                         int precision) noexcept -> char* {
   if (double(value) == value)
