@@ -50,9 +50,9 @@ inline auto write_big(long double value, int precision, char* out, size_t n,
 }
 #endif
 
-// Returns the past-the-end pointer after writing min(len, n) chars to `out`.
-inline auto clamp_end(char* out, size_t len, size_t n) noexcept -> char* {
-  return out + (len < n ? len : n);
+// Returns the past-the-end pointer after writing min(size, n) chars to `out`.
+inline auto clamp_end(char* out, size_t size, size_t n) noexcept -> char* {
+  return out + (size < n ? size : n);
 }
 
 template <typename Float>
@@ -154,9 +154,8 @@ inline auto write_scientific(char* out, size_t n, float value,
                              int precision) noexcept -> char* {
   if (precision < 0) precision = 6;
   if (precision >= 18) {
-    return detail::clamp_end(
-        out, detail::write_big(value, precision, out, n, format::scientific),
-        n);
+    auto size = detail::write_big(value, precision, out, n, format::scientific);
+    return detail::clamp_end(out, size, n);
   }
   if (n >= buffer_sizes<float>::scientific)
     return detail::write_scientific(value, precision + 1, out);
@@ -176,9 +175,8 @@ inline auto write_scientific(char* out, size_t n, double value,
                              int precision) noexcept -> char* {
   if (precision < 0) precision = 6;
   if (precision >= 18) {
-    return detail::clamp_end(
-        out, detail::write_big(value, precision, out, n, format::scientific),
-        n);
+    auto size = detail::write_big(value, precision, out, n, format::scientific);
+    return detail::clamp_end(out, size, n);
   }
   if (n >= buffer_sizes<double>::scientific)
     return detail::write_scientific(value, precision + 1, out);
@@ -199,8 +197,8 @@ inline auto write_scientific(char* out, size_t n, long double value,
   if (double(value) == value)
     return write_scientific(out, n, double(value), precision);
   if (precision < 0) precision = 6;
-  return detail::clamp_end(
-      out, detail::write_big(value, precision, out, n, format::scientific), n);
+  auto size = detail::write_big(value, precision, out, n, format::scientific);
+  return detail::clamp_end(out, size, n);
 }
 
 /// Writes `value` in general format with up to `precision` significant digits
@@ -214,8 +212,8 @@ inline auto write_general(char* out, size_t n, float value,
                           int precision) noexcept -> char* {
   if (precision <= 1) precision = precision < 0 ? 6 : 1;
   if (precision > 18) {
-    return detail::clamp_end(
-        out, detail::write_big(value, precision, out, n, format::general), n);
+    auto size = detail::write_big(value, precision, out, n, format::general);
+    return detail::clamp_end(out, size, n);
   }
   if (n >= buffer_sizes<float>::scientific)
     return detail::write_general(value, precision, out);
@@ -237,8 +235,8 @@ inline auto write_general(char* out, size_t n, double value,
                           int precision) noexcept -> char* {
   if (precision <= 1) precision = precision < 0 ? 6 : 1;
   if (precision > 18) {
-    return detail::clamp_end(
-        out, detail::write_big(value, precision, out, n, format::general), n);
+    auto size = detail::write_big(value, precision, out, n, format::general);
+    return detail::clamp_end(out, size, n);
   }
   if (n >= buffer_sizes<double>::scientific)
     return detail::write_general(value, precision, out);
@@ -261,8 +259,8 @@ inline auto write_general(char* out, size_t n, long double value,
   if (double(value) == value)
     return write_general(out, n, double(value), precision);
   if (precision <= 1) precision = precision < 0 ? 6 : 1;
-  return detail::clamp_end(
-      out, detail::write_big(value, precision, out, n, format::general), n);
+  auto size = detail::write_big(value, precision, out, n, format::general);
+  return detail::clamp_end(out, size, n);
 }
 
 /// Writes `value` in fixed notation with exactly `precision` digits after the
@@ -275,8 +273,8 @@ inline auto write_fixed(char* out, size_t n, float value,
                         int precision) noexcept -> char* {
   if (precision < 0) precision = 6;
   if (precision > 18) {
-    return detail::clamp_end(
-        out, detail::write_big(value, precision, out, n, format::fixed), n);
+    auto size = detail::write_big(value, precision, out, n, format::fixed);
+    return detail::clamp_end(out, size, n);
   }
   if (n >= buffer_sizes<float>::fixed)
     return detail::write_fixed(value, precision, out);
@@ -297,8 +295,8 @@ inline auto write_fixed(char* out, size_t n, double value,
                         int precision) noexcept -> char* {
   if (precision < 0) precision = 6;
   if (precision > 18) {
-    return detail::clamp_end(
-        out, detail::write_big(value, precision, out, n, format::fixed), n);
+    auto size = detail::write_big(value, precision, out, n, format::fixed);
+    return detail::clamp_end(out, size, n);
   }
   if (n >= buffer_sizes<double>::fixed)
     return detail::write_fixed(value, precision, out);
@@ -320,8 +318,8 @@ inline auto write_fixed(char* out, size_t n, long double value,
   if (double(value) == value)
     return write_fixed(out, n, double(value), precision);
   if (precision < 0) precision = 6;
-  return detail::clamp_end(
-      out, detail::write_big(value, precision, out, n, format::fixed), n);
+  auto size = detail::write_big(value, precision, out, n, format::fixed);
+  return detail::clamp_end(out, size, n);
 }
 
 }  // namespace zmij
