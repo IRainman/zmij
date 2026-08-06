@@ -64,11 +64,11 @@ enum {
   non_finite_exp = int(~0u >> 1),
 };
 
-// A decimal floating-point number sig * pow(10, exp).
+// A decimal floating-point number (negative ? -1 : 1) * sig * pow(10, exp).
 // If exp is non_finite_exp then the number is a NaN or an infinity.
 struct dec_fp {
-  long long sig;  // significand
-  int exp;        // exponent
+  unsigned long long sig;  // significand
+  int exp;                 // exponent
   bool negative;
 };
 

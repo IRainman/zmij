@@ -9,7 +9,7 @@
 #else
 namespace zmij {
 struct dec_fp {
-  long long sig;
+  unsigned long long sig;
   int exp;
   bool negative;
 };
@@ -1413,7 +1413,7 @@ ZMIJ_INLINE auto write_scientific_digits(char* buffer,
 }
 
 struct shortest_decimal {
-  long long sig;
+  uint64_t sig;
   int exp;
   int last_digit = 0;
   bool has_last_digit = false;
@@ -1438,7 +1438,7 @@ ZMIJ_INLINE auto to_decimal(UInt bin_sig, int64_t raw_exp, bool regular,
     // Cast to 64 bits: for float, bin_sig << shift can exceed 32 bits.
     uint128 p = umul192_hi128(pow10.hi, pow10.lo, uint64_t(bin_sig) << shift);
 
-    long long integral = p.hi >> extra_shift;
+    uint64_t integral = p.hi >> extra_shift;
     uint64_t fractional = p.hi << (64 - extra_shift) | p.lo >> extra_shift;
 
     uint64_t half_ulp = pow10.hi >> (extra_shift + 1 - shift);
@@ -1471,7 +1471,7 @@ ZMIJ_INLINE auto to_decimal(UInt bin_sig, int64_t raw_exp, bool regular,
     uint64_t pow10_hi = d.pow10_significands[-dec_exp - 1].hi;
     uint64_t p = umul128_hi64(pow10_hi + 1, uint64_t(bin_sig) << shift);
 
-    long long integral = p >> extra_shift;
+    uint64_t integral = p >> extra_shift;
     uint64_t fractional = p & ((1ull << extra_shift) - 1);
 
     uint64_t half_ulp = (pow10_hi >> (65 - shift)) + even;
@@ -1512,7 +1512,7 @@ ZMIJ_INLINE auto to_decimal(UInt bin_sig, int64_t raw_exp, bool regular,
   uint128 pow10 = d.pow10_significands[-dec_exp - 1];
   uint128 p = umul192_hi128(pow10.hi, pow10.lo, bin_sig << shift);
 
-  long long integral = p.hi >> extra_shift;
+  uint64_t integral = p.hi >> extra_shift;
   uint64_t fractional = p.hi << (64 - extra_shift) | p.lo >> extra_shift;
 
   uint64_t half_ulp = (pow10.hi >> (extra_shift + 1 - shift)) + even;
@@ -1760,7 +1760,7 @@ auto to_decimal(double value) noexcept -> dec_fp {
   auto bin_sig = traits::get_sig(bits);  // binary significand
   auto negative = traits::is_negative(bits);
   if (bin_exp == 0 || bin_exp == traits::exp_mask) [[ZMIJ_UNLIKELY]] {
-    if (bin_exp != 0) return {int64_t(bin_sig), int(~0u >> 1), negative};
+    if (bin_exp != 0) return {bin_sig, int(~0u >> 1), negative};
     if (bin_sig == 0) return {0, 0, negative};
     bin_exp = 1;
     bin_sig |= traits::implicit_bit;
@@ -1797,13 +1797,13 @@ auto write(Float value, char* buffer) noexcept -> char* {
       return buffer + 1;
     }
     dec = ::to_decimal<Float>(bin_sig, 1, true, *d);
-    long long dec_sig = dec.sig * 10 + (-dec.has_last_digit & dec.last_digit);
+    uint64_t dec_sig = dec.sig * 10 + (-dec.has_last_digit & dec.last_digit);
     int dec_exp = dec.exp;
     while (dec_sig < threshold) {
       dec_sig *= 10;
       --dec_exp;
     }
-    long long q = div10(dec_sig);
+    uint64_t q = div10(dec_sig);
     int last_digit = dec_sig - q * 10;
     dec = {q, dec_exp, last_digit, last_digit != 0};
   } else {
