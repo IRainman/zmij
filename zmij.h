@@ -87,10 +87,12 @@ struct dec_fp {
 ///   auto [sig, exp, negative] = to_decimal(6.62607015e-34);
 auto to_decimal(double value) noexcept -> dec_fp;
 
+// Minimum buffer sizes for the shortest `write`, one per floating-point type.
 enum {
-  float_buffer_size = 17,        // shortest (write)
-  double_buffer_size = 34,       // shortest (write)
-  long_double_buffer_size = 48,  // shortest (write), extended long double
+  float_buffer_size = 17,
+  double_buffer_size = 34,
+  // Worst case is IEEE binary128: 1 sign + 36 digits + '.' + "e-dddd".
+  long_double_buffer_size = 44,
 };
 
 /// Buffer sizes for the write* functions, usable in generic code as
