@@ -93,6 +93,17 @@ inline auto to_chars(char* first, char* last, double value) -> to_chars_result {
   if (size > cap) return {last, std::errc::value_too_large};
   return {first + size, {}};
 }
+inline auto to_chars(char* first, char* last, long double value)
+    -> to_chars_result {
+#if LDBL_MANT_DIG == DBL_MANT_DIG
+  return to_chars(first, last, double(value));
+#else
+  size_t cap = size_t(last - first);
+  size_t size = detail::write_big(value, first, cap);
+  if (size > cap) return {last, std::errc::value_too_large};
+  return {first + size, {}};
+#endif
+}
 
 /// Writes `value` to [`first`, `last`) in the given `fmt` with `precision`
 /// digits, like std::to_chars with a format and precision. `precision` counts

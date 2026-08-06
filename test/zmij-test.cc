@@ -706,6 +706,34 @@ TEST(long_double_test, extended) {
   }
 }
 
+// Shortest to_chars for long double must match write and report truncation.
+TEST(long_double_test, to_chars) {
+  char buf[64], ref[64];
+  for (long double value : {1.5L, 0.0L, 1e300L, 5e-324L}) {
+    auto r = zmij::to_chars(buf, buf + sizeof(buf), value);
+    char* end = zmij::write(ref, sizeof(ref), value);
+    EXPECT_EQ(r.ec, std::errc());
+    EXPECT_EQ(std::string(buf, r.ptr), std::string(ref, end))
+        << "value=" << double(value);
+  }
+
+#  if LDBL_MANT_DIG != DBL_MANT_DIG
+  // An extended value drives write_big (shortest) rather than the double path.
+  long double extended = 1.0L + 0x1p-63L;
+  auto r = zmij::to_chars(buf, buf + sizeof(buf), extended);
+  char* end = zmij::write(ref, sizeof(ref), extended);
+  EXPECT_EQ(r.ec, std::errc());
+  EXPECT_EQ(std::string(buf, r.ptr), std::string(ref, end));
+#  endif
+
+  // Too small: truncated output, ptr == last, value_too_large.
+  char small[3] = {'?', '?', '?'};
+  auto result = zmij::to_chars(small, small + 2, 1.25L);
+  EXPECT_EQ(result.ec, std::errc::value_too_large);
+  EXPECT_EQ(result.ptr, small + 2);
+  EXPECT_EQ(std::string(small, sizeof(small)), "1.?");
+}
+
 #  if LDBL_MANT_DIG != DBL_MANT_DIG
 // Number of significant decimal digits in a shortest-formatted string.
 static int count_sig_digits(const std::string& s) {
