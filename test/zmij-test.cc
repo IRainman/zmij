@@ -33,7 +33,7 @@ auto write(char* out, size_t n, float value) noexcept -> char* {
 #include <stdio.h>   // snprintf
 #include <stdlib.h>  // atoi, strtold
 
-#include <cmath>   // std::ldexpl, std::isinf
+#include <cmath>   // std::ldexp, std::isinf
 #include <limits>  // std::numeric_limits
 #include <string>  // std::string
 
@@ -703,7 +703,7 @@ TEST(long_double_test, write_shortest) {
   // non-minimal result: its wide ulp overflowed the 128-bit trim comparison.
   using lim = std::numeric_limits<long double>;
   for (int e = lim::min_exponent - lim::digits; e < lim::max_exponent; ++e) {
-    long double value = std::ldexpl(1.0L, e - 1);
+    long double value = std::ldexp(1.0L, e - 1);
     if (value == 0 || std::isinf(value)) continue;
     check(value);
     check(-value);
@@ -720,7 +720,7 @@ TEST(long_double_test, write_shortest) {
     long double sig = long_double(next());
     sig = sig * 0x1p64L + long_double(next());  // up to 128 significand bits
     int exp = int(next() % 30000) - 15000;
-    long double value = std::ldexpl(sig, exp - 128);
+    long double value = std::ldexp(sig, exp - 128);
     if (value == 0 || std::isinf(value)) continue;
     check((next() & 1) ? value : -value);
   }
