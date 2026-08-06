@@ -8,17 +8,19 @@ A fast double-to-string conversion library with implementations in C and C++
 ## Features
 
 * Round trip guarantee
-* Shortest decimal representation
+* Shortest decimal representation similar to Python's default output
 * Correct rounding
+* Scientific, fixed, and general formatting with a given precision (like
+  `printf`'s `%e`/`%f`/`%g`)
+* Locale-independent output
+* `float`, `double`, and `long double` support (IEEE 754 binary32/64/128 and
+  x87 80-bit extended)
 * High [performance](#performance)
 * Small binary size
 * Fast [compile time](#compile-time)
-* `float`, `double`, and `long double` support (IEEE 754 binary32/64/128 and
-  x87 80-bit extended)
-* Safer API than classic `dtoa`
 * Optional [`std::to_chars`][to-chars]-style API, several times faster than
   common standard library implementations
-* User-friendly output format similar to Python's default representation
+* Safer API than classic `dtoa`
 * Negative zero dependencies
 * Small, clean codebase consisting of one
   [source file](https://github.com/vitaut/zmij/blob/main/zmij.cc) and a
