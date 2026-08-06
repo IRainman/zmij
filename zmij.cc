@@ -1743,6 +1743,88 @@ auto write_number(writer& w, const char* digits, int num_digits, int lead_exp,
   return w.write_zeros(decimal_places - num_lead_zeros - num_frac_digits);
 }
 
+auto write_big(writer& w, bigint num, int bin_exp, int precision, char* digits,
+               int digits_size, zmij::format fmt) noexcept -> size_t {
+  bool general = fmt == zmij::format::general;
+  bool fixed = fmt == zmij::format::fixed;
+  assert(precision >= general);
+
+  digits[0] = '0';
+  char* p = digits;
+  int num_digits = 1;
+  int lead_exp = 0;  // exponent of the leading digit
+
+  if (num.num_limbs != 0) {
+    // Represent the value exactly as an integer num times a power of ten:
+    // value = sig * 2**bin_exp = num * 10**base_exp, so its decimal digits are
+    // num's. For bin_exp < 0 the identity 2**bin_exp = 5**-bin_exp *
+    // 10**bin_exp keeps num integral via a power-of-five multiply.
+    int base_exp = 0;
+    if (bin_exp >= 0) {
+      num.shl(bin_exp);
+    } else {
+      num.mul_pow5(-bin_exp);
+      base_exp = bin_exp;
+    }
+
+    p = write_digits(num, digits + digits_size);
+    num_digits = int(digits + digits_size - p);
+    lead_exp = num_digits - 1 + base_exp;
+
+    // Significant digits to keep: precision for %g. For %e/%f it counts
+    // fractional digits, so add one leading digit; %f adds lead_exp more.
+    int max_digits = precision + !general + (fixed ? lead_exp : 0);
+    // Round to max_digits significant digits, ties to even.
+    if (max_digits < 1) {
+      // |value| < 10**-precision: rounds to 0, or up to 10**-precision when the
+      // discarded part exceeds half a unit (a tie rounds to even, i.e. 0).
+      bool round_up = false;
+      if (max_digits == 0) {
+        round_up =
+            p[0] > '5' || (p[0] == '5' && any_nonzero(p + 1, p + num_digits));
+      }
+      digits[0] = char('0' + round_up);
+      p = digits;
+      num_digits = 1;
+      lead_exp = round_up ? -precision : 0;
+    } else if (num_digits > max_digits) {
+      char dropped = p[max_digits];
+      bool round_up = dropped > '5';
+      // A dropped 5 ties to even unless a lower nonzero digit rounds up.
+      if (dropped == '5') {
+        round_up = ((p[max_digits - 1] - '0') & 1) ||
+                   any_nonzero(p + max_digits + 1, p + num_digits);
+      }
+      num_digits = max_digits;
+      if (round_up) {
+        char* q = p + max_digits - 1;
+        // Propagate the carry over trailing nines.
+        while (*q == '9') *q-- = '0';
+        // 999.. rolling over to 1000.. adds a significant digit.
+        if (q < p) {
+          *--p = '1';
+          ++lead_exp;
+        } else {
+          ++*q;
+        }
+      }
+    }
+  }
+
+  int decimal_places = precision;  // fractional digit positions to emit
+  if (general) {
+    // Drop trailing zeros and pick fixed or scientific.
+    while (num_digits > 1 && p[num_digits - 1] == '0') --num_digits;
+    fixed = lead_exp >= -4 && lead_exp < precision;
+    decimal_places = num_digits - lead_exp - 1;
+  }
+
+  // %e pads the fraction to `precision` digits; %g and shortest emit none.
+  int num_tail_zeros = general ? 0 : precision - num_digits + 1;
+  return write_number(w, p, num_digits, lead_exp, fixed, decimal_places,
+                      num_tail_zeros);
+}
+
 }  // namespace
 
 namespace zmij {
@@ -1977,88 +2059,6 @@ auto write_big(Float value, char* out, size_t n) noexcept -> size_t {
                       num_digits - lead_exp - 1, 0);
 }
 
-auto write_big(writer& w, bigint num, int bin_exp, int precision, char* digits,
-               int digits_size, format fmt) noexcept -> size_t {
-  bool general = fmt == format::general;
-  bool fixed = fmt == format::fixed;
-  assert(precision >= general);
-
-  digits[0] = '0';
-  char* p = digits;
-  int num_digits = 1;
-  int lead_exp = 0;  // exponent of the leading digit
-
-  if (num.num_limbs != 0) {
-    // Represent the value exactly as an integer num times a power of ten:
-    // value = sig * 2**bin_exp = num * 10**base_exp, so its decimal digits are
-    // num's. For bin_exp < 0 the identity 2**bin_exp = 5**-bin_exp *
-    // 10**bin_exp keeps num integral via a power-of-five multiply.
-    int base_exp = 0;
-    if (bin_exp >= 0) {
-      num.shl(bin_exp);
-    } else {
-      num.mul_pow5(-bin_exp);
-      base_exp = bin_exp;
-    }
-
-    p = write_digits(num, digits + digits_size);
-    num_digits = int(digits + digits_size - p);
-    lead_exp = num_digits - 1 + base_exp;
-
-    // Significant digits to keep: precision for %g. For %e/%f it counts
-    // fractional digits, so add one leading digit; %f adds lead_exp more.
-    int max_digits = precision + !general + (fixed ? lead_exp : 0);
-    // Round to max_digits significant digits, ties to even.
-    if (max_digits < 1) {
-      // |value| < 10**-precision: rounds to 0, or up to 10**-precision when the
-      // discarded part exceeds half a unit (a tie rounds to even, i.e. 0).
-      bool round_up = false;
-      if (max_digits == 0) {
-        round_up =
-            p[0] > '5' || (p[0] == '5' && any_nonzero(p + 1, p + num_digits));
-      }
-      digits[0] = char('0' + round_up);
-      p = digits;
-      num_digits = 1;
-      lead_exp = round_up ? -precision : 0;
-    } else if (num_digits > max_digits) {
-      char dropped = p[max_digits];
-      bool round_up = dropped > '5';
-      // A dropped 5 ties to even unless a lower nonzero digit rounds up.
-      if (dropped == '5') {
-        round_up = ((p[max_digits - 1] - '0') & 1) ||
-                   any_nonzero(p + max_digits + 1, p + num_digits);
-      }
-      num_digits = max_digits;
-      if (round_up) {
-        char* q = p + max_digits - 1;
-        // Propagate the carry over trailing nines.
-        while (*q == '9') *q-- = '0';
-        // 999.. rolling over to 1000.. adds a significant digit.
-        if (q < p) {
-          *--p = '1';
-          ++lead_exp;
-        } else {
-          ++*q;
-        }
-      }
-    }
-  }
-
-  int decimal_places = precision;  // fractional digit positions to emit
-  if (general) {
-    // Drop trailing zeros and pick fixed or scientific.
-    while (num_digits > 1 && p[num_digits - 1] == '0') --num_digits;
-    fixed = lead_exp >= -4 && lead_exp < precision;
-    decimal_places = num_digits - lead_exp - 1;
-  }
-
-  // %e pads the fraction to `precision` digits; %g and shortest emit none.
-  int num_tail_zeros = general ? 0 : precision - num_digits + 1;
-  return write_number(w, p, num_digits, lead_exp, fixed, decimal_places,
-                      num_tail_zeros);
-}
-
 template <typename Float>
 auto write_big(Float value, int precision, char* out, size_t n,
                format fmt) noexcept -> size_t {
@@ -2093,10 +2093,10 @@ auto write_big(Float value, int precision, char* out, size_t n,
   if (!scratch) return 0;
   bigint num(bin_sig, scratch, traits::big_limbs);
   char* digits = reinterpret_cast<char*>(scratch + traits::big_limbs);
-  size_t len = write_big(w, num, int(bin_exp - traits::exp_offset), precision,
-                         digits, traits::big_digits, fmt);
+  size_t size = ::write_big(w, num, int(bin_exp - traits::exp_offset),
+                            precision, digits, traits::big_digits, fmt);
   if (use_heap) free(scratch);
-  return len;
+  return size;
 }
 
 template <typename Float>
