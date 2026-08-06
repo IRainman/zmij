@@ -134,14 +134,23 @@ TEST(float_test, to_chars_format) {
   EXPECT_EQ(result.ec, std::errc());
   EXPECT_EQ(std::string(buffer, result.ptr), "1.50e+00");
 
-  // Precision out of range: nothing written, ptr == first, invalid_argument.
-  // Scientific caps at 17 fractional digits (18 significant).
+  // Precision below the minimum: nothing written, ptr == first,
+  // invalid_argument. General requires at least 1 significant digit.
   char small[4] = {'?', '?', '?', '?'};
   result = zmij::to_chars(small, small + sizeof(small), 1.5f,
-                          zmij::chars_format::scientific, 18);
+                          zmij::chars_format::general, 0);
   EXPECT_EQ(result.ec, std::errc::invalid_argument);
   EXPECT_EQ(result.ptr, small);
   EXPECT_EQ(std::string(small, sizeof(small)), "????");
+
+  // Large precision routes through the exact writer and matches printf (which
+  // promotes the float to the same double value).
+  char big[64], ref[64];
+  result = zmij::to_chars(big, big + sizeof(big), 0.1f,
+                          zmij::chars_format::scientific, 20);
+  EXPECT_EQ(result.ec, std::errc());
+  snprintf(ref, sizeof(ref), "%.20e", 0.1f);
+  EXPECT_EQ(std::string(big, result.ptr), std::string(ref));
 }
 
 TEST(float_test, write_precision) {
@@ -381,16 +390,16 @@ TEST(double_test, to_chars_format) {
   EXPECT_EQ(fmt(zmij::chars_format::scientific, 0, 2.5), "2e+00");
   EXPECT_EQ(fmt(zmij::chars_format::general, 6, 1234.5678), "1234.57");
 
-  // Precision out of range: nothing written, ptr == first, invalid_argument.
-  // Scientific caps at 17 fractional digits (18 significant).
+  // Precision below the minimum: nothing written, ptr == first,
+  // invalid_argument. General requires at least 1 significant digit.
   char small[8];
   memset(small, '?', sizeof(small));
   auto result = zmij::to_chars(small, small + sizeof(small), 1.5,
-                               zmij::chars_format::scientific, 18);
+                               zmij::chars_format::general, 0);
   EXPECT_EQ(result.ec, std::errc::invalid_argument);
   EXPECT_EQ(result.ptr, small);
   result = zmij::to_chars(small, small + sizeof(small), 1.5,
-                          zmij::chars_format::fixed, 19);
+                          zmij::chars_format::fixed, -1);
   EXPECT_EQ(result.ec, std::errc::invalid_argument);
   EXPECT_EQ(std::string(small, sizeof(small)), "????????");
 
@@ -400,6 +409,36 @@ TEST(double_test, to_chars_format) {
   EXPECT_EQ(result.ec, std::errc::value_too_large);
   EXPECT_EQ(result.ptr, small + 3);
   EXPECT_EQ(std::string(small, 3), "123");  // "1234.57" truncated to 3 chars
+}
+
+// Precision beyond the fast-path limit routes through the exact big-integer
+// writer and still matches printf, with truncation reported as before.
+TEST(double_test, to_chars_large_precision) {
+  char buf[512], ref[512];
+  auto check = [&](zmij::chars_format f, char conv, int precision,
+                   double value) {
+    auto r = zmij::to_chars(buf, buf + sizeof(buf), value, f, precision);
+    EXPECT_EQ(r.ec, std::errc());
+    char spec[16];
+    snprintf(spec, sizeof(spec), "%%.%d%c", precision, conv);
+    snprintf(ref, sizeof(ref), spec, value);
+    EXPECT_EQ(std::string(buf, r.ptr), std::string(ref))
+        << conv << " precision=" << precision << " value=" << value;
+  };
+  for (double value : {1.5, 0.1, 1234.5678, 6.62607015e-34, 1e300}) {
+    check(zmij::chars_format::scientific, 'e', 30, value);
+    check(zmij::chars_format::fixed, 'f', 25, value);
+    check(zmij::chars_format::general, 'g', 30, value);
+  }
+
+  // Truncation past the fast path still fills the output and reports overflow.
+  char small[5];
+  memset(small, '?', sizeof(small));
+  auto r = zmij::to_chars(small, small + sizeof(small), 1.5,
+                          zmij::chars_format::scientific, 30);
+  EXPECT_EQ(r.ec, std::errc::value_too_large);
+  EXPECT_EQ(r.ptr, small + sizeof(small));
+  EXPECT_EQ(std::string(small, sizeof(small)), "1.500");
 }
 
 TEST(double_test, to_decimal) {

@@ -31,11 +31,17 @@ template <typename Float>
 inline auto to_chars(char* first, char* last, Float value, chars_format fmt,
                      int precision) -> to_chars_result {
   int min_precision = fmt == chars_format::general ? 1 : 0;
+  if (precision < min_precision) return {first, std::errc::invalid_argument};
+  size_t cap = size_t(last - first);
+
   // Scientific counts fractional digits, so 18 would need 19 significant.
   int max_precision = fmt == chars_format::scientific ? 17 : 18;
-  if (precision < min_precision || precision > max_precision)
-    return {first, std::errc::invalid_argument};
-  size_t cap = size_t(last - first);
+  if (precision > max_precision) {
+    size_t size = write_big(value, precision, first, cap, fmt);
+    if (size > cap) return {last, std::errc::value_too_large};
+    return {first + size, {}};
+  }
+
   using bs = buffer_sizes<Float>;
   size_t max_size = fmt == chars_format::fixed ? bs::fixed : bs::scientific;
   char buffer[bs::fixed];
@@ -85,10 +91,9 @@ inline auto to_chars(char* first, char* last, double value) -> to_chars_result {
 /// Writes `value` to [`first`, `last`) in the given `fmt` with `precision`
 /// digits, like std::to_chars with a format and precision. `precision` counts
 /// fractional digits for `fixed` and `scientific` and significant digits for
-/// `general`, and must be in [0, 18] for `fixed`, [0, 17] for `scientific`, or
-/// [1, 18] for `general`. Returns:
+/// `general`, and must be non-negative (at least 1 for `general`). Returns:
 /// - {ptr, std::errc()} on success, with ptr past the last character written;
-/// - {first, std::errc::invalid_argument} for an out-of-range `precision`,
+/// - {first, std::errc::invalid_argument} for a `precision` below the minimum,
 ///   without writing anything;
 /// - {last, std::errc::value_too_large} if the output does not fit, after
 ///   writing a truncated result to [`first`, `last`).
