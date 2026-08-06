@@ -5,11 +5,21 @@
 // Distributed under the MIT license (see LICENSE).
 
 #include <gtest/gtest.h>
+#include <stddef.h>  // size_t
 #include <stdio.h>
+#include <stdlib.h>  // malloc
 
 #include <cmath>   // std::isfinite
 #include <limits>  // std::numeric_limits
 #include <string>
+
+// Lets tests force an allocation failure: the code under test calls malloc
+// unqualified, so this zmij overload shadows ::malloc.
+namespace zmij {
+bool fail_malloc = false;
+void* malloc(size_t n) { return fail_malloc ? nullptr : ::malloc(n); }
+}  // namespace zmij
+
 // Include zmij.cc instead of linking with the library to test internal
 // functions.
 #include "zmij.cc"
@@ -939,4 +949,29 @@ TEST(zmij_impl_test, shortest_big_double) {
               std::string(fast, zmij::detail::write(v, fast)))
         << v;
   }
+}
+
+TEST(zmij_impl_test, write_big_allocation_failure) {
+  // write_big allocates only for a long double wider than double.
+  if (std::numeric_limits<long double>::digits <=
+      std::numeric_limits<double>::digits) {
+    GTEST_SKIP() << "long double doesn't allocate";
+  }
+
+  // A value that needs the full long double precision so the public wrappers
+  // can't fall back to the double fast path.
+  long double value = std::nextafter(1.0L, 2.0L);
+  char buf[64];
+
+  zmij::fail_malloc = true;
+  EXPECT_EQ(zmij::detail::write_big(value, 30, buf, sizeof(buf),
+                                    zmij::format::scientific),
+            0u);
+  EXPECT_EQ(zmij::write_scientific(buf, sizeof(buf), value, 30), nullptr);
+  EXPECT_EQ(zmij::write_general(buf, sizeof(buf), value, 30), nullptr);
+  EXPECT_EQ(zmij::write_fixed(buf, sizeof(buf), value, 30), nullptr);
+  zmij::fail_malloc = false;
+
+  // The same call succeeds once allocation works again.
+  EXPECT_NE(zmij::write_scientific(buf, sizeof(buf), value, 30), nullptr);
 }

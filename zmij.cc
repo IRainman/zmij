@@ -2088,17 +2088,18 @@ auto write_big(Float value, int precision, char* out, size_t n,
   // which is too large (~11.6 KB).
   constexpr int digit_words = (traits::big_digits + 3) / 4;
   constexpr int scratch_words = traits::big_limbs + digit_words;
-  constexpr bool heap = traits::big_digits > float_traits<double>::big_digits;
-  uint32_t stack_scratch[heap ? 1 : scratch_words];
+  constexpr bool use_heap =
+      traits::big_digits > float_traits<double>::big_digits;
+  uint32_t stack_scratch[use_heap ? 1 : scratch_words];
   uint32_t* scratch =
-      heap ? static_cast<uint32_t*>(malloc(size_t(scratch_words) * 4))
-           : stack_scratch;
+      use_heap ? static_cast<uint32_t*>(malloc(size_t(scratch_words) * 4))
+               : stack_scratch;
   if (!scratch) return 0;
   bigint num(bin_sig, scratch, traits::big_limbs);
   char* digits = reinterpret_cast<char*>(scratch + traits::big_limbs);
   size_t len = write_big(w, num, int(bin_exp - traits::exp_offset), precision,
                          digits, traits::big_digits, fmt);
-  if (heap) free(scratch);
+  if (use_heap) free(scratch);
   return len;
 }
 
