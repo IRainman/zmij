@@ -16,13 +16,13 @@
 
 namespace zmij {
 
-// Like std::to_chars_result, but available without C++17.
+/// Like std::to_chars_result, but available without C++17.
 struct to_chars_result {
   char* ptr;
   std::errc ec;
 };
 
-// Like std::chars_format, but available without C++17 (hex is unsupported).
+/// Like std::chars_format, but available without C++17 (hex is unsupported).
 using chars_format = format;
 
 namespace detail {
@@ -67,10 +67,12 @@ inline auto to_chars(char* first, char* last, Float value, chars_format fmt,
 }  // namespace detail
 
 /// Writes the shortest correctly rounded decimal representation of `value` to
-/// [`first`, `last`) without a null terminator, like std::to_chars. On success
-/// returns {ptr, std::errc()} with ptr past the last character written; if the
-/// output is too small returns {last, std::errc::value_too_large} after writing
-/// a truncated result to [`first`, `last`).
+/// [`first`, `last`), without a null terminator, like std::to_chars.
+///
+/// Returns:
+/// - {ptr, std::errc()} on success, with ptr past the last character written;
+/// - {last, std::errc::value_too_large} if the output does not fit, after
+///   writing a truncated result to [`first`, `last`).
 inline auto to_chars(char* first, char* last, float value) -> to_chars_result {
   if (size_t(last - first) >= float_buffer_size)
     return {detail::write(value, first), {}};
@@ -96,7 +98,9 @@ inline auto to_chars(char* first, char* last, double value) -> to_chars_result {
 /// digits, like std::to_chars with a format and precision. `precision` counts
 /// fractional digits for `fixed` and `scientific` and significant digits for
 /// `general`. Matching printf, a negative `precision` defaults to 6 and
-/// `general` treats 0 as 1. Returns:
+/// `general` treats 0 as 1.
+///
+/// Returns:
 /// - {ptr, std::errc()} on success, with ptr past the last character written;
 /// - {last, std::errc::value_too_large} if the output does not fit, after
 ///   writing a truncated result to [`first`, `last`).
