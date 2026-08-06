@@ -571,13 +571,36 @@ TEST(double_test, write_big_no_point) {
   char buf[32], ref[32];
   for (double value : {1.0, 2.5, 9.5, 12.5, 0.5, 1e300, 5e-324}) {
     for (int precision : {0, 1, 2}) {
-      char* end = zmij::detail::write_big(value, precision, buf, sizeof(buf),
-                                          zmij::format::scientific);
+      size_t len = zmij::detail::write_big(value, precision, buf, sizeof(buf),
+                                           zmij::format::scientific);
       snprintf(ref, sizeof(ref), "%.*e", precision, value);
-      EXPECT_EQ(std::string(buf, end), std::string(ref))
+      EXPECT_EQ(std::string(buf, len), std::string(ref))
           << "value=" << value << " precision=" << precision;
     }
   }
+}
+
+// write_big returns the full would-be length, even when the output is
+// truncated, so callers can detect insufficient space.
+TEST(double_test, write_big_reports_true_length) {
+  // 1.5 with 30 fractional digits in scientific is
+  // "1." + 30 fractional digits + "e+00" = 36 characters.
+  const size_t expected = 36;
+
+  char buf[64];
+  size_t full = zmij::detail::write_big(1.5, 30, buf, sizeof(buf),
+                                        zmij::format::scientific);
+  EXPECT_EQ(full, expected);  // fit exactly, no truncation
+
+  // Undersized buffer: the output is truncated to the first 5 chars, but the
+  // returned length is the full size that would have been needed.
+  char small[8];
+  memset(small, '?', sizeof(small));
+  size_t needed =
+      zmij::detail::write_big(1.5, 30, small, 5, zmij::format::scientific);
+  EXPECT_EQ(std::string(small, 5), "1.500");  // first 5 chars only
+  EXPECT_EQ(small[5], '?');                   // no overrun past the capacity
+  EXPECT_EQ(needed, expected);                // true length, > capacity
 }
 
 // Use double-exact values (plain double literals) so the expected output is the
@@ -620,15 +643,16 @@ TEST(long_double_test, write_fixed) {
   }
 }
 
-// Exercise the actual extended-precision path (x87 80-bit / IEEE binary128) with
-// values carrying more precision and range than double. snprintf's %L output is
-// the oracle, so the test also holds where long double is just double.
+// Exercise the actual extended-precision path (x87 80-bit / IEEE binary128)
+// with values carrying more precision and range than double. snprintf's %L
+// output is the oracle, so the test also holds where long double is just
+// double.
 TEST(long_double_test, extended) {
   char buf[8192], ref[8192];
   long double values[] = {
-      3.14159265358979323846264338327950288L,   // pi beyond double precision
-      1.0L + 0x1p-60L,                           // differs from 1.0 only when extended
-      1.23456789012345678901234567890123L,       // 33 significant digits
+      3.14159265358979323846264338327950288L,  // pi beyond double precision
+      1.0L + 0x1p-60L,  // differs from 1.0 only when extended
+      1.23456789012345678901234567890123L,             // 33 significant digits
       std::numeric_limits<long double>::max(),         // extreme range
       std::numeric_limits<long double>::denorm_min(),  // smallest subnormal
   };
@@ -651,7 +675,7 @@ TEST(long_double_test, extended) {
   }
 }
 
-#if LDBL_MANT_DIG != DBL_MANT_DIG
+#  if LDBL_MANT_DIG != DBL_MANT_DIG
 // Number of significant decimal digits in a shortest-formatted string.
 static int count_sig_digits(const std::string& s) {
   size_t e = s.find_first_of("eE");
@@ -668,7 +692,8 @@ static int count_sig_digits(const std::string& s) {
 // Exercises the extended-precision shortest path: every output must round-trip
 // through strtold, and dropping a significant digit must break the round-trip
 // (minimality). Uses random full-width significands not exactly representable
-// as double, so it drives write_big (shortest) rather than the double fast path.
+// as double, so it drives write_big (shortest) rather than the double fast
+// path.
 TEST(long_double_test, write_shortest) {
   auto check = [](long double value) {
     char buf[zmij::long_double_buffer_size + 1];
@@ -725,7 +750,7 @@ TEST(long_double_test, write_shortest) {
     check((next() & 1) ? value : -value);
   }
 }
-#endif  // LDBL_MANT_DIG != DBL_MANT_DIG
+#  endif  // LDBL_MANT_DIG != DBL_MANT_DIG
 
 TEST(float_test, write_general) {
   EXPECT_EQ(to_general(1.5f, 6), "1.5");

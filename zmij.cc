@@ -1317,24 +1317,28 @@ auto write_inf_nan(char* buffer, bool is_nan) noexcept -> char* {
 struct writer {
   char* out;
   char* end;
+  size_t count;  // total chars, including any dropped past `end`
 
-  ZMIJ_INLINE auto write(char c) noexcept -> char* {
+  // The write functions return `count`, the running total of requested chars.
+  ZMIJ_INLINE auto write(char c) noexcept -> size_t {
     if (out < end) *out++ = c;
-    return out;
+    return ++count;
   }
-  // Copies at most `end - out` bytes of `s[0..n)`; `n` must be non-negative.
-  ZMIJ_INLINE auto write(const char* s, int n) noexcept -> char* {
+  // Copies at most `end - out` chars of `s[0..n)`; `n` must be non-negative.
+  ZMIJ_INLINE auto write(const char* s, int n) noexcept -> size_t {
     assert(n >= 0);
     size_t take = n < end - out ? size_t(n) : size_t(end - out);
     memcpy(out, s, take);
-    return out += take;
+    out += take;
+    return count += size_t(n);
   }
   // Writes at most `end - out` copies of '0'; `n` must be non-negative.
-  ZMIJ_INLINE auto write_zeros(int n) noexcept -> char* {
+  ZMIJ_INLINE auto write_zeros(int n) noexcept -> size_t {
     assert(n >= 0);
     size_t take = n < end - out ? size_t(n) : size_t(end - out);
     memset(out, '0', take);
-    return out += take;
+    out += take;
+    return count += size_t(n);
   }
 };
 
@@ -1713,9 +1717,9 @@ auto write_fixed_big(char* buffer, uint64_t bin_sig, int bin_exp,
 // Emits the digit run digits[0..num_digits) with the decimal point placed per
 // lead_exp, in fixed or scientific notation. Fixed pads to decimal_places
 // fractional digits; scientific appends num_tail_zeros to the fraction.
-auto write_number(writer w, const char* digits, int num_digits, int lead_exp,
+auto write_number(writer& w, const char* digits, int num_digits, int lead_exp,
                   bool fixed, int decimal_places, int num_tail_zeros) noexcept
-    -> char* {
+    -> size_t {
   if (!fixed) {
     // Emit scientific notation d.ddde±XX.
     w.write(digits[0]);
@@ -1740,7 +1744,7 @@ auto write_number(writer w, const char* digits, int num_digits, int lead_exp,
     w.write(digits, num_int_digits);
     w.write_zeros(point_pos - num_int_digits);  // integer zeros, e.g. 12300
   }
-  if (decimal_places <= 0) return w.out;
+  if (decimal_places <= 0) return w.count;
   w.write('.');
   int num_lead_zeros = point_pos < 0 ? -point_pos : 0;
   w.write_zeros(num_lead_zeros);  // 0.00...
@@ -1885,13 +1889,13 @@ auto write(Float value, char* buffer) noexcept -> char* {
 // Writes the shortest decimal representation of `value`, correctly rounded
 // (ties to even), truncating into `out` after `n` bytes.
 template <typename Float>
-auto write_big(Float value, char* out, size_t n) noexcept -> char* {
+auto write_big(Float value, char* out, size_t n) noexcept -> size_t {
   using traits = float_traits<Float>;
   auto bits = traits::to_bits(value);
   auto raw_exp = traits::get_exp(bits);
   auto bin_sig = traits::get_sig(bits);
 
-  writer w = {out, out + n};
+  writer w = {out, out + n, 0};
   if (traits::is_negative(bits)) w.write('-');
 
   bool is_normal = unsigned(raw_exp - 1) < unsigned(traits::exp_mask - 1);
@@ -1985,8 +1989,8 @@ auto write_big(Float value, char* out, size_t n) noexcept -> char* {
                       num_digits - lead_exp - 1, 0);
 }
 
-auto write_big(writer w, bigint num, int bin_exp, int precision, char* digits,
-               int digits_size, format fmt) noexcept -> char* {
+auto write_big(writer& w, bigint num, int bin_exp, int precision, char* digits,
+               int digits_size, format fmt) noexcept -> size_t {
   bool general = fmt == format::general;
   bool fixed = fmt == format::fixed;
   assert(precision >= general);
@@ -2071,13 +2075,13 @@ auto write_big(writer w, bigint num, int bin_exp, int precision, char* digits,
 // (ties to even), truncating into `out` after `n` bytes.
 template <typename Float>
 auto write_big(Float value, int precision, char* out, size_t n,
-               format fmt) noexcept -> char* {
+               format fmt) noexcept -> size_t {
   using traits = float_traits<Float>;
   auto bits = traits::to_bits(value);
   auto bin_exp = traits::get_exp(bits);
   auto bin_sig = traits::get_sig(bits);
 
-  writer w = {out, out + n};
+  writer w = {out, out + n, 0};
   if (traits::is_negative(bits)) w.write('-');
 
   bool is_normal = unsigned(bin_exp - 1) < unsigned(traits::exp_mask - 1);
@@ -2101,10 +2105,10 @@ auto write_big(Float value, int precision, char* out, size_t n,
            : stack_scratch;
   bigint num(bin_sig, scratch, traits::big_limbs);
   char* digits = reinterpret_cast<char*>(scratch + traits::big_limbs);
-  char* result = write_big(w, num, int(bin_exp - traits::exp_offset), precision,
-                           digits, traits::big_digits, fmt);
+  size_t len = write_big(w, num, int(bin_exp - traits::exp_offset), precision,
+                         digits, traits::big_digits, fmt);
   if (heap) free(scratch);
-  return result;
+  return len;
 }
 
 template <typename Float>
@@ -2283,14 +2287,14 @@ template auto write(double value, char* buffer) noexcept -> char*;
 #if LDBL_MANT_DIG != DBL_MANT_DIG
 // write_big is a template to emit no code where long double == double.
 template auto write_big(long double value, char* out, size_t n) noexcept
-    -> char*;
+    -> size_t;
 #endif
 
 template auto write_big(double value, int precision, char* out, size_t n,
-                        format fmt) noexcept -> char*;
+                        format fmt) noexcept -> size_t;
 #if LDBL_MANT_DIG != DBL_MANT_DIG
 template auto write_big(long double value, int precision, char* out, size_t n,
-                        format fmt) noexcept -> char*;
+                        format fmt) noexcept -> size_t;
 #endif
 
 template auto write_scientific(float value, int precision,
