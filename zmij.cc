@@ -4,17 +4,7 @@
 // Distributed under the MIT license (see LICENSE) or alternatively
 // the Boost Software License, Version 1.0.
 
-#if __has_include("zmij.h")
-#  include "zmij.h"
-#else
-namespace zmij {
-struct dec_fp {
-  unsigned long long sig;
-  int exp;
-  bool negative;
-};
-}  // namespace zmij
-#endif
+#include "zmij.h"
 
 #include <assert.h>  // assert
 #include <float.h>   // DBL_MANT_DIG, LDBL_MANT_DIG
