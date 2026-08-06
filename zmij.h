@@ -29,14 +29,18 @@ namespace detail {
 template <typename Float>
 auto write(Float value, char* buffer) noexcept -> char*;
 
-// Returns the total length the result would need; when it exceeds `n` the
-// output was truncated to the first `n` chars.
+// Writes the shortest decimal representation of `value`, correctly rounded
+// (ties to even), into `out`, truncating after `n` chars. Returns the total
+// length the result would need; if it exceeds `n` the output was truncated to
+// the first `n` chars.
 template <typename Float>
 auto write_big(Float value, char* out, size_t n) noexcept -> size_t;
 
-// Returns the total length the result would need; when it exceeds `n` the
-// output was truncated to the first `n` chars. Returns 0 on allocation
-// failure, which is only possible for `long double`.
+// Writes `value` in `fmt` notation with `precision` digits, correctly rounded
+// (ties to even), into `out`, truncating after `n` chars. Returns the total
+// length the result would need; if it exceeds `n` the output was truncated to
+// the first `n` chars, and 0 on allocation failure (only possible for long
+// double).
 template <typename Float>
 auto write_big(Float value, int precision, char* out, size_t n,
                format fmt) noexcept -> size_t;

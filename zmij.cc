@@ -1876,8 +1876,6 @@ auto write(Float value, char* buffer) noexcept -> char* {
   return write_exp<Float>(buffer, dec_exp);
 }
 
-// Writes the shortest decimal representation of `value`, correctly rounded
-// (ties to even), truncating into `out` after `n` bytes.
 template <typename Float>
 auto write_big(Float value, char* out, size_t n) noexcept -> size_t {
   using traits = float_traits<Float>;
@@ -2061,8 +2059,6 @@ auto write_big(writer& w, bigint num, int bin_exp, int precision, char* digits,
                       num_tail_zeros);
 }
 
-// Writes `value` in `fmt` notation with `precision` digits, correctly rounded
-// (ties to even), truncating into `out` after `n` bytes.
 template <typename Float>
 auto write_big(Float value, int precision, char* out, size_t n,
                format fmt) noexcept -> size_t {
