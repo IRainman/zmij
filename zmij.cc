@@ -1710,6 +1710,45 @@ auto write_fixed_big(char* buffer, uint64_t bin_sig, int bin_exp,
   return buffer + 2 + lead_zeros + num_digits;
 }
 
+// Emits the digit run digits[0..num_digits) with the decimal point placed per
+// lead_exp, in fixed or scientific notation. Fixed pads to decimal_places
+// fractional digits; scientific appends num_tail_zeros to the fraction.
+auto write_number(writer w, const char* digits, int num_digits, int lead_exp,
+                  bool fixed, int decimal_places, int num_tail_zeros) noexcept
+    -> char* {
+  if (!fixed) {
+    // Emit scientific notation d.ddde±XX.
+    w.write(digits[0]);
+    // Emit a point only when fractional digits follow it.
+    if (num_digits - 1 + num_tail_zeros > 0) {
+      w.write('.');
+      w.write(digits + 1, num_digits - 1);
+      w.write_zeros(num_tail_zeros);  // pad the fraction to precision
+    }
+    char exp[8];
+    char* end = write_exp<long double>(exp, lead_exp);
+    return w.write(exp, int(end - exp));
+  }
+
+  // Emit fixed notation.
+  int point_pos = lead_exp + 1;
+  int num_int_digits = 0;  // significant digits before the point
+  if (point_pos <= 0) {    // |value| < 1, e.g. 0.00123
+    w.write('0');
+  } else {
+    num_int_digits = point_pos < num_digits ? point_pos : num_digits;
+    w.write(digits, num_int_digits);
+    w.write_zeros(point_pos - num_int_digits);  // integer zeros, e.g. 12300
+  }
+  if (decimal_places <= 0) return w.out;
+  w.write('.');
+  int num_lead_zeros = point_pos < 0 ? -point_pos : 0;
+  w.write_zeros(num_lead_zeros);  // 0.00...
+  int num_frac_digits = num_digits - num_int_digits;
+  w.write(digits + num_int_digits, num_frac_digits);
+  return w.write_zeros(decimal_places - num_lead_zeros - num_frac_digits);
+}
+
 }  // namespace
 
 namespace zmij {
@@ -1940,34 +1979,10 @@ auto write_big(Float value, char* out, size_t n) noexcept -> char* {
   int lead_exp = dec_exp + num_digits - 1;
   while (num_digits > 1 && start[num_digits - 1] == '0') --num_digits;
 
-  char* result;
-  if (lead_exp >= traits::min_fixed_dec_exp &&
-      lead_exp <= traits::max_fixed_dec_exp) {
-    int point_pos = lead_exp + 1;
-    if (point_pos <= 0) {  // |value| < 1, e.g. 0.00123
-      w.write('0');
-      w.write('.');
-      w.write_zeros(-point_pos);
-      w.write(start, num_digits);
-    } else if (point_pos >= num_digits) {  // integral, e.g. 12300
-      w.write(start, num_digits);
-      w.write_zeros(point_pos - num_digits);
-    } else {
-      w.write(start, point_pos);
-      w.write('.');
-      w.write(start + point_pos, num_digits - point_pos);
-    }
-    result = w.out;
-  } else {  // scientific
-    w.write(start[0]);
-    if (num_digits > 1) {
-      w.write('.');
-      w.write(start + 1, num_digits - 1);
-    }
-    char exp[8];
-    result = w.write(exp, int(write_exp<Float>(exp, lead_exp) - exp));
-  }
-  return result;
+  bool fixed = lead_exp >= traits::min_fixed_dec_exp &&
+               lead_exp <= traits::max_fixed_dec_exp;
+  return write_number(w, start, num_digits, lead_exp, fixed,
+                      num_digits - lead_exp - 1, 0);
 }
 
 auto write_big(writer w, bigint num, int bin_exp, int precision, char* digits,
@@ -2038,47 +2053,18 @@ auto write_big(writer w, bigint num, int bin_exp, int precision, char* digits,
     }
   }
 
-  bool has_point = precision != 0;  // %e: a point iff fractional digits
-  int num_frac_places = precision;  // fractional digit positions to emit
+  int decimal_places = precision;  // fractional digit positions to emit
   if (general) {
     // Drop trailing zeros and pick fixed or scientific.
     while (num_digits > 1 && p[num_digits - 1] == '0') --num_digits;
     fixed = lead_exp >= -4 && lead_exp < precision;
-    has_point = num_digits > 1;
-    num_frac_places = num_digits - lead_exp - 1;
+    decimal_places = num_digits - lead_exp - 1;
   }
 
-  if (!fixed) {
-    // Emit scientific notation d.ddde±XX: %e pads to `precision` fractional
-    // digits, %g emits only the significant ones.
-    w.write(p[0]);
-    if (has_point) {
-      w.write('.');
-      w.write(p + 1, num_digits - 1);
-      if (!general) w.write_zeros(precision - num_digits + 1);
-    }
-    char exp[8];
-    char* end = write_exp<long double>(exp, lead_exp);
-    return w.write(exp, int(end - exp));
-  }
-
-  // Emit fixed notation.
-  int point_pos = lead_exp + 1;
-  int num_int_digits = 0;  // significant digits before the point
-  if (point_pos <= 0) {    // |value| < 1, e.g. 0.00123
-    w.write('0');
-  } else {
-    num_int_digits = point_pos < num_digits ? point_pos : num_digits;
-    w.write(p, num_int_digits);
-    w.write_zeros(point_pos - num_int_digits);  // integer zeros, e.g. 12300
-  }
-  if (num_frac_places <= 0) return w.out;
-  w.write('.');
-  int num_lead_zeros = point_pos < 0 ? -point_pos : 0;
-  w.write_zeros(num_lead_zeros);  // 0.00...
-  int num_frac_digits = num_digits - num_int_digits;
-  w.write(p + num_int_digits, num_frac_digits);
-  return w.write_zeros(num_frac_places - num_lead_zeros - num_frac_digits);
+  // %e pads the fraction to `precision` digits; %g and shortest emit none.
+  int num_tail_zeros = general ? 0 : precision - num_digits + 1;
+  return write_number(w, p, num_digits, lead_exp, fixed, decimal_places,
+                      num_tail_zeros);
 }
 
 // Writes `value` in `fmt` notation with `precision` digits, correctly rounded
