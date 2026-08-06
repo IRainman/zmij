@@ -30,8 +30,12 @@ namespace detail {
 template <typename Float>
 inline auto to_chars(char* first, char* last, Float value, chars_format fmt,
                      int precision) -> to_chars_result {
-  int min_precision = fmt == chars_format::general ? 1 : 0;
-  if (precision < min_precision) return {first, std::errc::invalid_argument};
+  // Match printf: a negative precision defaults to 6, and `general` uses at
+  // least one significant digit.
+  if (precision < 0)
+    precision = 6;
+  else if (precision == 0 && fmt == chars_format::general)
+    precision = 1;
   size_t cap = size_t(last - first);
 
   // Scientific counts fractional digits, so 18 would need 19 significant.
@@ -91,10 +95,9 @@ inline auto to_chars(char* first, char* last, double value) -> to_chars_result {
 /// Writes `value` to [`first`, `last`) in the given `fmt` with `precision`
 /// digits, like std::to_chars with a format and precision. `precision` counts
 /// fractional digits for `fixed` and `scientific` and significant digits for
-/// `general`, and must be non-negative (at least 1 for `general`). Returns:
+/// `general`. Matching printf, a negative `precision` defaults to 6 and
+/// `general` treats 0 as 1. Returns:
 /// - {ptr, std::errc()} on success, with ptr past the last character written;
-/// - {first, std::errc::invalid_argument} for a `precision` below the minimum,
-///   without writing anything;
 /// - {last, std::errc::value_too_large} if the output does not fit, after
 ///   writing a truncated result to [`first`, `last`).
 inline auto to_chars(char* first, char* last, float value, chars_format fmt,

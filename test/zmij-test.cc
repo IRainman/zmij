@@ -134,14 +134,11 @@ TEST(float_test, to_chars_format) {
   EXPECT_EQ(result.ec, std::errc());
   EXPECT_EQ(std::string(buffer, result.ptr), "1.50e+00");
 
-  // Precision below the minimum: nothing written, ptr == first,
-  // invalid_argument. General requires at least 1 significant digit.
-  char small[4] = {'?', '?', '?', '?'};
-  result = zmij::to_chars(small, small + sizeof(small), 1.5f,
+  // Matching printf, `general` treats precision 0 as 1 significant digit.
+  result = zmij::to_chars(buffer, buffer + sizeof(buffer), 1.5f,
                           zmij::chars_format::general, 0);
-  EXPECT_EQ(result.ec, std::errc::invalid_argument);
-  EXPECT_EQ(result.ptr, small);
-  EXPECT_EQ(std::string(small, sizeof(small)), "????");
+  EXPECT_EQ(result.ec, std::errc());
+  EXPECT_EQ(std::string(buffer, result.ptr), "2");
 
   // Large precision routes through the exact writer and matches printf (which
   // promotes the float to the same double value).
@@ -390,21 +387,16 @@ TEST(double_test, to_chars_format) {
   EXPECT_EQ(fmt(zmij::chars_format::scientific, 0, 2.5), "2e+00");
   EXPECT_EQ(fmt(zmij::chars_format::general, 6, 1234.5678), "1234.57");
 
-  // Precision below the minimum: nothing written, ptr == first,
-  // invalid_argument. General requires at least 1 significant digit.
-  char small[8];
-  memset(small, '?', sizeof(small));
-  auto result = zmij::to_chars(small, small + sizeof(small), 1.5,
-                               zmij::chars_format::general, 0);
-  EXPECT_EQ(result.ec, std::errc::invalid_argument);
-  EXPECT_EQ(result.ptr, small);
-  result = zmij::to_chars(small, small + sizeof(small), 1.5,
-                          zmij::chars_format::fixed, -1);
-  EXPECT_EQ(result.ec, std::errc::invalid_argument);
-  EXPECT_EQ(std::string(small, sizeof(small)), "????????");
+  // Matching printf: `general` treats precision 0 as 1, and a negative
+  // precision defaults to 6.
+  EXPECT_EQ(fmt(zmij::chars_format::general, 0, 1234.5678), "1e+03");
+  EXPECT_EQ(fmt(zmij::chars_format::fixed, -1, 1.5), "1.500000");
+  EXPECT_EQ(fmt(zmij::chars_format::scientific, -1, 1.5), "1.500000e+00");
 
   // Output too small: truncated result, ptr == last, value_too_large.
-  result =
+  char small[8];
+  memset(small, '?', sizeof(small));
+  auto result =
       zmij::to_chars(small, small + 3, 1234.5678, zmij::chars_format::fixed, 2);
   EXPECT_EQ(result.ec, std::errc::value_too_large);
   EXPECT_EQ(result.ptr, small + 3);
