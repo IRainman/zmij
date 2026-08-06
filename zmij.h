@@ -96,7 +96,9 @@ enum {
 };
 
 /// Buffer sizes for the write* functions, usable in generic code as
-/// buffer_sizes<Float>::shortest, ::scientific, and ::fixed.
+/// buffer_sizes<Float>::shortest, ::scientific, and ::fixed. `scientific`
+/// assumes precision up to 17 and `fixed` up to 18; long double sets its own
+/// bounds below. Larger precision must be sized by the caller.
 template <typename Float> struct buffer_sizes;
 
 template <> struct buffer_sizes<float> {
@@ -108,6 +110,13 @@ template <> struct buffer_sizes<double> {
   static constexpr size_t shortest = double_buffer_size;  // write
   static constexpr size_t scientific = 25;  // write_scientific (and general)
   static constexpr size_t fixed = 329;      // write_fixed
+};
+// long double: `scientific` is sized to round-trip: precision 35 (scientific)
+// or 36 (general). `fixed` is omitted as it would need an impractical buffer,
+// so callers must size fixed output themselves.
+template <> struct buffer_sizes<long double> {
+  static constexpr size_t shortest = long_double_buffer_size;  // write
+  static constexpr size_t scientific = 44;  // write_scientific (and general)
 };
 
 /// Writes the shortest correctly rounded decimal representation of `value` to
