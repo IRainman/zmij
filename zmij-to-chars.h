@@ -124,6 +124,35 @@ inline auto to_chars(char* first, char* last, double value, chars_format fmt,
   return detail::to_chars(first, last, value, fmt, precision);
 }
 
+/// Writes `value` to [`first`, `last`) in the given `fmt` with `precision`
+/// digits, like std::to_chars with a format and precision. `precision` counts
+/// fractional digits for `fixed` and `scientific` and significant digits for
+/// `general`. Matching printf, a negative `precision` defaults to 6 and
+/// `general` treats 0 as 1.
+///
+/// Returns:
+/// - {ptr, std::errc()} on success, with ptr past the last character written;
+/// - {last, std::errc::value_too_large} if the output does not fit, after
+///   writing a truncated result to [`first`, `last`);
+/// - {last, std::errc::not_enough_memory} on allocation failure (only possible
+///   for an extended long double).
+inline auto to_chars(char* first, char* last, long double value,
+                     chars_format fmt, int precision) -> to_chars_result {
+  if (double(value) == value)
+    return to_chars(first, last, double(value), fmt, precision);
+  // Match printf: a negative precision defaults to 6, and `general` uses at
+  // least one significant digit.
+  if (precision < 0)
+    precision = 6;
+  else if (precision == 0 && fmt == chars_format::general)
+    precision = 1;
+  size_t cap = size_t(last - first);
+  size_t size = detail::write_big(value, precision, first, cap, fmt);
+  if (size == 0) return {last, std::errc::not_enough_memory};
+  if (size > cap) return {last, std::errc::value_too_large};
+  return {first + size, {}};
+}
+
 }  // namespace zmij
 
 #endif  // ZMIJ_TO_CHARS_H_

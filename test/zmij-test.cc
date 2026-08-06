@@ -734,6 +734,43 @@ TEST(long_double_test, to_chars) {
   EXPECT_EQ(std::string(small, sizeof(small)), "1.?");
 }
 
+// to_chars with a format and precision matches printf's %L across formats and
+// precisions (including beyond the fast path) and reports truncation.
+TEST(long_double_test, to_chars_format) {
+  char buf[8192], ref[8192];
+  auto check = [&](zmij::chars_format f, char conv, int precision,
+                   long double value) {
+    auto r = zmij::to_chars(buf, buf + sizeof(buf), value, f, precision);
+    EXPECT_EQ(r.ec, std::errc());
+    char spec[16];
+    snprintf(spec, sizeof(spec), "%%.%dL%c", precision, conv);
+    snprintf(ref, sizeof(ref), spec, value);
+    EXPECT_EQ(std::string(buf, r.ptr), std::string(ref))
+        << conv << " precision=" << precision << " value=" << double(value);
+  };
+  long double values[] = {
+      1.5L, 0.0L, 1234.5678L, 1e300L,
+      3.14159265358979323846264338327950288L,  // beyond double precision
+      1.0L + 0x1p-60L,                          // differs from 1.0 if extended
+  };
+  for (long double value : values) {
+    for (int precision : {0, 6, 20, 40}) {
+      check(zmij::chars_format::scientific, 'e', precision, value);
+      check(zmij::chars_format::fixed, 'f', precision, value);
+      check(zmij::chars_format::general, 'g', precision, value);
+    }
+  }
+
+  // Too small: truncated result, ptr == last, value_too_large.
+  char small[5];
+  memset(small, '?', sizeof(small));
+  auto r = zmij::to_chars(small, small + sizeof(small), 1.5L,
+                          zmij::chars_format::scientific, 30);
+  EXPECT_EQ(r.ec, std::errc::value_too_large);
+  EXPECT_EQ(r.ptr, small + sizeof(small));
+  EXPECT_EQ(std::string(small, sizeof(small)), "1.500");
+}
+
 #  if LDBL_MANT_DIG != DBL_MANT_DIG
 // Number of significant decimal digits in a shortest-formatted string.
 static int count_sig_digits(const std::string& s) {
