@@ -2093,6 +2093,7 @@ auto write_big(Float value, int precision, char* out, size_t n,
   uint32_t* scratch =
       heap ? static_cast<uint32_t*>(malloc(size_t(scratch_words) * 4))
            : stack_scratch;
+  if (!scratch) return 0;
   bigint num(bin_sig, scratch, traits::big_limbs);
   char* digits = reinterpret_cast<char*>(scratch + traits::big_limbs);
   size_t len = write_big(w, num, int(bin_exp - traits::exp_offset), precision,

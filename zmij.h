@@ -34,6 +34,9 @@ auto write(Float value, char* buffer) noexcept -> char*;
 template <typename Float>
 auto write_big(Float value, char* out, size_t n) noexcept -> size_t;
 
+// Returns the total length the result would need; when it exceeds `n` the
+// output was truncated to the first `n` chars. Returns 0 on allocation
+// failure, which is only possible for `long double`.
 template <typename Float>
 auto write_big(Float value, int precision, char* out, size_t n,
                format fmt) noexcept -> size_t;
