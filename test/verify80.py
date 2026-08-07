@@ -73,10 +73,6 @@ def to_decimal(bin_sig: int, bin_exp: int, fmt: Format) -> Tuple[int, int]:
 
     pow10, pow10_exp = pow10_hi(-dec_exp, 256)  # 256-bit floor power of ten
     shift = -(bin_exp + pow10_exp)
-    # shift stays in [252, 255] over the whole exponent range, so the c step
-    # 2**(shift-124) is >= 2**128 and dwarfs the < 2**64 constant error the
-    # boundary proof relies on; a smaller shift would invalidate it.
-    assert 252 <= shift <= 255, (bin_exp, shift)
 
     mask128 = (1 << 128) - 1
     product = bin_sig * pow10
@@ -207,9 +203,10 @@ def check_boundaries(bin_exp: int, pow10: int, shift: int, x_min: int,
     checked = 0
     seen: Set[int] = set()
     for boundary in boundaries:
-        # The error only carries R up, so the danger window is [B - margin, B).
-        # Trim boundaries can land near 0 (or below, once reduced mod 2**shift),
-        # so split the window when it wraps past 0 instead of skipping it.
+        # A significand misrounds only if the product residue R = (bin_sig *
+        # pow10) mod 2**shift is carried up across the boundary b by the < 2**64
+        # error, i.e. R lands in [b - margin, b). Trim boundaries can reduce to
+        # near 0 mod 2**shift, so split the window when it wraps past 0.
         b = boundary % mod
         if b == 0:
             windows = [(mod - margin, mod - 1)]
@@ -244,19 +241,25 @@ def find_regular_edge_cases(bin_exp: int, x_min: int, x_max: int,
     Check the near-boundary significands in [x_min, x_max] for one exponent,
     at every tie a rounding error could flip.
 
-    No integral-carry boundary is needed (unlike the boundaries in verify.py):
-    the trim geometry is continuous across a carry. With c = (integral mod 10)
-    * 2**124 + fractional_top124, for last digit d < 9 the digit becomes d+1
-    across the carry and c approaches (d+1) * 2**124 from both sides, so the
-    same decision holds. For d == 9, c wraps 10 * 2**124 -> 0 but every path
-    still yields integral + 1. So a rounded-down-constant carry never flips the
-    result.
+    No integral-carry boundary is needed (unlike the boundaries in verify.py).
+    Across an integral carry with last digit d < 9, integral and last_digit
+    both rise by one. When trimming, integral - last_digit is unchanged (the
+    carried digit is exactly the one dropped) and c = (integral mod 10) *
+    2**124 + fractional_top124 (the top 124 fraction bits, fractional >> 4) does
+    not reach a trim threshold, so the decision holds too; when rounding,
+    integral + round_up is integral + 1 on both sides (round_up falls as
+    integral rises). For d == 9 the digit wraps to 0 and c jumps
+    10 * 2**124 -> 0, but every path still yields integral + 1.
     """
     # Per-exponent regular-path constants, mirroring to_decimal's derivation.
     log10_2_sig = 20_201_781
     dec_exp = (bin_exp * log10_2_sig) >> 26
     pow10, pow10_exp = pow10_hi(-dec_exp, 256)
     shift = -(bin_exp + pow10_exp)
+    # shift stays in [252, 255] over the whole exponent range, so the step
+    # 2**(shift-124) below is >= 2**128 and dwarfs the < 2**64 constant error;
+    # the boundary derivation relies on it, and a smaller shift would break it.
+    assert 252 <= shift <= 255, (bin_exp, shift)
     half_ulp = (pow10 >> (shift - 123)) & ((1 << 128) - 1)
 
     # Round to nearest: the two edges of the fractional == 1/2 band.
@@ -295,7 +298,7 @@ def find_edge_cases(fmt: Format) -> None:
     sig_min, sig_max = fmt.sig_min, fmt.sig_max
     for bin_exp in range(fmt.min_e2, fmt.max_e2 + 1):
         # The power of two is the only irregular significand (asymmetric
-        # boundaries); check it directly, as in verify.py.
+        # boundaries); check it directly.
         powers_of_two += 1
         if to_decimal(sig_min, bin_exp, fmt) != \
                 to_decimal_exact(sig_min, bin_exp, fmt):
