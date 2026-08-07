@@ -24,6 +24,7 @@ _spec.loader.exec_module(verify_zmij)
 count_mod_mul_solutions = verify_zmij.count_mod_mul_solutions
 enumerate_mod_mul_solutions = verify_zmij.enumerate_mod_mul_solutions
 NUM_SIG_BITS = verify_zmij.NUM_SIG_BITS
+EXTRA_SHIFT = verify_zmij.EXTRA_SHIFT
 ERROR_MARGIN = verify_zmij.ERROR_MARGIN
 check_value = verify_zmij.check_value
 to_decimal = verify_zmij.to_decimal
@@ -158,7 +159,7 @@ def test_fractional_error_bound(samples: int = 100000) -> None:
         raw_exp = rng.randint(1, 2046)
         bin_sig = rng.randint(implicit, (1 << (NUM_SIG_BITS + 1)) - 1)
         bin_exp, dec_exp, shift, pow10 = exp_params(raw_exp)
-        s = 70 - shift
+        s = 64 + EXTRA_SHIFT - shift  # matches to_decimal's (p >> EXTRA_SHIFT)
         fast = (pow10 * bin_sig // (1 << s)) & mask64
         exact = exact_fractional(bin_sig, bin_exp, dec_exp)
         slack = (fast - exact) & mask64
