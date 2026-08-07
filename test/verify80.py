@@ -272,18 +272,20 @@ def find_regular_edge_cases(bin_exp: int, x_min: int, x_max: int,
     # just below k*step, catching the residue that a carry pushes up to k.
     step = 1 << (shift - 124)                 # R granularity of one c unit
 
-    # Round up to a multiple of 10 (trim_up): the gap = (T - c) mod 2**128
-    # override rounds to even at c == T-1 (gap 1) always, and at c == T (gap 0)
-    # when dec_exp == 0. One past that (c == T+1) the gap wraps around and the
-    # override drops, so trim_up flips somewhere in c in {T-1, T, T+1}; probe
-    # the step below each.
-    T_low = ((10 << 124) - half_ulp) & ((1 << 124) - 1)
-    carry_ten = {(T_low - 1) * step, T_low * step, (T_low + 1) * step}
+    # Round up to a multiple of 10 (trim_up): trim_up_frac is fractional_top124
+    # at the threshold ten - half_ulp. With gap = (ten - half_ulp - c) mod
+    # 2**128, the even override rounds at c == threshold - 1 (gap 1) always, and
+    # at c == threshold (gap 0) when dec_exp == 0. One past that the gap wraps
+    # around and the override drops, so trim_up flips at fractional_top124 in
+    # {trim_up_frac +/- 1, trim_up_frac}; probe the step below each.
+    trim_up_frac = ((10 << 124) - half_ulp) & ((1 << 124) - 1)
+    carry_ten = {(trim_up_frac - 1) * step, trim_up_frac * step,
+                 (trim_up_frac + 1) * step}
 
     # Round down to a multiple of 10 (trim_down): trim_down flips as c crosses
     # half_ulp, into the tie (c == half_ulp) and out of it (c == half_ulp + 1).
-    H_low = half_ulp & ((1 << 124) - 1)
-    drop_last = {H_low * step, (H_low + 1) * step}
+    trim_down_frac = half_ulp & ((1 << 124) - 1)
+    drop_last = {trim_down_frac * step, (trim_down_frac + 1) * step}
 
     return check_boundaries(bin_exp, pow10, shift, x_min, x_max,
                             nearest | carry_ten | drop_last, exceptions, fmt)
