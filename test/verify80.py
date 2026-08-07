@@ -1,0 +1,324 @@
+#!/usr/bin/env python3
+"""
+A script to verify the correctness of the Żmij FP-to-string conversion for
+80-bit (x87 extended) long double.
+
+Copyright (c) 2025 - present, Victor Zverovich
+Distributed under the MIT license (see LICENSE) or alternatively
+the Boost Software License, Version 1.0.
+https://github.com/vitaut/zmij/
+
+Companion to verify.py (double), reusing its floor_sum machinery. Żmij's
+long-double path adapts YaoYuan's (yy) method with rounded-down 256-bit
+power-of-ten constants.
+
+Scaling the 64-bit significand by a floored constant leaves the result low by
+under 2**64. The >= 124 low-order bits below the retained fraction hold this
+shortfall far short of every boundary, so a decision could flip only for a
+significand within that margin. floor_sum finds none across all binary
+exponents, so every window is empty - which is itself the proof. (Any
+candidate that appeared would be checked against an exact Fraction oracle.)
+"""
+
+from fractions import Fraction
+from typing import Set, Tuple
+
+from verify import count_mod_mul_solutions, enumerate_mod_mul_solutions, pow10_hi
+
+
+# --- x87 80-bit extended format constants -----------------------------------
+
+DIGITS = 64                       # significand bits incl. explicit integer bit
+NUM_SIG_BITS = DIGITS - 1         # 63
+NUM_EXP_BITS = 15
+EXP_BIAS = (1 << (NUM_EXP_BITS - 1)) - 1        # 16383
+EXP_OFFSET = EXP_BIAS + NUM_SIG_BITS            # 16446
+SIG_MIN = 1 << NUM_SIG_BITS       # 2**63, smallest normal significand
+SIG_MAX = (1 << DIGITS) - 1       # 2**64 - 1
+
+# Normal unbiased binary exponent range of bin_sig * 2**bin_exp (full significand).
+MIN_E2 = 1 - EXP_OFFSET           # -16445
+MAX_E2 = (1 << NUM_EXP_BITS) - 2 - EXP_OFFSET   # 16320
+
+MASK128 = (1 << 128) - 1
+
+
+def strip_zeros(sig: int, exp: int) -> Tuple[int, int]:
+    """
+    Drop trailing zeros from `sig`, bumping `exp` so that the value
+    sig * 10**exp is unchanged and equal values compare equal.
+    """
+    while sig and sig % 10 == 0:
+        sig //= 10
+        exp += 1
+    return sig, exp
+
+
+def to_decimal(bin_sig: int, bin_exp: int) -> Tuple[int, int]:
+    """
+    Bit-exact port of Żmij's long-double shortest path.
+
+    Return the shortest decimal of bin_sig * 2**bin_exp as (significand, exp),
+    the value significand * 10**exp with no trailing zeros.
+    """
+    regular = (bin_sig != SIG_MIN)  # power of two: fraction bits are zero
+
+    log10_2_sig = 20_201_781
+    log10_3_4_sig = 8_384_497
+    dec_exp = (bin_exp * log10_2_sig - (0 if regular else log10_3_4_sig)) >> 26
+
+    pow10, pow10_exp = pow10_hi(-dec_exp, 256)  # 256-bit floor power of ten
+    shift = -(bin_exp + pow10_exp)
+    # shift stays in [252, 255] over the whole exponent range, so the c step
+    # 2**(shift-124) is >= 2**128 and dwarfs the < 2**64 constant error the
+    # boundary proof relies on; a smaller shift would invalidate it.
+    assert 252 <= shift <= 255, (bin_exp, shift)
+
+    product = bin_sig * pow10
+    scaled = (product >> (shift - 128)) & ((1 << 256) - 1)
+    integral = scaled >> 128
+    fractional = scaled & MASK128
+    last_digit = integral % 10
+
+    half_ulp = (pow10 >> (shift - 123)) & MASK128
+    c = ((last_digit << 124) | (fractional >> 4)) & MASK128
+    half = 1 << 127
+    ten = 10 << 124
+    even = (bin_sig & 1) == 0
+
+    if regular:
+        round_up = fractional >= half
+        if fractional == half:
+            round_up = (integral & 1) != 0
+        trim_down = c <= half_ulp
+        if c == half_ulp:
+            trim_down = even
+    else:
+        round_up = fractional > half
+        quarter_ulp = half_ulp >> 1
+        if (fractional >> 4) > quarter_ulp:
+            round_up = True
+        trim_down = c <= quarter_ulp
+
+    trim_up = c >= ten - half_ulp
+    gap = (ten - half_ulp - c) & MASK128
+    if gap <= 1 and (dec_exp == 0 or gap == 1):
+        trim_up = even
+
+    if trim_down or trim_up:
+        dec_sig = integral - last_digit + (10 if trim_up else 0)
+    else:
+        dec_sig = integral + round_up
+
+    return strip_zeros(dec_sig, dec_exp)
+
+
+def log10_floor(f: Fraction) -> int:
+    """floor(log10(f)) for f > 0."""
+    n, d = f.numerator, f.denominator
+
+    def ge_pow(k: int) -> bool:  # n/d >= 10**k, using only non-negative powers
+        return n >= d * 10 ** k if k >= 0 else n * 10 ** (-k) >= d
+
+    # Estimate from bit lengths (log10(2) ~ 0.30103); the loops below correct
+    # it. str(n) would trip Python's 4300-digit int-to-str limit for extremes.
+    k = int((n.bit_length() - d.bit_length()) * 0.30103)
+    while ge_pow(k + 1):
+        k += 1
+    while not ge_pow(k):
+        k -= 1
+    return k
+
+
+def to_decimal_exact(bin_sig: int, bin_exp: int) -> Tuple[int, int]:
+    """
+    The true shortest correctly-rounded decimal of bin_sig * 2**bin_exp,
+    computed with exact Fraction arithmetic; the reference for to_decimal.
+    """
+    two = Fraction(2)
+    v = Fraction(bin_sig) * two ** bin_exp
+
+    # Nearest representable neighbors. Only a power of two above the minimum
+    # exponent is irregular (its lower gap is half an ulp); subnormals and the
+    # smallest normal are uniformly spaced.
+    if bin_sig < SIG_MAX:
+        succ = Fraction(bin_sig + 1) * two ** bin_exp
+    else:
+        succ = Fraction(SIG_MIN) * two ** (bin_exp + 1)
+    if bin_sig == SIG_MIN and bin_exp > MIN_E2:
+        pred = Fraction(SIG_MAX) * two ** (bin_exp - 1)
+    else:
+        pred = Fraction(bin_sig - 1) * two ** bin_exp
+
+    lo = (v + pred) / 2
+    hi = (v + succ) / 2
+    closed = (bin_sig % 2 == 0)  # endpoints round to v only under round-half-to-even
+
+    # Largest p (fewest significant digits) with a multiple of 10**p in the
+    # rounding interval; then the in-interval multiple nearest v (ties to even).
+    # Run the search with integer floor/ceil on the fractions' numerators and
+    # denominators, avoiding gcd-heavy Fraction division in the hot loop.
+    ln, ld = lo.numerator, lo.denominator
+    hn, hd = hi.numerator, hi.denominator
+    vn, vd = v.numerator, v.denominator
+    p_hi = log10_floor(hi) + 2
+    p_lo = log10_floor(hi - lo) - 2
+    for p in range(p_hi, p_lo - 1, -1):
+        gn, gd = (10 ** p, 1) if p >= 0 else (1, 10 ** -p)
+        lnum, lden = ln * gd, ld * gn    # lo / 10**p
+        hnum, hden = hn * gd, hd * gn    # hi / 10**p
+        kmin = -(-lnum // lden)          # ceil
+        if not closed and lnum % lden == 0:
+            kmin += 1
+        kmax = hnum // hden              # floor
+        if not closed and hnum % hden == 0:
+            kmax -= 1
+        if kmin > kmax:
+            continue
+        # round() on a Fraction gives nearest, ties to even; clamp to interval.
+        k = max(kmin, min(kmax, round(Fraction(vn * gd, vd * gn))))
+        return strip_zeros(k, p)
+    raise AssertionError("no shortest decimal found")
+
+
+# --- verification ----------------------------------------------------------
+#
+# Żmij derives every decision from the top 128 fractional bits of the exact
+# product bin_sig*pow10. The 256-bit pow10 rounds down, so the true
+# product exceeds bin_sig*pow10 by at most bin_sig < 2**64; with shift >= 252
+# this lives in the dropped low bits and can only change the result by carrying
+# R = (bin_sig*pow10) mod 2**shift up across a boundary B. A misround thus
+# needs R in [B - 2**probe, B), and 2**probe > 2**64 bounds the carry.
+# floor_sum enumerates those significands and the oracle checks each. The
+# slack is wide enough that every window is empty, which is itself the proof.
+
+
+def check_boundaries(bin_exp: int, pow10: int, shift: int, x_min: int,
+                     x_max: int, boundaries: Set[int],
+                     exceptions: Set[Tuple[int, int]]) -> int:
+    """
+    Check the near-boundary significands for one exponent against the oracle
+    and return how many were checked. Residues never cluster this close to a
+    tie, so a wider-than-expected window means a boundary was mis-derived; fail
+    loudly rather than defer it to random sampling.
+    """
+    mod = 1 << shift
+    cap = 256          # residues never cluster this densely near a tie
+    probe = 66         # window width 2**probe; must exceed the < 2**64 error
+    margin = 1 << probe
+    checked = 0
+    seen: Set[int] = set()
+    for boundary in boundaries:
+        # The error can only carry R up, so the danger window is [B - margin, B).
+        # Trim boundaries can land near 0 (or below, once reduced mod 2**shift),
+        # so split the window when it wraps past 0 instead of skipping it.
+        b = boundary % mod
+        if b == 0:
+            windows = [(mod - margin, mod - 1)]
+        elif b >= margin:
+            windows = [(b - margin, b - 1)]
+        else:  # margin << mod, so mod + b - margin never underflows past 0
+            windows = [(0, b - 1), (mod + b - margin, mod - 1)]
+        for y_lo, y_hi in windows:
+            count = count_mod_mul_solutions(pow10, mod, x_min, x_max, y_lo, y_hi)
+            assert count <= cap, \
+                f"bin_exp={bin_exp} boundary={boundary:#x}: {count}"
+            for bin_sig, _ in enumerate_mod_mul_solutions(pow10, mod, x_min,
+                                                          x_max, y_lo, y_hi):
+                if bin_sig in seen:
+                    continue
+                seen.add(bin_sig)
+                checked += 1
+                actual = to_decimal(bin_sig, bin_exp)
+                if actual != to_decimal_exact(bin_sig, bin_exp):
+                    exceptions.add((bin_exp, bin_sig))
+    return checked
+
+
+def find_regular_edge_cases(bin_exp: int, x_min: int, x_max: int,
+                            exceptions: Set[Tuple[int, int]]) -> int:
+    """
+    Check the near-boundary significands in [x_min, x_max] for one exponent,
+    at every tie a rounding error could flip.
+
+    No integral-carry boundary is needed (unlike the boundaries in verify.py):
+    the trim geometry is continuous across a carry. With c = (integral mod 10)
+    * 2**124 + fractional_top124, for last digit d < 9 the digit becomes d+1
+    across the carry and c approaches (d+1) * 2**124 from both sides, so the
+    same decision holds. For d == 9, c wraps 10 * 2**124 -> 0 but every path
+    still yields integral + 1. So a rounded-down-constant carry never flips the
+    result.
+    """
+    # Per-exponent regular-path constants, mirroring to_decimal's derivation.
+    log10_2_sig = 20_201_781
+    dec_exp = (bin_exp * log10_2_sig) >> 26
+    pow10, pow10_exp = pow10_hi(-dec_exp, 256)
+    shift = -(bin_exp + pow10_exp)
+    half_ulp = (pow10 >> (shift - 123)) & MASK128
+
+    # Round to nearest: the two edges of the fractional == 1/2 band.
+    enter = 1 << (shift - 1)                  # fractional enters the == 1/2 band
+    leave = enter + (1 << (shift - 128))      # and leaves it
+    nearest = {enter, leave}
+
+    # c is quantized in units of one R step, so each tie sits at a step
+    # boundary k*step and a decision flips as c crosses it. The window sits
+    # just below k*step, catching the residue that a carry pushes up to k.
+    step = 1 << (shift - 124)                 # R granularity of one c unit
+
+    # Round up to a multiple of 10 (trim_up): the gap = (T - c) mod 2**128
+    # override rounds to even at c == T-1 (gap 1) always, and at c == T (gap 0)
+    # when dec_exp == 0. One past that (c == T+1) the gap wraps around and the
+    # override drops, so trim_up flips somewhere in c in {T-1, T, T+1}; probe
+    # the step below each.
+    T_low = ((10 << 124) - half_ulp) & ((1 << 124) - 1)
+    carry_ten = {(T_low - 1) * step, T_low * step, (T_low + 1) * step}
+
+    # Round down to a multiple of 10 (trim_down): trim_down flips as c crosses
+    # half_ulp, into the tie (c == half_ulp) and out of it (c == half_ulp + 1).
+    H_low = half_ulp & ((1 << 124) - 1)
+    drop_last = {H_low * step, (H_low + 1) * step}
+
+    return check_boundaries(bin_exp, pow10, shift, x_min, x_max,
+                            nearest | carry_ten | drop_last, exceptions)
+
+
+def find_edge_cases() -> None:
+    """Sweep every binary exponent for potential misrounds."""
+    print("long double edge-case sweep ... ", end="", flush=True)
+    exceptions: Set[Tuple[int, int]] = set()
+    checked = 0
+    powers_of_two = 0
+    for bin_exp in range(MIN_E2, MAX_E2 + 1):
+        # The power of two is the only irregular significand (asymmetric
+        # boundaries); check it directly, as in verify.py.
+        powers_of_two += 1
+        if to_decimal(SIG_MIN, bin_exp) != to_decimal_exact(SIG_MIN, bin_exp):
+            exceptions.add((bin_exp, SIG_MIN))
+        # Regular significands (exclude the power of two at SIG_MIN).
+        checked += find_regular_edge_cases(bin_exp, SIG_MIN + 1, SIG_MAX,
+                                           exceptions)
+        if bin_exp == MIN_E2:  # subnormals share MIN_E2 and use the regular path
+            checked += find_regular_edge_cases(bin_exp, 1, SIG_MIN - 1,
+                                               exceptions)
+
+    if exceptions:
+        print("FAILED")
+        for bin_exp, bin_sig in sorted(exceptions):
+            print(f"  bin_sig=0x{bin_sig:016X} bin_exp={bin_exp}: "
+                  f"actual={to_decimal(bin_sig, bin_exp)} "
+                  f"expected={to_decimal_exact(bin_sig, bin_exp)}")
+        raise SystemExit(1)
+
+    print("ok")
+    if checked:
+        print(f"  {checked:,} near-boundary significands and {powers_of_two:,} "
+              f"powers of two checked; no misrounds")
+    else:
+        print(f"  {powers_of_two:,} powers of two checked; no other significand "
+              f"lies within 2**64 of a rounding boundary, so no decision can "
+              f"flip; no misrounds")
+
+
+if __name__ == "__main__":
+    find_edge_cases()

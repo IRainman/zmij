@@ -127,12 +127,8 @@ def count_mod_mul_solutions(num: int, mod: int,
     if y_min > hi:
         return 0
 
-    base = floor_sum(n, mod, num, b)
-
-    def count_le(t: int) -> int:
-        return base - floor_sum(n, mod, num, b - t - 1)
-
-    return count_le(hi) - count_le(y_min - 1)
+    return (floor_sum(n, mod, num, b - y_min)
+            - floor_sum(n, mod, num, b - hi - 1))
 
 
 def enumerate_mod_mul_solutions(num: int, mod: int,
@@ -202,16 +198,18 @@ def umul128_add_hi64(x: int, y: int, c: int) -> int:
     return (x * y + c) >> 64
 
 
-def pow10_hi128(p: int) -> int:
+def pow10_hi(p: int, bits: int) -> Tuple[int, int]:
     """
-    Return the top 128 bits of 10^p, normalized so bit 127 is set.
-    `p` is the decimal exponent and may be negative (reciprocal powers).
+    Return (significand, exponent) with the top `bits` bits of 10^p, normalized
+    so the high bit is set: 10^p ~= significand * 2^exponent. `p` is the decimal
+    exponent and may be negative (reciprocal powers).
     """
     pow10 = 10 ** abs(p)
     b = pow10.bit_length()
     if p >= 0:
-        return (pow10 << 128) >> b
-    return (1 << (b + 127)) // pow10
+        sig = pow10 << (bits - b) if bits >= b else pow10 >> (b - bits)
+        return sig, b - bits
+    return (1 << (b - 1 + bits)) // pow10, -(b + bits - 1)
 
 
 def exp_params(raw_exp: int) -> Tuple[int, int, int, int]:
@@ -219,7 +217,7 @@ def exp_params(raw_exp: int) -> Tuple[int, int, int, int]:
     bin_exp = raw_exp - EXP_OFFSET
     dec_exp = compute_dec_exp(bin_exp)
     shift = compute_exp_shift(bin_exp, dec_exp + 1) + EXTRA_SHIFT
-    pow10 = pow10_hi128(-dec_exp - 1)
+    pow10 = pow10_hi(-dec_exp - 1, 128)[0]
     return bin_exp, dec_exp, shift, pow10
 
 
@@ -235,12 +233,12 @@ def to_decimal(bin_sig: int, raw_exp: int) -> Tuple[int, int, int, bool]:
 
     dec_exp = compute_dec_exp(bin_exp, regular)
     shift = compute_exp_shift(bin_exp, dec_exp + 1) + EXTRA_SHIFT
-    pow10 = pow10_hi128(-dec_exp - 1)
-    pow10_hi = pow10 >> 64
+    pow10 = pow10_hi(-dec_exp - 1, 128)[0]
+    pow10_hi64 = pow10 >> 64
     p = umul192_hi128(pow10, bin_sig << shift)
     integral = p >> (64 + EXTRA_SHIFT)
     fractional = (p >> EXTRA_SHIFT) & mask64
-    half_ulp = pow10_hi >> (EXTRA_SHIFT + 1 - shift)
+    half_ulp = pow10_hi64 >> (EXTRA_SHIFT + 1 - shift)
 
     if not regular:
         round_up = half_ulp > mask64 - fractional
@@ -433,7 +431,7 @@ def find_regular_edge_cases(raw_exp: int, sig_min: int, sig_max: int,
     """Check boundary significands in [sig_min, sig_max] for one exponent."""
     assert sig_min <= sig_max, (raw_exp, sig_min, sig_max)
     bin_exp, dec_exp, shift, pow10 = exp_params(raw_exp)
-    pow10_hi = pow10 >> 64
+    pow10_hi64 = pow10 >> 64
 
     # fractional = floor(pow10 * bin_sig / 2^s) mod 2^64, matching to_decimal's
     # (p >> EXTRA_SHIFT) over the 128-bit product.
@@ -447,7 +445,7 @@ def find_regular_edge_cases(raw_exp: int, sig_min: int, sig_max: int,
     # biased_half) >> 64 crosses k * 2^64. The k=3 boundary also covers the
     # kernel's "round 2.5 to 2" case: its exact tie is fractional == 2^62, the
     # k=3 true half-tie, which the assert below keeps inside that window.
-    half_ulp = pow10_hi >> (EXTRA_SHIFT + 1 - shift)
+    half_ulp = pow10_hi64 >> (EXTRA_SHIFT + 1 - shift)
     targets = [half_ulp, (1 << 64) - half_ulp]
     for k in range(1, 10):
         # The true half-tie is at (k*2^64 - 2^63)/10. biased_half's +6 is a
