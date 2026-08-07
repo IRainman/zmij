@@ -191,7 +191,7 @@ def to_decimal_exact(bin_sig: int, bin_exp: int, fmt: Format
 
 
 def check_boundaries(bin_exp: int, pow10: int, shift: int, x_min: int,
-                     x_max: int, boundaries: Set[int],
+                     x_max: int, boundaries: Set[int], exact: bool,
                      exceptions: Set[Tuple[int, int]],
                      fmt: Format) -> int:
     """
@@ -204,16 +204,27 @@ def check_boundaries(bin_exp: int, pow10: int, shift: int, x_min: int,
     seen: Set[int] = set()
     for boundary in boundaries:
         # A significand misrounds only if the product residue R = (bin_sig *
-        # pow10) mod 2**shift is carried up across the boundary b by the < 2**64
-        # error, i.e. R lands in [b - margin, b). Trim boundaries can reduce to
-        # near 0 mod 2**shift, so split the window when it wraps past 0.
+        # pow10) mod 2**shift lands within margin below the boundary b, where
+        # the < 2**64 error from the floored pow10 can carry the true residue up
+        # across b. The boundary point R == b is a hazard only when pow10 is
+        # inexact: the model then reads an exact tie while the true value is
+        # strictly above b and must round up. Every b is a multiple of the
+        # discard granularity 2**(shift-128), so R == b has a zero discarded
+        # tail; when pow10 is exact (e == 0) the true value then sits exactly on
+        # b, a genuine tie handled correctly, and R can land there for a whole
+        # cluster of significands, so b is left out to keep the window
+        # enumerable. Trim boundaries can reduce to near 0 mod 2**shift, so
+        # split the window when it wraps past 0.
         b = boundary % mod
+        top = b if not exact else b - 1
         if b == 0:
             windows = [(mod - margin, mod - 1)]
+            if not exact:
+                windows.append((0, 0))
         elif b >= margin:
-            windows = [(b - margin, b - 1)]
+            windows = [(b - margin, top)]
         else:  # margin << mod, so mod + b - margin never underflows past 0
-            windows = [(0, b - 1), (mod + b - margin, mod - 1)]
+            windows = [(0, top), (mod + b - margin, mod - 1)]
         for y_lo, y_hi in windows:
             count = count_mod_mul_solutions(pow10, mod, x_min, x_max,
                                             y_lo, y_hi)
@@ -262,6 +273,11 @@ def find_regular_edge_cases(bin_exp: int, x_min: int, x_max: int,
     assert 252 <= shift <= 255, (bin_exp, shift)
     half_ulp = (pow10 >> (shift - 123)) & ((1 << 128) - 1)
 
+    # pow10 is exact (drops no significant bits) iff 5**(-dec_exp) fits in the
+    # 256-bit significand; the 2**k in 10**k contributes only trailing zeros.
+    # Only then is e == 0, which check_boundaries uses to skip the R == b point.
+    exact = dec_exp <= 0 and (5 ** -dec_exp).bit_length() <= 256
+
     # Round to nearest: the two edges of the fractional == 1/2 band.
     enter = 1 << (shift - 1)                  # fractional enters == 1/2 band
     leave = enter + (1 << (shift - 128))      # and leaves it
@@ -288,7 +304,8 @@ def find_regular_edge_cases(bin_exp: int, x_min: int, x_max: int,
     drop_last = {trim_down_frac * step, (trim_down_frac + 1) * step}
 
     return check_boundaries(bin_exp, pow10, shift, x_min, x_max,
-                            nearest | carry_ten | drop_last, exceptions, fmt)
+                            nearest | carry_ten | drop_last, exact,
+                            exceptions, fmt)
 
 
 def find_edge_cases(fmt: Format) -> None:
