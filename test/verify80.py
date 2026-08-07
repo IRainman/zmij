@@ -252,25 +252,31 @@ def find_regular_edge_cases(bin_exp: int, x_min: int, x_max: int,
     Check the near-boundary significands in [x_min, x_max] for one exponent,
     at every tie a rounding error could flip.
 
-    The integral carry is not enumerated (unlike verify.py): its region is
-    dense - for round exponents R clusters, so ~1/5 of significands sit near a
-    carry - and cannot be swept. Instead note that across a carry the model's
-    c and the true c are adjacent (they differ by 1 for last digit d < 9; ten
-    vs 0 for d == 9), so trim_up, trim_down, and the gap <= 1 even override all
-    resolve the same on both sides - yielding integral + 1 or the matching
-    trim - unless a decision threshold lands between them, i.e. half_ulp within
-    1 of a multiple of 2**124. The assert below rules that out for every inexact
-    exponent; exact ones have e == 0 and never straddle a carry.
+    The integral carry (the error nudging the value past an integer, so the
+    last digit increments and c crosses a multiple of 2**124) is proved safe by
+    argument rather than enumeration, since for some exponents its residues
+    cluster too densely near the carry to enumerate.
+
+    At a carry the model's c and the true c straddle that multiple, one step
+    apart. Every decision (trim_up, trim_down, and the gap <= 1 even override)
+    is a threshold test on c, so the model rounds the same as the exact value
+    unless a threshold lies within 1 of the crossed multiple.
+
+    The trim thresholds sit at half_ulp from a multiple of 2**124, so a flip
+    needs half_ulp within 1 of such a multiple; the assert below rules that out
+    for every inexact exponent (exact ones, e == 0, never straddle a carry).
     """
     # Per-exponent regular-path constants, mirroring to_decimal's derivation.
     log10_2_sig = 20_201_781
     dec_exp = (bin_exp * log10_2_sig) >> 26
     pow10, pow10_exp = pow10_hi(-dec_exp, 256)
     shift = -(bin_exp + pow10_exp)
-    # shift stays in [252, 255] over the whole exponent range, so the step
-    # 2**(shift-124) below is >= 2**128 and dwarfs the < 2**64 constant error;
-    # the boundary derivation relies on it, and a smaller shift would break it.
-    assert 252 <= shift <= 255, (bin_exp, shift)
+    step = 1 << (shift - 124)   # R spanned by one c unit; the boundary unit
+    # A boundary window isolates a single tie only if step dwarfs the < 2**64
+    # product error (check_boundaries widens each window to a 2**66 margin).
+    # Over the whole exponent range step is 2**128..2**131; assert that bracket
+    # (the lower bound is what the derivation needs, the upper a drift canary).
+    assert 1 << 128 <= step <= 1 << 131, (bin_exp, shift)
     half_ulp = (pow10 >> (shift - 123)) & ((1 << 128) - 1)
 
     # pow10 is exact (drops no significant bits) iff 5**(-dec_exp) fits in the
@@ -278,11 +284,10 @@ def find_regular_edge_cases(bin_exp: int, x_min: int, x_max: int,
     # Only then is e == 0, which check_boundaries uses to skip the R == b point.
     exact = dec_exp <= 0 and (5 ** -dec_exp).bit_length() <= 256
 
-    # Integral-carry safety (see docstring): a carry misrounds only if a
-    # decision threshold falls between the adjacent model and true c, i.e. if
-    # half_ulp is within 1 of a multiple of 2**124. Only inexact exponents
-    # straddle; assert they stay far from that alignment (the actual slack is
-    # ~2**110), so the dense carry region needs no enumeration.
+    # Integral-carry safety: assert half_ulp stays far from a multiple of
+    # 2**124, the alignment that would let a carry misround (see docstring).
+    # Only inexact exponents straddle a carry. The 2**66 bound is arbitrary,
+    # picked between the < 2**64 product error and their actual ~2**110 slack.
     if not exact:
         r = half_ulp % (1 << 124)
         assert min(r, (1 << 124) - r) > (1 << 66), (bin_exp, half_ulp)
@@ -298,7 +303,6 @@ def find_regular_edge_cases(bin_exp: int, x_min: int, x_max: int,
     # The trim boundaries below key only on c's low 124 bits: last_digit (its
     # top 4 bits) lives outside R, so each is probed for all last_digit - a
     # sound superset of the true trigger that the oracle then confirms.
-    step = 1 << (shift - 124)                 # R granularity of one c unit
 
     # Round up to a multiple of 10 (trim_up): trim_up_frac is fractional_top124
     # at the threshold ten - half_ulp. With gap = (ten - half_ulp - c) mod
