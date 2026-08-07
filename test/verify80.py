@@ -189,14 +189,9 @@ def to_decimal_exact(bin_sig: int, bin_exp: int, fmt: Format
 
 # --- verification ----------------------------------------------------------
 #
-# Żmij derives every decision from the top 128 fractional bits of the exact
-# product bin_sig*pow10. The 256-bit pow10 rounds down, so the true
-# product exceeds bin_sig*pow10 by at most bin_sig < 2**64; with shift >= 252
-# this lives in the dropped low bits and can only change the result by carrying
-# R = (bin_sig*pow10) mod 2**shift up across a boundary B. A misround thus
-# needs R in [B - 2**probe, B), and 2**probe > 2**64 bounds the carry.
-# floor_sum enumerates those significands and the oracle checks each. The
-# slack is wide enough that every window is empty, which is itself the proof.
+# find_regular_edge_cases derives the rounding boundaries for one exponent,
+# check_boundaries enumerates the significands whose product residue lands
+# just below each boundary, and the exact Fraction oracle checks those.
 
 
 def check_boundaries(bin_exp: int, pow10: int, shift: int, x_min: int,
@@ -205,14 +200,10 @@ def check_boundaries(bin_exp: int, pow10: int, shift: int, x_min: int,
                      fmt: Format) -> int:
     """
     Check the near-boundary significands for one exponent against the oracle
-    and return how many were checked. Residues never cluster this close to a
-    tie, so a wider-than-expected window means a boundary was mis-derived; fail
-    loudly rather than defer it to random sampling.
+    and return how many were checked.
     """
     mod = 1 << shift
-    cap = 256          # residues never cluster this densely near a tie
-    probe = 66         # window width 2**probe; must exceed the < 2**64 error
-    margin = 1 << probe
+    margin = 1 << 66   # window width; must exceed the < 2**64 error
     checked = 0
     seen: Set[int] = set()
     for boundary in boundaries:
@@ -229,7 +220,10 @@ def check_boundaries(bin_exp: int, pow10: int, shift: int, x_min: int,
         for y_lo, y_hi in windows:
             count = count_mod_mul_solutions(pow10, mod, x_min, x_max,
                                             y_lo, y_hi)
-            assert count <= cap, \
+            # Residues never cluster this close to a tie, so the window stays
+            # small enough to check exhaustively; a wider-than-expected one
+            # means a boundary was mis-derived, so fail loudly.
+            assert count <= 256, \
                 f"bin_exp={bin_exp} boundary={boundary:#x}: {count}"
             for bin_sig, _ in enumerate_mod_mul_solutions(pow10, mod, x_min,
                                                           x_max, y_lo, y_hi):
