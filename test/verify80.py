@@ -252,15 +252,15 @@ def find_regular_edge_cases(bin_exp: int, x_min: int, x_max: int,
     Check the near-boundary significands in [x_min, x_max] for one exponent,
     at every tie a rounding error could flip.
 
-    No integral-carry boundary is needed (unlike the boundaries in verify.py).
-    Across an integral carry with last digit d < 9, integral and last_digit
-    both rise by one. When trimming, integral - last_digit is unchanged (the
-    carried digit is exactly the one dropped) and c = (integral mod 10) *
-    2**124 + fractional_top124 (the top 124 fraction bits, fractional >> 4) does
-    not reach a trim threshold, so the decision holds too; when rounding,
-    integral + round_up is integral + 1 on both sides (round_up falls as
-    integral rises). For d == 9 the digit wraps to 0 and c jumps
-    10 * 2**124 -> 0, but every path still yields integral + 1.
+    The integral carry is not enumerated (unlike verify.py): its region is
+    dense - for round exponents R clusters, so ~1/5 of significands sit near a
+    carry - and cannot be swept. Instead note that across a carry the model's
+    c and the true c are adjacent (they differ by 1 for last digit d < 9; ten
+    vs 0 for d == 9), so trim_up, trim_down, and the gap <= 1 even override all
+    resolve the same on both sides - yielding integral + 1 or the matching
+    trim - unless a decision threshold lands between them, i.e. half_ulp within
+    1 of a multiple of 2**124. The assert below rules that out for every inexact
+    exponent; exact ones have e == 0 and never straddle a carry.
     """
     # Per-exponent regular-path constants, mirroring to_decimal's derivation.
     log10_2_sig = 20_201_781
@@ -277,6 +277,15 @@ def find_regular_edge_cases(bin_exp: int, x_min: int, x_max: int,
     # 256-bit significand; the 2**k in 10**k contributes only trailing zeros.
     # Only then is e == 0, which check_boundaries uses to skip the R == b point.
     exact = dec_exp <= 0 and (5 ** -dec_exp).bit_length() <= 256
+
+    # Integral-carry safety (see docstring): a carry misrounds only if a
+    # decision threshold falls between the adjacent model and true c, i.e. if
+    # half_ulp is within 1 of a multiple of 2**124. Only inexact exponents
+    # straddle; assert they stay far from that alignment (the actual slack is
+    # ~2**110), so the dense carry region needs no enumeration.
+    if not exact:
+        r = half_ulp % (1 << 124)
+        assert min(r, (1 << 124) - r) > (1 << 66), (bin_exp, half_ulp)
 
     # Round to nearest: the two edges of the fractional == 1/2 band.
     enter = 1 << (shift - 1)                  # fractional enters == 1/2 band
