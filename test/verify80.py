@@ -286,6 +286,9 @@ def find_regular_edge_cases(bin_exp: int, x_min: int, x_max: int,
     # c is quantized in units of one R step, so each tie sits at a step
     # boundary k*step and a decision flips as c crosses it. The window sits
     # just below k*step, catching the residue that a carry pushes up to k.
+    # The trim boundaries below key only on c's low 124 bits: last_digit (its
+    # top 4 bits) lives outside R, so each is probed for all last_digit - a
+    # sound superset of the true trigger that the oracle then confirms.
     step = 1 << (shift - 124)                 # R granularity of one c unit
 
     # Round up to a multiple of 10 (trim_up): trim_up_frac is fractional_top124
