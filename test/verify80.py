@@ -203,20 +203,22 @@ def check_boundaries(bin_exp: int, pow10: int, shift: int, x_min: int,
     checked = 0
     seen: Set[int] = set()
     for boundary in boundaries:
-        # A significand misrounds only if the product residue R = (bin_sig *
-        # pow10) mod 2**shift lands within margin below the boundary b, where
-        # the < 2**64 error from the floored pow10 can carry the true residue up
-        # across b. The boundary point R == b is a hazard only when pow10 is
-        # inexact: the model then reads an exact tie while the true value is
-        # strictly above b and must round up. Every b is a multiple of the
-        # discard granularity 2**(shift-128), so R == b has a zero discarded
-        # tail; when pow10 is exact (e == 0) the true value then sits exactly on
-        # b, a genuine tie handled correctly, and R can land there for a whole
-        # cluster of significands, so b is left out to keep the window
-        # enumerable. Trim boundaries can reduce to near 0 mod 2**shift, so
-        # split the window when it wraps past 0.
+        # A significand misrounds only if the residue R = (bin_sig * pow10) mod
+        # 2**shift lands within margin below the boundary b, where the < 2**64
+        # error from the floored pow10 can carry the true residue up across b.
         b = boundary % mod
+
+        # Include the endpoint R == b only when pow10 is inexact: the model then
+        # reads an exact tie though the true value is strictly above b and must
+        # round up. When pow10 is exact (e == 0) R == b is itself a genuine tie,
+        # handled correctly, and a whole cluster of significands can land on it,
+        # so drop it to keep the window enumerable. (Every b is a multiple of
+        # 2**(shift-128), the discard granularity, so R == b has no discarded
+        # tail either way.)
         top = b if not exact else b - 1
+
+        # A trim boundary can fall near 0 mod 2**shift, so split the window
+        # where it wraps past 0.
         if b == 0:
             windows = [(mod - margin, mod - 1)]
             if not exact:
