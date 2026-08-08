@@ -199,7 +199,9 @@ def to_decimal_exact(bin_sig: int, bin_exp: int, fmt: Format
 # --- verification ----------------------------------------------------------
 #
 # The three find_edge_case_* searches are adapted from yy_double/verify.py
-# (https://github.com/ibireme/c_numconv_benchmark).
+# (https://github.com/ibireme/c_numconv_benchmark), which verifies binary64,
+# retargeted to the extended-precision formats, and using floor_sum instead of
+# continued fractions and the three-gap theorem.
 #
 # One search per rounding boundary. Each counts the near-boundary residues, the
 # R = (bin_sig * pow10) mod 2**shift the algorithm reads as a tie, using
