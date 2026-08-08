@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 A script to verify the correctness of the Żmij FP-to-string conversion for
-80-bit (x87 extended) long double.
+the extended-precision long double formats: x87 80-bit and IEEE binary128.
 
 Copyright (c) 2025 - present, Victor Zverovich
 Distributed under the MIT license (see LICENSE) or alternatively
@@ -10,14 +10,15 @@ https://github.com/vitaut/zmij/
 
 Companion to verify.py (double), reusing its floor_sum machinery. Żmij's
 long-double path adapts YaoYuan's (yy) method with rounded-down 256-bit
-power-of-ten constants.
+power-of-ten constants, the same code for both formats.
 
-Scaling the 64-bit significand by a floored constant leaves the result low by
-under 2**64. The >= 124 low-order bits below the retained fraction hold this
-shortfall far short of every boundary, so a decision could flip only for a
-significand within that margin. floor_sum finds none across all binary
-exponents, so every window is empty - which is itself the proof. (Any
-candidate that appeared would be checked against an exact Fraction oracle.)
+Scaling a p-bit significand by a floored constant leaves the result low by
+under 2**p (p = 64 for x87, 113 for binary128). The low-order bits below the
+retained 128-bit fraction hold this shortfall far short of every boundary, so
+a decision could flip only for a significand within that margin. floor_sum
+finds essentially none across all binary exponents, so almost every window is
+empty; any candidate that does appear is checked against an exact Fraction
+oracle.
 """
 
 from dataclasses import dataclass
@@ -31,6 +32,7 @@ from verify import (count_mod_mul_solutions, enumerate_mod_mul_solutions,
 @dataclass
 class Format:
     """Parameters of a binary floating-point format."""
+    name: str         # human-readable label for the sweep output
     digits: int       # precision p: significand bits incl. the leading 1,
                       # whether that bit is stored (x87) or implicit (binary*)
     exp_bits: int     # exponent field width
@@ -44,7 +46,8 @@ class Format:
         self.max_e2 = (1 << self.exp_bits) - 2 - exp_offset
 
 
-BINARY80 = Format(digits=64, exp_bits=15)       # x87 extended
+BINARY80 = Format("x87 80-bit", digits=64, exp_bits=15)
+BINARY128 = Format("IEEE binary128", digits=113, exp_bits=15)
 
 
 def strip_zeros(dec_sig: int, dec_exp: int) -> Tuple[int, int]:
@@ -199,12 +202,15 @@ def check_boundaries(bin_exp: int, pow10: int, shift: int, x_min: int,
     and return how many were checked.
     """
     mod = 1 << shift
-    margin = 1 << 66   # window width; must exceed the < 2**64 error
+    # Window width; must exceed the product error, which is < the significand
+    # (< 2**digits): a p-bit bin_sig times the < 1 shortfall of the floored
+    # pow10. digits + 2 gives 4x headroom (2**66 for x87, 2**115 for binary128).
+    margin = 1 << (fmt.digits + 2)
     checked = 0
     seen: Set[int] = set()
     for boundary in boundaries:
         # A significand misrounds only if the residue R = (bin_sig * pow10) mod
-        # 2**shift lands within margin below the boundary b, where the < 2**64
+        # 2**shift lands within margin below the boundary b, where the product
         # error from the floored pow10 can carry the true residue up across b.
         b = boundary % mod
 
@@ -274,10 +280,10 @@ def find_regular_edge_cases(bin_exp: int, x_min: int, x_max: int,
     pow10, pow10_exp = pow10_hi(-dec_exp, 256)
     shift = -(bin_exp + pow10_exp)
     step = 1 << (shift - 124)   # R spanned by one c unit; the boundary unit
-    # A boundary window isolates a single tie only if step dwarfs the < 2**64
-    # product error (check_boundaries widens each window to a 2**66 margin).
-    # Over the whole exponent range step is 2**128..2**131; assert that bracket
-    # (the lower bound is what the derivation needs, the upper a drift canary).
+    # A boundary window isolates a single tie only if step dwarfs the product
+    # error (< the significand, see check_boundaries's margin). Over the whole
+    # exponent range step is 2**128..2**131; assert that bracket (the lower
+    # bound is what the derivation needs, the upper a drift canary).
     assert 1 << 128 <= step <= 1 << 131, (bin_exp, shift)
     half_ulp = (pow10 >> (shift - 123)) & ((1 << 128) - 1)
 
@@ -288,8 +294,10 @@ def find_regular_edge_cases(bin_exp: int, x_min: int, x_max: int,
 
     # Integral-carry safety: assert half_ulp stays far from a multiple of
     # 2**124, the alignment that would let a carry misround (see docstring).
-    # Only inexact exponents straddle a carry. The 2**66 bound is arbitrary,
-    # picked between the < 2**64 product error and their actual ~2**110 slack.
+    # Across a carry model and true c differ by just one unit (the product error
+    # stays below the fractional quantum 2**(shift-128) since digits < 124), so
+    # any slack >> 1 suffices; 2**66 is generous, far below the actual ~2**110.
+    # Only inexact exponents straddle a carry.
     if not exact:
         r = half_ulp % (1 << 124)
         assert min(r, (1 << 124) - r) > (1 << 66), (bin_exp, half_ulp)
@@ -328,7 +336,7 @@ def find_regular_edge_cases(bin_exp: int, x_min: int, x_max: int,
 
 def find_edge_cases(fmt: Format) -> None:
     """Sweep every binary exponent for potential misrounds."""
-    print("long double edge-case sweep ... ", end="", flush=True)
+    print(f"{fmt.name} edge-case sweep ... ", end="", flush=True)
     exceptions: Set[Tuple[int, int]] = set()
     checked = 0
     powers_of_two = 0
@@ -350,7 +358,7 @@ def find_edge_cases(fmt: Format) -> None:
     if exceptions:
         print("FAILED")
         for bin_exp, bin_sig in sorted(exceptions):
-            print(f"  bin_sig=0x{bin_sig:016X} bin_exp={bin_exp}: "
+            print(f"  bin_sig=0x{bin_sig:X} bin_exp={bin_exp}: "
                   f"actual={to_decimal(bin_sig, bin_exp, fmt)} "
                   f"expected={to_decimal_exact(bin_sig, bin_exp, fmt)}")
         raise SystemExit(1)
@@ -361,9 +369,10 @@ def find_edge_cases(fmt: Format) -> None:
               f"powers of two checked; no misrounds")
     else:
         print(f"  {powers_of_two:,} powers of two checked; no other "
-              f"significand lies within 2**64 of a rounding boundary, so no "
+              f"significand lies within 2**{fmt.digits} of a boundary, so no "
               f"decision can flip; no misrounds")
 
 
 if __name__ == "__main__":
     find_edge_cases(BINARY80)
+    find_edge_cases(BINARY128)
