@@ -9,8 +9,93 @@ Distributed under the MIT license.
 https://github.com/vitaut/zmij/
 
 Companion to verify.py (double), reusing its floor_sum machinery. Żmij's
-long-double path adapts YaoYuan's (yy) method with rounded-down power-of-ten
-constants (POW10_BITS bits, 256 by default), the same code for both formats.
+long-double path adapts YaoYuan's (yy) method, the same code for both formats.
+
+Overview
+--------
+
+Żmij converts v = bin_sig * 2**bin_exp (a digits-bit significand: 64 for x87,
+113 for binary128) to the shortest decimal dec_sig * 10**dec_exp. Following
+Schubfach it scales by a power of ten:
+
+    dec_sig = v * 10**(-dec_exp),   dec_exp = floor(bin_exp * log10(2)),
+
+using a precomputed constant pow10 * 2**pow10_exp ~= 10**(-dec_exp), where
+pow10 is a normalized POW10_BITS-bit integer (top bit set). With
+shift = -(bin_exp + pow10_exp) the scaling is a single multiply and shift:
+
+    v * 10**(-dec_exp) = (bin_sig * pow10) * 2**(bin_exp + pow10_exp)
+                       = (bin_sig * pow10) >> shift
+
+The product is kept to 256 bits: a 128-bit integral part and a 128-bit
+fraction (`integral` and `fractional` in to_decimal),
+
+    scaled     = (bin_sig * pow10) >> (shift - 128)
+    integral   = scaled >> 128        # floor(v * 10**(-dec_exp))
+    fractional = scaled mod 2**128    # the bits past the decimal point
+
+Long multiply, most significant bit on the left:
+
+    pow10    |HHHHHHHHHHHHHHHH|LLLLLLLLLLLLLLLL|........  floored 10**(-dec_exp)
+    bin_sig  |        XXXXXXXX|                           digits bits (<= 113)
+    ---------+----------------+----------------+--------
+             |HXHXHXHXHXHXHXHX|HXHXHXHXHXHXHXHX|          H * bin_sig
+             |                |LXLXLXLXLXLXLXLX|LXLX....  L * bin_sig (>> 128)
+             |                |                |........  dropped tail
+    ---------+----------------+----------------+--------
+             |    integral    |   fractional   |........  kept; tail dropped
+
+H is the high 128 bits of pow10 and L the next 128; the low tail beyond
+POW10_BITS is dropped. The decimal point sits between integral and fractional.
+
+pow10 is only POW10_BITS bits (256), so it, and hence the product, is rounded
+down; every bit below the kept fraction is truncated. The retained value is
+therefore slightly low, and a carry out of the discarded tail could nudge it up
+across a rounding boundary - the critical boundary conditions to check.
+
+Shortening `integral` to the shortest decimal makes three rounding decisions,
+each a threshold test on the truncated value that the error could flip:
+
+1. Round to nearest, deciding the last kept digit. The tie is
+   fractional == 2**127 (exactly one half), broken to even.
+2. Trim down to a multiple of ten, when v - half_ulp reaches it. The tie is
+   c == half_ulp, broken to even.
+3. Trim up to a multiple of ten, when v + half_ulp reaches it. The tie is
+   c == ten - half_ulp (ten == 10 << 124), broken to even.
+
+On the last-digit axis, from one multiple of ten up to the next (the two
+shorter, trimmed candidates), v sits at integral + fractional:
+
+    m*10                       v                       (m+1)*10
+    ---|----+----+---- ... ----*----+---- ... ----+----+---|---
+       0    1    2            d0   d0+1                9   10
+              v-half_ulp <----( v )----> v+half_ulp
+    trim down if the band reaches m*10; trim up if it reaches (m+1)*10;
+    otherwise round to the nearest of d0 / d0+1 (tie at fractional == 1/2).
+
+where d0 = last_digit and m = integral // 10, so m*10 = integral - last_digit
+is the multiple of ten at or below integral (the trimmed significand).
+
+For example, the x87 value bin_sig = 0x934F069BF2A74DE5, bin_exp = 6:
+
+    v            = 679341447270162987328       (half_ulp = 32)
+    [v-hu, v+hu] = [679341447270162987296, 679341447270162987360]
+    nearest      = 67934144727016298733 x 10    # 20 digits (...987330)
+    shortest     = 6793414472701629873  x 100   # 19 digits (...987300)
+
+The interval reaches the multiple of ten just below v (...987300), so trim down
+(decision 2) drops the last digit; rounding to nearest alone keeps 20 digits.
+
+Here half_ulp = (pow10 >> (shift - 123)) mod 2**128 is half an ulp in the
+fractional scale. For speed the two trim tests avoid reading the full 128-bit
+fraction: the last decimal digit (integral mod 10, 4 bits) is merged with the
+top 124 bits of the fraction into a single 128-bit integer
+
+    c = (last_digit << 124) | (fractional >> 4),
+
+dropping the low 4 fractional bits and losing a little more precision - one
+more reason these boundaries need care. (The exact power of two at sig_min is
+irregular, its lower gap being half an ulp, and is handled on a separate path.)
 
 Verification runs three edge-case searches, one per rounding boundary (round to
 nearest, trim up to a multiple of ten, trim down to a multiple of ten). Each
