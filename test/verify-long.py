@@ -14,7 +14,7 @@ long-double path adapts YaoYuan's (yy) method, the same code for both formats.
 Overview
 --------
 
-Żmij converts v = bin_sig * 2**bin_exp (a digits-bit significand: 64 for x87,
+Żmij converts v = bin_sig * 2**bin_exp (a p-bit significand, p = 64 for x87,
 113 for binary128) to the shortest decimal dec_sig * 10**dec_exp. Following
 Schubfach it scales by a power of ten:
 
@@ -36,14 +36,15 @@ fraction (`integral` and `fractional` in to_decimal),
 
 Long multiply, most significant bit on the left:
 
-    pow10    |HHHHHHHHHHHHHHHH|LLLLLLLLLLLLLLLL|........  floored 10**(-dec_exp)
-    bin_sig  |        XXXXXXXX|                           digits bits (<= 113)
-    ---------+----------------+----------------+--------
-             |HXHXHXHXHXHXHXHX|HXHXHXHXHXHXHXHX|          H * bin_sig
-             |                |LXLXLXLXLXLXLXLX|LXLX....  L * bin_sig (>> 128)
-             |                |                |........  dropped tail
-    ---------+----------------+----------------+--------
-             |    integral    |   fractional   |........  kept; tail dropped
+    ------------------------------------------------------------
+                     |HHHHHHHHHHHHHHHH|LLLLLLLLLLLLLLLL|........  pow10
+                     |        XXXXXXXX|                           bin_sig
+    ------------------------------------------------------------
+    |   XHXHXHXHXHXHX|HXHXHXHXHXHXHXHX|                           H * bin_sig
+                     |   XLXLXLXLXLXLX|LXLXLXLXLXLXLXLX|          L * bin_sig
+                                      |   .............|........  tail * bin_sig
+    ------------------------------------------------------------
+    |    integral    |   fractional   |....dropped.....|
 
 H is the high 128 bits of pow10 and L the next 128; the low tail beyond
 POW10_BITS is dropped. The decimal point sits between integral and fractional.
@@ -59,9 +60,9 @@ each a threshold test on the truncated value that the error could flip:
 1. Round to nearest, deciding the last kept digit. The tie is
    fractional == 2**127 (exactly one half), broken to even.
 2. Trim down to a multiple of ten, when v - half_ulp reaches it. The tie is
-   c == half_ulp, broken to even.
+   v - half_ulp exactly on the multiple, broken to even.
 3. Trim up to a multiple of ten, when v + half_ulp reaches it. The tie is
-   c == ten - half_ulp (ten == 10 << 124), broken to even.
+   v + half_ulp exactly on the multiple, broken to even.
 
 On the last-digit axis, from one multiple of ten up to the next (the two
 shorter, trimmed candidates), v sits at integral + fractional:
@@ -69,7 +70,8 @@ shorter, trimmed candidates), v sits at integral + fractional:
     m*10                       v                       (m+1)*10
     ---|----+----+---- ... ----*----+---- ... ----+----+---|---
        0    1    2            d0   d0+1                9   10
-              v-half_ulp <----( v )----> v+half_ulp
+             v-half_ulp <----( v )----> v+half_ulp
+
     trim down if the band reaches m*10; trim up if it reaches (m+1)*10;
     otherwise round to the nearest of d0 / d0+1 (tie at fractional == 1/2).
 
@@ -86,16 +88,19 @@ For example, the x87 value bin_sig = 0x934F069BF2A74DE5, bin_exp = 6:
 The interval reaches the multiple of ten just below v (...987300), so trim down
 (decision 2) drops the last digit; rounding to nearest alone keeps 20 digits.
 
-Here half_ulp = (pow10 >> (shift - 123)) mod 2**128 is half an ulp in the
-fractional scale. For speed the two trim tests avoid reading the full 128-bit
-fraction: the last decimal digit (integral mod 10, 4 bits) is merged with the
-top 124 bits of the fraction into a single 128-bit integer
+The exact power of two at sig_min is irregular: its lower gap is half an ulp,
+so it is handled on a separate path.
+
+For speed the two trim tests avoid reading the full 128-bit fraction: the last
+decimal digit (integral mod 10, 4 bits) is merged with the top 124 bits of the
+fraction into a single 128-bit integer
 
     c = (last_digit << 124) | (fractional >> 4),
 
-dropping the low 4 fractional bits and losing a little more precision - one
-more reason these boundaries need care. (The exact power of two at sig_min is
-irregular, its lower gap being half an ulp, and is handled on a separate path.)
+with half_ulp = (pow10 >> (shift - 123)) mod 2**128 in the same scale, so the
+two trim ties become c == half_ulp and c == ten - half_ulp (ten == 10 << 124).
+Dropping the low 4 fractional bits loses a little more precision - one more
+reason these boundaries need care.
 
 Verification runs three edge-case searches, one per rounding boundary (round to
 nearest, trim up to a multiple of ten, trim down to a multiple of ten). Each
