@@ -106,10 +106,11 @@ precision, so the boundary conditions above need extra care.
 
 from dataclasses import dataclass
 from fractions import Fraction
+from math import gcd
 from typing import Set, Tuple
 
 from verify import (count_mod_mul_solutions, enumerate_mod_mul_solutions,
-                    pow10_hi)
+                    floor_sum, pow10_hi)
 
 # Bits kept in each floored power-of-ten constant. The verifier needs a bit
 # over digits + 128 (the tie-comparison window) so the near-boundary residues
@@ -282,28 +283,81 @@ def to_decimal_exact(bin_sig: int, bin_exp: int, fmt: Format
 # retargeted to the extended-precision formats, and using floor_sum instead of
 # continued fractions and the three-gap theorem.
 #
-# One search per rounding boundary. Each counts the near-boundary residues, the
-# R = (bin_sig * pow10) mod 2**shift the algorithm reads as a tie, using
-# floor_sum via count_mod_mul_solutions. The two trim searches assert this count
-# equals the exact tie count (half_ulp_solution_count); the round-to-nearest
-# search has no closed-form count and instead oracle-checks each candidate.
+# One search per rounding boundary. Each counts the near-boundary residues (A),
+# the R = (bin_sig * pow10) mod 2**shift the algorithm reads as a tie, using
+# floor_sum via count_mod_mul_solutions. For the two trim boundaries we also
+# count the exact ties (B, exact_tie_progression) and the intersection A & B
+# (intersection_count); asserting |A| == |B| == |A & B| proves A == B, so every
+# significand the algorithm trims is a genuine tie and vice versa. Equal
+# cardinality alone would not: the sets can differ yet still match in size.
+# The round-to-nearest search has no closed-form count and instead oracle-checks
+# each candidate.
 
 
-def half_ulp_solution_count(bin_exp: int, dec_exp: int, sig_min: int,
-                            sig_max: int, sign: int) -> int:
+def count_mod_affine_solutions(num: int, add: int, mod: int,
+                               x_min: int, x_max: int,
+                               y_min: int, y_max: int) -> int:
     """
-    Number of significands in [sig_min, sig_max] whose boundary
-    v + sign * half_ulp lands exactly on a multiple of 10**(dec_exp + 1), the
-    grid a trim rounds to. Nonzero only for dec_exp > 0: smaller values are
-    dyadic fractions (denominator a power of two) that can never sit exactly on
-    such a multiple.
+    Count the x in [x_min, x_max] for which (num * x + add) % mod lies in
+    [y_min, y_max]. Generalizes count_mod_mul_solutions with an additive
+    constant, so a shifted arithmetic progression is counted in one floor_sum
+    pass; count_mod_mul_solutions is the add == 0 case.
+    """
+    assert num > 0 and mod > 0
+    assert 0 <= x_min <= x_max
+    assert 0 <= y_min <= y_max
+    n = x_max - x_min + 1
+    b = num * x_min + add
+    hi = min(y_max, mod - 1)
+    if y_min > hi:
+        return 0
+    return (floor_sum(n, mod, num, b - y_min)
+            - floor_sum(n, mod, num, b - hi - 1))
+
+
+def exact_tie_progression(bin_exp: int, dec_exp: int, sig_min: int,
+                          sig_max: int, sign: int) -> Tuple[int, int, int]:
+    """
+    Significands in [sig_min, sig_max] whose boundary v + sign * half_ulp lands
+    exactly on a multiple of 10**(dec_exp + 1), the grid a trim rounds to.
+
+    The exact boundary is the linear congruence ulp * sig == -sign * half_ulp
+    (mod 10**(dec_exp + 1)), so its solutions form a single residue class
+    sig == first (mod period). Return (first, period, count) with `first` the
+    smallest solution >= sig_min. Empty (0, 0, 0) unless dec_exp > 0: smaller
+    values are dyadic fractions (denominator a power of two) that can never sit
+    exactly on such a multiple.
     """
     if dec_exp <= 0:
-        return 0
+        return 0, 0, 0
     ulp = 1 << bin_exp                 # bin_exp > 0 whenever dec_exp > 0
     dec_den = 10 ** (dec_exp + 1)      # == 10 ** len(str(ulp))
     r = (-sign * (ulp >> 1)) % dec_den  # v + sign * half_ulp on a multiple
-    return count_mod_mul_solutions(ulp, dec_den, sig_min, sig_max, r, r)
+    # Count with floor_sum first; solving the congruence for the residue class
+    # needs a modular inverse mod the huge dec_den, so only do it when a tie
+    # actually exists (rare) rather than at every exponent.
+    count = count_mod_mul_solutions(ulp, dec_den, sig_min, sig_max, r, r)
+    if count == 0:
+        return 0, 0, 0
+    g = gcd(ulp, dec_den)              # divides r, since a solution exists
+    period = dec_den // g
+    x0 = (r // g) * pow(ulp // g, -1, period) % period
+    first = x0 + -(-(sig_min - x0) // period) * period  # first >= sig_min
+    return first, period, count
+
+
+def intersection_count(p: "Params", den: int, lo: int, hi: int,
+                       first: int, period: int, count: int) -> int:
+    """
+    Of the `count` exact-tie significands first, first + period, ..., how many
+    also land in the trim band [lo, hi] (mod den)? Counted along the
+    progression with count_mod_affine_solutions, so it stays O(log) even when
+    there are astronomically many ties.
+    """
+    if count == 0:
+        return 0
+    return count_mod_affine_solutions(p.pow10 * period, p.pow10 * first,
+                                      den, 0, count - 1, lo, hi)
 
 
 class Params:
@@ -358,6 +412,24 @@ def trim_band(p: Params, c: int) -> Tuple[int, int, int]:
     return 10 << p.shift, base, base + lsb - 1
 
 
+def assert_trim(p: Params, sig_min: int, sig_max: int, c: int, sign: int,
+                label: str) -> None:
+    """
+    Assert the algorithm's tie set A (near-boundary residues c reads as a tie)
+    equals the exact tie set B (boundaries on the decimal grid). We check
+    |A| == |B| == |A & B|: since A & B is contained in both, equal counts force
+    A & B == A == B, so no false ties (misrounds) and no missed ties.
+    """
+    den, lo, hi = trim_band(p, c)
+    approx = count_mod_mul_solutions(p.pow10, den, sig_min, sig_max, lo, hi)
+    first, period, exact = exact_tie_progression(p.bin_exp, p.dec_exp,
+                                                 sig_min, sig_max, sign)
+    both = intersection_count(p, den, lo, hi, first, period, exact)
+    assert approx == exact == both, \
+        f"{label} bin_exp={p.bin_exp} dec_exp={p.dec_exp} " \
+        f"approx={approx} exact={exact} both={both}"
+
+
 def find_edge_case_2(p: Params, sig_min: int, sig_max: int) -> None:
     """
     Trim up to a multiple of 10: v + half_ulp on that multiple.
@@ -365,26 +437,19 @@ def find_edge_case_2(p: Params, sig_min: int, sig_max: int) -> None:
     Flooring pow10 (hence also half_ulp) can only lower the algorithm's c, so a
     genuine tie is expected one LSB below the true threshold ten - half_ulp, at
     gap == 1, the position the even override treats as the tie. We search at
-    c == ten - half_ulp - 1, and the count assertion below confirms it.
+    c == ten - half_ulp - 1, and the set-equality assertion confirms it.
     """
     if p.exact:
         return
-    den, lo, hi = trim_band(p, (10 << 124) - p.half_ulp - 1)
-    count = count_mod_mul_solutions(p.pow10, den, sig_min, sig_max, lo, hi)
-    assert count == half_ulp_solution_count(p.bin_exp, p.dec_exp, sig_min,
-                                            sig_max, +1), \
-        f"trim_up bin_exp={p.bin_exp} dec_exp={p.dec_exp} count={count}"
+    assert_trim(p, sig_min, sig_max, (10 << 124) - p.half_ulp - 1, +1,
+                "trim_up")
 
 
 def find_edge_case_3(p: Params, sig_min: int, sig_max: int) -> None:
     """Trim down to a multiple of 10: v - half_ulp on that multiple."""
     if p.exact:
         return
-    den, lo, hi = trim_band(p, p.half_ulp)                 # c == half_ulp
-    count = count_mod_mul_solutions(p.pow10, den, sig_min, sig_max, lo, hi)
-    assert count == half_ulp_solution_count(p.bin_exp, p.dec_exp, sig_min,
-                                            sig_max, -1), \
-        f"trim_down bin_exp={p.bin_exp} dec_exp={p.dec_exp} count={count}"
+    assert_trim(p, sig_min, sig_max, p.half_ulp, -1, "trim_down")  # c==half_ulp
 
 
 def find_edge_cases(fmt: Format) -> None:
