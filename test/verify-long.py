@@ -302,7 +302,7 @@ def half_ulp_solution_count(bin_exp: int, dec_exp: int, sig_min: int,
         return 0
     ulp = 1 << bin_exp                 # bin_exp > 0 whenever dec_exp > 0
     dec_den = 10 ** (dec_exp + 1)      # == 10 ** len(str(ulp))
-    r = (sign * (ulp >> 1)) % dec_den  # v + sign * half_ulp on a multiple of 10
+    r = (-sign * (ulp >> 1)) % dec_den  # v + sign * half_ulp on a multiple
     return count_mod_mul_solutions(ulp, dec_den, sig_min, sig_max, r, r)
 
 
