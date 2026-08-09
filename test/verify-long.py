@@ -24,8 +24,8 @@ using a precomputed constant pow10 * 2**pow10_exp ~= 10**(-dec_exp), where
 pow10 is a normalized POW10_BITS-bit integer (top bit set). With
 shift = -(bin_exp + pow10_exp) the scaling is a single multiply and shift:
 
-    w        = (bin_sig * pow10) * 2**(bin_exp + pow10_exp)
-    floor(w) = (bin_sig * pow10) >> shift
+    w        ~= (bin_sig * pow10) * 2**(bin_exp + pow10_exp)
+    floor(w) ~= (bin_sig * pow10) >> shift
 
 The product is kept to 256 bits: a 128-bit integral part and a 128-bit
 fraction (`integral` and `fractional` in to_decimal),
