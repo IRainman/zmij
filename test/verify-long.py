@@ -16,25 +16,25 @@ Overview
 
 Żmij converts v = bin_sig * 2**bin_exp (a p-bit significand, p = 64 for x87,
 113 for binary128) to the shortest decimal dec_sig * 10**dec_exp. Following
-Schubfach it derives candidate dec_sig and dec_exp, scaling by a power of ten:
+Schubfach it scales v by a power of ten:
 
-    dec_sig = v * 10**(-dec_exp),   dec_exp = floor(bin_exp * log10(2)),
+    w = v * 10**(-dec_exp),   dec_exp = floor(bin_exp * log10(2)),
 
 using a precomputed constant pow10 * 2**pow10_exp ~= 10**(-dec_exp), where
 pow10 is a normalized POW10_BITS-bit integer (top bit set). With
 shift = -(bin_exp + pow10_exp) the scaling is a single multiply and shift:
 
-    dec_sig        = (bin_sig * pow10) * 2**(bin_exp + pow10_exp)
-    floor(dec_sig) = (bin_sig * pow10) >> shift
+    w        = (bin_sig * pow10) * 2**(bin_exp + pow10_exp)
+    floor(w) = (bin_sig * pow10) >> shift
 
 The product is kept to 256 bits: a 128-bit integral part and a 128-bit
 fraction (`integral` and `fractional` in to_decimal),
 
     scaled     = (bin_sig * pow10) >> (shift - 128)
-    integral   = scaled >> 128        # floor(dec_sig)
+    integral   = scaled >> 128        # floor(w)
     fractional = scaled mod 2**128    # the bits past the decimal point
 
-Long multiply, most significant bit on the left:
+Long multiply bin_sig * pow10, most significant bit on the left:
 
     ------------------------------------------------------------
                      |HHHHHHHHHHHHHHHH|LLLLLLLLLLLLLLLL|........  pow10
