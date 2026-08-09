@@ -322,26 +322,28 @@ def exact_tie_progression(bin_exp: int, dec_exp: int, sig_min: int,
     exactly on a multiple of 10**(dec_exp + 1), the grid a trim rounds to.
 
     The exact boundary is the linear congruence ulp * sig == -sign * half_ulp
-    (mod 10**(dec_exp + 1)), so its solutions form a single residue class
+    (mod 10**(dec_exp + 1)); doubled to keep half_ulp integral (it is ulp / 2,
+    non-integral when bin_exp == 0) it reads (2 * ulp) * sig == -sign * ulp
+    (mod 2 * 10**(dec_exp + 1)). Its solutions form a single residue class
     sig == first (mod period). Return (first, period, count) with `first` the
-    smallest solution >= sig_min. Empty (0, 0, 0) unless dec_exp > 0: smaller
-    values are dyadic fractions (denominator a power of two) that can never sit
-    exactly on such a multiple.
+    smallest solution >= sig_min. Empty (0, 0, 0) only for dec_exp < 0: there
+    bin_exp < 0, so v is a dyadic fraction (denominator a power of two) that
+    can never land on the grid; dec_exp == 0 (bin_exp >= 0) can have ties.
     """
-    if dec_exp <= 0:
+    if dec_exp < 0:
         return 0, 0, 0
-    ulp = 1 << bin_exp                 # bin_exp > 0 whenever dec_exp > 0
-    dec_den = 10 ** (dec_exp + 1)      # == 10 ** len(str(ulp))
-    r = (-sign * (ulp >> 1)) % dec_den  # v + sign * half_ulp on a multiple
+    ulp = 1 << bin_exp                 # bin_exp >= 0 whenever dec_exp >= 0
+    mod = 2 * 10 ** (dec_exp + 1)      # doubled: half_ulp stays integral
+    r = (-sign * ulp) % mod            # 2v + sign * ulp on a multiple
     # Count with floor_sum first; solving the congruence for the residue class
     # needs a modular inverse mod the huge dec_den, so only do it when a tie
     # actually exists (rare) rather than at every exponent.
-    count = count_mod_mul_solutions(ulp, dec_den, sig_min, sig_max, r, r)
+    count = count_mod_mul_solutions(2 * ulp, mod, sig_min, sig_max, r, r)
     if count == 0:
         return 0, 0, 0
-    g = gcd(ulp, dec_den)              # divides r, since a solution exists
-    period = dec_den // g
-    x0 = (r // g) * pow(ulp // g, -1, period) % period
+    g = gcd(2 * ulp, mod)              # divides r, since a solution exists
+    period = mod // g
+    x0 = (r // g) * pow((2 * ulp) // g, -1, period) % period
     first = x0 + -(-(sig_min - x0) // period) * period  # first >= sig_min
     return first, period, count
 
