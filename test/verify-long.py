@@ -50,68 +50,59 @@ H is the high 128 bits of pow10 and L the next 128; the low tail beyond
 POW10_BITS is dropped. The decimal point sits between integral and fractional.
 
 pow10 is only POW10_BITS bits (256), so it, and hence the product, is rounded
-down; every bit below the kept fraction is truncated. The retained value is
+down; every bit below the kept fraction is dropped. The retained value is
 therefore slightly low, and a carry out of the discarded tail could nudge it up
-across a rounding boundary - the critical boundary conditions to check.
+across a rounding boundary creating critical boundary conditions.
 
-Shortening `integral` to the shortest decimal makes three rounding decisions,
-each a threshold test on the truncated value that the error could flip:
+Focusing on the decimal result, consider this example:
 
-1. Round to nearest, deciding the last kept digit. The tie is
-   fractional == 2**127 (exactly one half), broken to even.
-2. Trim down to a multiple of ten, when v - half_ulp reaches it. The tie is
-   v - half_ulp exactly on the multiple, broken to even.
-3. Trim up to a multiple of ten, when v + half_ulp reaches it. The tie is
-   v + half_ulp exactly on the multiple, broken to even.
+bin_prev: 0x800000000000009F * 2^23
+bin:      0x80000000000000A0 * 2^23
+bin_next: 0x80000000000000A1 * 2^23
 
-On the last-digit axis, from one multiple of ten up to the next (the two
-shorter, trimmed candidates), v sits at integral + fractional:
+ulp = 8.388608 * 10^6
+dec_prev: 77371252455336268514.983936 * 10^6
+dec:      77371252455336268523.372544 * 10^6
+dec_next: 77371252455336268531.761152 * 10^6
 
-    m*10                       v                       (m+1)*10
-    ---|----+----+---- ... ----*----+---- ... ----+----+---|---
-       0    1    2            d0   d0+1                9   10
-             v-half_ulp <----( v )----> v+half_ulp
+w = 77371252455336268523.372544, dec's coefficient before the * 10^6.
 
-    trim down if the band reaches m*10; trim up if it reaches (m+1)*10;
-    otherwise round to the nearest of d0 / d0+1 (tie at fractional == 1/2).
+            d0             d1 w  u1                            u0    next
+    ────┬────┼────┬────┬────┼─*──┼────┬────┬────┬────┬────┬────┼────┬──*─┬────
+        9    0    1    2    3    4    5    6    7    8    9    0    1    2
+          └───────────────────┬───────────────────┘
+                             1ulp
 
-where d0 = last_digit and m = integral // 10, so m*10 = integral - last_digit
-is the multiple of ten at or below integral (the trimmed significand).
+d0/d1/u1/u0 are w's rounding candidates, defined by the cases below.
 
-For example, the x87 value bin_sig = 0x934F069BF2A74DE5, bin_exp = 6:
+The 1ulp falls in [1.0, 10.0), so dec's rounding interval is dec +/- 0.5ulp:
+dec - 0.5ulp: 77371252455336268519.178240 * 10^6
+dec + 0.5ulp: 77371252455336268527.566848 * 10^6
 
-    v            = 679341447270162987328       (half_ulp = 32)
-    [v-hu, v+hu] = [679341447270162987296, 679341447270162987360]
-    nearest      = 67934144727016298733 x 10    # 20 digits (...987330)
-    shortest     = 6793414472701629873  x 100   # 19 digits (...987300)
+Rounding w to an integer involves these cases:
 
-The interval reaches the multiple of ten just below v (...987300), so trim down
-(decision 2) drops the last digit; rounding to nearest alone keeps 20 digits.
+1. Fractional part < 0.5: round down to the nearest integer d1 (as shown)
+2. Fractional part > 0.5: round up to the nearest integer u1
+3. w - 0.5ulp crosses a multiple of 10 (d0): round down to it (as shown)
+4. w + 0.5ulp crosses a multiple of 10 (u0): round up to it
 
-The exact power of two at sig_min is irregular: its lower gap is half an ulp,
-so it is handled on a separate path.
+Due to approximation errors, critical boundary conditions arise:
 
-For speed the two trim tests avoid reading the full 128-bit fraction: the last
-decimal digit (integral mod 10, 4 bits) is merged with the top 124 bits of the
-fraction into a single 128-bit integer
+1. When the fractional part equals exactly 0.5, `fractional` equals 2**127
+    with all trailing zeros. We must identify all cases where the approximation
+    approaches this threshold to prevent misrounding.
+2. When w - 0.5ulp lies exactly on a multiple of 10, special handling is
+    required.
+3. When w + 0.5ulp lies exactly on a multiple of 10, special handling is
+    required. We must ensure correct detection without false positives or
+    false negatives.
 
-    c = (last_digit << 124) | (fractional >> 4),
+For performance, the algorithm packs the last decimal digit of `integral` (top
+4 bits) with the high 124 bits of `fractional` into a single 128-bit integer
+compared against 0.5ulp. Dropping `fractional`'s low 4 bits costs a little
+precision, so the boundary conditions above need extra care.
 
-with half_ulp = (pow10 >> (shift - 123)) mod 2**128 in the same scale, so the
-two trim ties become c == half_ulp and c == ten - half_ulp (ten == 10 << 124).
-Dropping the low 4 fractional bits loses a little more precision - one more
-reason these boundaries need care.
-
-Verification runs three edge-case searches, one per rounding boundary (round to
-nearest, trim up to a multiple of ten, trim down to a multiple of ten). Each
-counts the near-boundary residues: the product residues the algorithm reads as
-a tie. For the two trim boundaries the count of these is asserted to equal
-half_ulp_solution_count, the number of significands that sit *exactly* on the
-boundary: any excess is a residue the algorithm mistakes for a tie, i.e. a
-candidate misround. floor_sum gives both counts directly, with no
-per-significand oracle.
-
-to_decimal (the Żmij algorithm) and to_decimal_exact (the Fraction reference)
+to_decimal (the Żmij port) and to_decimal_exact (the Fraction reference)
 are kept for investigating any flagged case.
 """
 
@@ -365,7 +356,7 @@ def trim_band(p: Params, c: int) -> Tuple[int, int, int]:
 
 def find_edge_case_2(p: Params, sig_min: int, sig_max: int) -> None:
     """
-    Trim up to a multiple of ten: v + half_ulp on that multiple.
+    Trim up to a multiple of 10: v + half_ulp on that multiple.
 
     Flooring pow10 (hence also half_ulp) can only lower the algorithm's c, so a
     genuine tie is expected one LSB below the true threshold ten - half_ulp, at
@@ -382,7 +373,7 @@ def find_edge_case_2(p: Params, sig_min: int, sig_max: int) -> None:
 
 
 def find_edge_case_3(p: Params, sig_min: int, sig_max: int) -> None:
-    """Trim down to a multiple of ten: v - half_ulp on that multiple."""
+    """Trim down to a multiple of 10: v - half_ulp on that multiple."""
     if p.exact:
         return
     den, lo, hi = trim_band(p, p.half_ulp)                 # c == half_ulp
