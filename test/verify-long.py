@@ -75,7 +75,8 @@ w = 77371252455336268523.372544, dec's coefficient before the * 10^6.
 
 d0/d1/u1/u0 are w's rounding candidates, defined by the cases below.
 
-The 1ulp falls in [1.0, 10.0), so dec's rounding interval is dec +/- 0.5ulp:
+1ulp falls in [1.0, 10.0), so neighbors differ only in the last digit and
+trimming targets a multiple of 10. dec's rounding interval is dec +/- 0.5ulp:
 dec - 0.5ulp: 77371252455336268519.178240 * 10^6
 dec + 0.5ulp: 77371252455336268527.566848 * 10^6
 
@@ -89,8 +90,8 @@ Rounding w to an integer involves these cases:
 Due to approximation errors, critical boundary conditions arise:
 
 1. When the fractional part equals exactly 0.5, `fractional` equals 2**127
-    with all trailing zeros. We must identify all cases where the approximation
-    approaches this threshold to prevent misrounding.
+    and the dropped tail is zero. We must identify all cases where the
+    approximation approaches this threshold to prevent misrounding.
 2. When w - 0.5ulp lies exactly on a multiple of 10, special handling is
     required.
 3. When w + 0.5ulp lies exactly on a multiple of 10, special handling is
