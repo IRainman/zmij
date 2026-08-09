@@ -102,9 +102,6 @@ For performance, the algorithm packs the last decimal digit of `integral` (top
 4 bits) with the high 124 bits of `fractional` into a single 128-bit integer
 compared against 0.5ulp. Dropping `fractional`'s low 4 bits costs a little
 precision, so the boundary conditions above need extra care.
-
-to_decimal (the Żmij port) and to_decimal_exact (the Fraction reference)
-are kept for investigating any flagged case.
 """
 
 from dataclasses import dataclass
@@ -287,7 +284,9 @@ def to_decimal_exact(bin_sig: int, bin_exp: int, fmt: Format
 #
 # One search per rounding boundary. Each counts the near-boundary residues, the
 # R = (bin_sig * pow10) mod 2**shift the algorithm reads as a tie, using
-# floor_sum via count_mod_mul_solutions.
+# floor_sum via count_mod_mul_solutions. The two trim searches assert this count
+# equals the exact tie count (half_ulp_solution_count); the round-to-nearest
+# search has no closed-form count and instead oracle-checks each candidate.
 
 
 def half_ulp_solution_count(bin_exp: int, dec_exp: int, sig_min: int,
@@ -323,12 +322,14 @@ class Params:
                       and (5 ** -self.dec_exp).bit_length() <= POW10_BITS)
 
 
-def find_edge_case_1(p: Params, sig_min: int, sig_max: int,
+def find_edge_case_1(p: Params, sig_min: int, sig_max: int, fmt: Format,
                      found: Set[Tuple[int, int]]) -> None:
     """
-    Round to nearest: report significands whose fractional part lands within
+    Round to nearest: check significands whose fractional part lands within
     one LSB of the 1/2 tie (fractional == 2**127), where the floored pow10
     could push the true value across it. Exact pow10 adds no error, so skip it.
+    Unlike the trim ties there is no closed-form count, so each candidate is
+    compared against the exact oracle and any misround is recorded in `found`.
     """
     if p.exact:
         return
@@ -340,7 +341,9 @@ def find_edge_case_1(p: Params, sig_min: int, sig_max: int,
         return
     for bin_sig, _ in enumerate_mod_mul_solutions(p.pow10, den, sig_min,
                                                   sig_max, lo, hi):
-        found.add((p.bin_exp, bin_sig))
+        if to_decimal(bin_sig, p.bin_exp, fmt) != \
+                to_decimal_exact(bin_sig, p.bin_exp, fmt):
+            found.add((p.bin_exp, bin_sig))
 
 
 def trim_band(p: Params, c: int) -> Tuple[int, int, int]:
@@ -396,18 +399,18 @@ def find_edge_cases(fmt: Format) -> None:
         if bin_exp == fmt.min_e2:
             ranges.append((1, fmt.sig_min - 1))
         for sig_min, sig_max in ranges:
-            find_edge_case_1(p, sig_min, sig_max, found)
+            find_edge_case_1(p, sig_min, sig_max, fmt, found)
             find_edge_case_2(p, sig_min, sig_max)
             find_edge_case_3(p, sig_min, sig_max)
 
     print("ok")
     if found:
-        print(f"  {len(found)} round-to-nearest near-tie candidate(s) to "
-              f"inspect:")
+        print(f"  {len(found)} round-to-nearest misround(s):")
         for bin_exp, bin_sig in sorted(found):
             print(f"    bin_sig=0x{bin_sig:X} bin_exp={bin_exp}: "
                   f"actual={to_decimal(bin_sig, bin_exp, fmt)} "
                   f"expected={to_decimal_exact(bin_sig, bin_exp, fmt)}")
+    assert not found, f"{fmt.name}: {len(found)} round-to-nearest misround(s)"
 
 
 if __name__ == "__main__":
