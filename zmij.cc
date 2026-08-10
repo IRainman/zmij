@@ -2023,7 +2023,12 @@ auto write_big(Float value, char* out, size_t n) noexcept -> size_t {
     round_up = fractional >= half;
     if (fractional == half) round_up = (uint64_t(integral) & 1) != 0;
     trim_down = c <= half_ulp;
-    if (c == half_ulp) trim_down = even;
+    if (c == half_ulp) {
+      // 124-bit tie: low 64 bits break it, to even on an exact match.
+      uint64_t ulp_lo;
+      pow10::extract(p10_sig, pow10::result_limbs, shift - 127, &ulp_lo, 1);
+      trim_down = uint64_t(fractional) < uint128_t(ulp_lo) + even;
+    }
   } else {
     round_up = fractional > half;
     uint128_t quarter_ulp = half_ulp >> 1;
