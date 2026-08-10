@@ -338,11 +338,12 @@ class Params:
 def find_edge_case_1(p: Params, sig_min: int, sig_max: int, fmt: Format,
                      found: Set[Tuple[int, int]]) -> None:
     """
-    Round to nearest: check significands whose fractional part lands within
-    one LSB of the 1/2 tie (fractional == 2**127), where the floored pow10
-    could push the true value across it. Exact pow10 adds no error, so skip it.
-    Unlike the trim ties there is no closed-form count, so each candidate is
-    compared against the exact oracle and any misround is recorded in `found`.
+    Round to nearest (boundary condition 1): check significands whose
+    fractional part lands within one LSB of the 1/2 tie (fractional == 2**127),
+    where the floored pow10 could push the true value across it. Exact pow10
+    adds no error, so skip it. Unlike the trim ties there is no closed-form
+    count, so each candidate is compared against the exact oracle and any
+    misround is recorded in `found`.
     """
     if p.exact:
         return
@@ -395,7 +396,8 @@ def assert_trim(p: Params, sig_min: int, sig_max: int, c: int, sign: int,
 
 def find_edge_case_2(p: Params, sig_min: int, sig_max: int) -> None:
     """
-    Trim up to a multiple of 10: v + half_ulp on that multiple.
+    Trim up to a multiple of 10 (boundary condition 3): v + half_ulp
+    on that multiple.
 
     Flooring pow10 (hence also half_ulp) can only lower the algorithm's c, so a
     genuine tie is expected one LSB below the true threshold ten - half_ulp, at
@@ -409,7 +411,8 @@ def find_edge_case_2(p: Params, sig_min: int, sig_max: int) -> None:
 
 
 def find_edge_case_3(p: Params, sig_min: int, sig_max: int) -> None:
-    """Trim down to a multiple of 10: v - half_ulp on that multiple."""
+    """Trim down to a multiple of 10 (boundary condition 2): v -
+    half_ulp on that multiple."""
     if p.exact:
         return
     assert_trim(p, sig_min, sig_max, p.half_ulp, -1, "trim_down")  # c==half_ulp
