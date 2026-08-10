@@ -771,7 +771,6 @@ TEST(long_double_test, to_chars_format) {
   EXPECT_EQ(std::string(small, sizeof(small)), "1.500");
 }
 
-#  if LDBL_MANT_DIG != DBL_MANT_DIG
 // Number of significant decimal digits in a shortest-formatted string.
 static int count_sig_digits(const std::string& s) {
   size_t e = s.find_first_of("eE");
@@ -791,6 +790,8 @@ static int count_sig_digits(const std::string& s) {
 // as double, so it drives write_big (shortest) rather than the double fast
 // path.
 TEST(long_double_test, write_shortest) {
+  if (LDBL_MANT_DIG == DBL_MANT_DIG)
+    GTEST_SKIP() << "long double is double; no extended path";
   auto check = [](long double value) {
     char buf[zmij::long_double_buffer_size + 1];
     memset(buf, '?', sizeof(buf));
@@ -858,7 +859,6 @@ TEST(long_double_test, write_shortest) {
     check(-misround);
   }
 }
-#  endif  // LDBL_MANT_DIG != DBL_MANT_DIG
 
 TEST(float_test, write_general) {
   EXPECT_EQ(to_general(1.5f, 6), "1.5");
