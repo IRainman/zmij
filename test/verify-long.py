@@ -319,20 +319,6 @@ def exact_tie_progression(bin_exp: int, dec_exp: int, sig_min: int,
     return first, period, (sig_max - first) // period + 1
 
 
-def intersection_count(p: "Params", den: int, lo: int, hi: int,
-                       first: int, period: int, count: int) -> int:
-    """
-    Of the `count` exact-tie significands first, first + period, ..., how many
-    also land in the trim band [lo, hi] (mod den)? Counted along the
-    progression with count_mod_mul_solutions' affine `add`, so it stays O(log)
-    even when there are astronomically many ties.
-    """
-    if count == 0:
-        return 0
-    return count_mod_mul_solutions(p.pow10 * period, den, 0, count - 1, lo, hi,
-                                   add=p.pow10 * first)
-
-
 class Params:
     """Per-exponent constants of the regular path, mirroring to_decimal."""
 
@@ -397,7 +383,11 @@ def assert_trim(p: Params, sig_min: int, sig_max: int, c: int, sign: int,
     approx = count_mod_mul_solutions(p.pow10, den, sig_min, sig_max, lo, hi)
     first, period, exact = exact_tie_progression(p.bin_exp, p.dec_exp,
                                                  sig_min, sig_max, sign)
-    both = intersection_count(p, den, lo, hi, first, period, exact)
+    # Ties along first, first + period, ... that also fall in the trim band,
+    # walked with count_mod_mul_solutions' affine `add` so it stays O(log) even
+    # when there are astronomically many ties.
+    both = 0 if exact == 0 else count_mod_mul_solutions(
+        p.pow10 * period, den, 0, exact - 1, lo, hi, add=p.pow10 * first)
     assert approx == exact == both, \
         f"{label} bin_exp={p.bin_exp} dec_exp={p.dec_exp} " \
         f"approx={approx} exact={exact} both={both}"
