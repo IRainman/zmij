@@ -109,7 +109,7 @@ from fractions import Fraction
 from typing import Set, Tuple
 
 from verify import (count_mod_mul_solutions, enumerate_mod_mul_solutions,
-                    floor_sum, pow10_hi)
+                    pow10_hi)
 
 # Bits kept in each floored power-of-ten constant. The verifier needs a bit
 # over digits + 128 (the tie-comparison window) so the near-boundary residues
@@ -293,27 +293,6 @@ def to_decimal_exact(bin_sig: int, bin_exp: int, fmt: Format
 # each candidate.
 
 
-def count_mod_affine_solutions(num: int, add: int, mod: int,
-                               x_min: int, x_max: int,
-                               y_min: int, y_max: int) -> int:
-    """
-    Count the x in [x_min, x_max] for which (num * x + add) % mod lies in
-    [y_min, y_max]. Generalizes count_mod_mul_solutions with an additive
-    constant, so a shifted arithmetic progression is counted in one floor_sum
-    pass; count_mod_mul_solutions is the add == 0 case.
-    """
-    assert num > 0 and mod > 0
-    assert 0 <= x_min <= x_max
-    assert 0 <= y_min <= y_max
-    n = x_max - x_min + 1
-    b = num * x_min + add
-    hi = min(y_max, mod - 1)
-    if y_min > hi:
-        return 0
-    return (floor_sum(n, mod, num, b - y_min)
-            - floor_sum(n, mod, num, b - hi - 1))
-
-
 def exact_tie_progression(bin_exp: int, dec_exp: int, sig_min: int,
                           sig_max: int, sign: int) -> Tuple[int, int, int]:
     """
@@ -345,13 +324,13 @@ def intersection_count(p: "Params", den: int, lo: int, hi: int,
     """
     Of the `count` exact-tie significands first, first + period, ..., how many
     also land in the trim band [lo, hi] (mod den)? Counted along the
-    progression with count_mod_affine_solutions, so it stays O(log) even when
-    there are astronomically many ties.
+    progression with count_mod_mul_solutions' affine `add`, so it stays O(log)
+    even when there are astronomically many ties.
     """
     if count == 0:
         return 0
-    return count_mod_affine_solutions(p.pow10 * period, p.pow10 * first,
-                                      den, 0, count - 1, lo, hi)
+    return count_mod_mul_solutions(p.pow10 * period, den, 0, count - 1, lo, hi,
+                                   add=p.pow10 * first)
 
 
 class Params:
