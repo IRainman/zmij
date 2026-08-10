@@ -417,6 +417,9 @@ def find_edge_case_3(p: Params, sig_min: int, sig_max: int) -> None:
 
 def find_edge_cases(fmt: Format) -> None:
     """Run the three edge-case searches over every binary exponent."""
+    if not __debug__:
+        raise RuntimeError("run this verifier without -O; the trim-tie set "
+                           "equality checks rely on proof-critical assertions")
     print(f"{fmt.name} edge-case sweep ... ", end="", flush=True)
     found: Set[Tuple[int, int]] = set()
     for bin_exp in range(fmt.bin_exp_min, fmt.bin_exp_max + 1):
