@@ -131,8 +131,8 @@ class Format:
         exp_offset = (1 << (self.exp_bits - 1)) - 1 + sig_bits
         self.sig_min = 1 << sig_bits              # smallest normal significand
         self.sig_max = (1 << self.digits) - 1
-        self.min_e2 = 1 - exp_offset              # min unbiased exponent
-        self.max_e2 = (1 << self.exp_bits) - 2 - exp_offset
+        self.bin_exp_min = 1 - exp_offset         # min unbiased exponent
+        self.bin_exp_max = (1 << self.exp_bits) - 2 - exp_offset
 
 
 BINARY80 = Format("x87 80-bit", digits=64, exp_bits=15)
@@ -239,7 +239,7 @@ def to_decimal_exact(bin_sig: int, bin_exp: int, fmt: Format
         succ = Fraction(bin_sig + 1) * two ** bin_exp
     else:
         succ = Fraction(fmt.sig_min) * two ** (bin_exp + 1)
-    if bin_sig == fmt.sig_min and bin_exp > fmt.min_e2:
+    if bin_sig == fmt.sig_min and bin_exp > fmt.bin_exp_min:
         pred = Fraction(fmt.sig_max) * two ** (bin_exp - 1)
     else:
         pred = Fraction(bin_sig - 1) * two ** bin_exp
@@ -419,12 +419,12 @@ def find_edge_cases(fmt: Format) -> None:
     """Run the three edge-case searches over every binary exponent."""
     print(f"{fmt.name} edge-case sweep ... ", end="", flush=True)
     found: Set[Tuple[int, int]] = set()
-    for bin_exp in range(fmt.min_e2, fmt.max_e2 + 1):
+    for bin_exp in range(fmt.bin_exp_min, fmt.bin_exp_max + 1):
         p = Params(bin_exp)
         # Regular significands (the power of two at sig_min is irregular and
-        # not covered here); subnormals share min_e2 and use the regular path.
+        # not covered here); subnormals share bin_exp_min, use the regular path.
         ranges = [(fmt.sig_min + 1, fmt.sig_max)]
-        if bin_exp == fmt.min_e2:
+        if bin_exp == fmt.bin_exp_min:
             ranges.append((1, fmt.sig_min - 1))
         for sig_min, sig_max in ranges:
             find_edge_case_1(p, sig_min, sig_max, fmt, found)
