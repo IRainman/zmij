@@ -312,7 +312,7 @@ def exact_tie_progression(bin_exp: int, dec_exp: int, sig_min: int,
         return 0, 0, 0
     period = 5 ** max(dec_exp + 1, 0)  # 5-adic part of grid, 1 if dec_exp < 0
     # 2 is invertible mod the odd period, with inverse (period + 1) // 2.
-    x0 = 0 if period == 1 else (-sign * ((period + 1) // 2)) % period
+    x0 = (-sign * ((period + 1) // 2)) % period
     first = x0 + -(-(sig_min - x0) // period) * period  # first >= sig_min
     if first > sig_max:
         return 0, 0, 0
