@@ -395,9 +395,17 @@ def assert_trim(p: Params, sig_min: int, sig_max: int, c: int, sign: int,
 
 
 def find_edge_case_2(p: Params, sig_min: int, sig_max: int) -> None:
+    """Trim down to a multiple of 10 (boundary condition 2): v - half_ulp on
+    that multiple."""
+    if p.exact:
+        return
+    assert_trim(p, sig_min, sig_max, p.half_ulp, -1, "trim_down")  # c==half_ulp
+
+
+def find_edge_case_3(p: Params, sig_min: int, sig_max: int) -> None:
     """
-    Trim up to a multiple of 10 (boundary condition 3): v + half_ulp
-    on that multiple.
+    Trim up to a multiple of 10 (boundary condition 3): v + half_ulp on that
+    multiple.
 
     Flooring pow10 (hence also half_ulp) can only lower the algorithm's c, so a
     genuine tie is expected one LSB below the true threshold ten - half_ulp, at
@@ -408,14 +416,6 @@ def find_edge_case_2(p: Params, sig_min: int, sig_max: int) -> None:
         return
     assert_trim(p, sig_min, sig_max, (10 << 124) - p.half_ulp - 1, +1,
                 "trim_up")
-
-
-def find_edge_case_3(p: Params, sig_min: int, sig_max: int) -> None:
-    """Trim down to a multiple of 10 (boundary condition 2): v -
-    half_ulp on that multiple."""
-    if p.exact:
-        return
-    assert_trim(p, sig_min, sig_max, p.half_ulp, -1, "trim_down")  # c==half_ulp
 
 
 def find_edge_cases(fmt: Format) -> None:
