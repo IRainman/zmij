@@ -717,14 +717,14 @@ TEST(long_double_test, to_chars) {
         << "value=" << double(value);
   }
 
-#  if LDBL_MANT_DIG != DBL_MANT_DIG
-  // An extended value drives write_big (shortest) rather than the double path.
-  long double extended = 1.0L + 0x1p-63L;
-  auto r = zmij::to_chars(buf, buf + sizeof(buf), extended);
-  char* end = zmij::write(ref, sizeof(ref), extended);
-  EXPECT_EQ(r.ec, std::errc());
-  EXPECT_EQ(std::string(buf, r.ptr), std::string(ref, end));
-#  endif
+  if (LDBL_MANT_DIG != DBL_MANT_DIG) {
+    // An extended value drives write_big (shortest) not the double path.
+    long double extended = 1.0L + 0x1p-63L;
+    auto r = zmij::to_chars(buf, buf + sizeof(buf), extended);
+    char* end = zmij::write(ref, sizeof(ref), extended);
+    EXPECT_EQ(r.ec, std::errc());
+    EXPECT_EQ(std::string(buf, r.ptr), std::string(ref, end));
+  }
 
   // Too small: truncated output, ptr == last, value_too_large.
   char small[3] = {'?', '?', '?'};
@@ -844,6 +844,18 @@ TEST(long_double_test, write_shortest) {
     long double value = std::ldexp(sig, exp - 128);
     if (value == 0 || std::isinf(value)) continue;
     check((next() & 1) ? value : -value);
+  }
+
+  // Regression (binary128): for this value v - half_ulp lands one nibble past
+  // the trim boundary, yet the packed 124-bit comparison read c == half_ulp as
+  // a tie and trimmed to even, dropping the last digit. The refined tie-break
+  // keeps it. bin_sig = 0x00012caaef34c608080750fd906c8100, exponent -2266.
+  if (LDBL_MANT_DIG == 113) {
+    long double misround = long_double(0x00012caaef34c608ull) * 0x1p64L +
+                           long_double(0x080750fd906c8100ull);
+    misround = std::ldexp(misround, -2266);
+    check(misround);
+    check(-misround);
   }
 }
 #  endif  // LDBL_MANT_DIG != DBL_MANT_DIG
