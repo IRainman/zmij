@@ -189,7 +189,7 @@ def to_decimal(bin_sig: int, bin_exp: int, fmt: Format) -> Tuple[int, int]:
             # bits (pow10 one nibble finer) refine it, to even on an exact match.
             frac_lo = fractional & ((1 << 64) - 1)
             ulp_lo = (pow10 >> (shift - 127)) & ((1 << 64) - 1)
-            trim_down = frac_lo < ulp_lo + even
+            trim_down = even if frac_lo == ulp_lo else frac_lo < ulp_lo
     else:
         round_up = fractional > half
         quarter_ulp = half_ulp >> 1
