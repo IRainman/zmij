@@ -106,7 +106,6 @@ precision, so the boundary conditions above need extra care.
 
 from dataclasses import dataclass
 from fractions import Fraction
-from math import gcd
 from typing import Set, Tuple
 
 from verify import (count_mod_mul_solutions, enumerate_mod_mul_solutions,
@@ -321,31 +320,24 @@ def exact_tie_progression(bin_exp: int, dec_exp: int, sig_min: int,
     Significands in [sig_min, sig_max] whose boundary v + sign * half_ulp lands
     exactly on a multiple of 10**(dec_exp + 1), the grid a trim rounds to.
 
-    The exact boundary is the linear congruence ulp * sig == -sign * half_ulp
-    (mod 10**(dec_exp + 1)); doubled to keep half_ulp integral (it is ulp / 2,
-    non-integral when bin_exp == 0) it reads (2 * ulp) * sig == -sign * ulp
-    (mod 2 * 10**(dec_exp + 1)). Its solutions form a single residue class
-    sig == first (mod period). Return (first, period, count) with `first` the
-    smallest solution >= sig_min. Empty (0, 0, 0) only for dec_exp < 0: there
-    bin_exp < 0, so v is a dyadic fraction (denominator a power of two) that
-    can never land on the grid; dec_exp == 0 (bin_exp >= 0) can have ties.
+    The boundary is 2**(bin_exp - 1) * (2 * sig + sign) (v = sig * 2**bin_exp,
+    half_ulp = 2**(bin_exp - 1)). 2 * sig + sign is odd, so it holds no factors
+    of two, and landing on a multiple of 10**(dec_exp + 1) = 2**(dec_exp + 1) *
+    5**(dec_exp + 1) first needs bin_exp >= dec_exp + 2 to supply the twos. The
+    surviving power of two is then a unit mod 5**(dec_exp + 1), so the condition
+    reduces to 2 * sig + sign == 0 (mod 5**(dec_exp + 1)): one residue class
+    sig == first (mod period), period = 5**(dec_exp + 1). Return (first, period,
+    count) with `first` the smallest solution >= sig_min, or (0, 0, 0) if none.
     """
-    if dec_exp < 0:
+    if bin_exp < dec_exp + 2:          # boundary lacks the twos to hit the grid
         return 0, 0, 0
-    ulp = 1 << bin_exp                 # bin_exp >= 0 whenever dec_exp >= 0
-    mod = 2 * 10 ** (dec_exp + 1)      # doubled: half_ulp stays integral
-    r = (-sign * ulp) % mod            # 2v + sign * ulp on a multiple
-    # Count with floor_sum first; solving the congruence for the residue class
-    # needs a modular inverse mod the huge dec_den, so only do it when a tie
-    # actually exists (rare) rather than at every exponent.
-    count = count_mod_mul_solutions(2 * ulp, mod, sig_min, sig_max, r, r)
-    if count == 0:
-        return 0, 0, 0
-    g = gcd(2 * ulp, mod)              # divides r, since a solution exists
-    period = mod // g
-    x0 = (r // g) * pow((2 * ulp) // g, -1, period) % period
+    period = 5 ** max(dec_exp + 1, 0)  # 5-adic part of grid, 1 if dec_exp < 0
+    # 2 is invertible mod the odd period, with inverse (period + 1) // 2.
+    x0 = 0 if period == 1 else (-sign * ((period + 1) // 2)) % period
     first = x0 + -(-(sig_min - x0) // period) * period  # first >= sig_min
-    return first, period, count
+    if first > sig_max:
+        return 0, 0, 0
+    return first, period, (sig_max - first) // period + 1
 
 
 def intersection_count(p: "Params", den: int, lo: int, hi: int,
