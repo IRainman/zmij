@@ -72,6 +72,11 @@ auto write_general(Float value, int precision, char* buffer) noexcept -> char*;
 template <typename Float>
 auto write_fixed(Float value, int precision, char* buffer) noexcept -> char*;
 
+// Writes `value` in hexadecimal floating-point notation (like printf's %a) in
+// its shortest form, e.g. -0x1.8p+1.
+template <typename Float>
+auto write_hex(Float value, char* buffer) noexcept -> char*;
+
 }  // namespace detail
 
 enum {

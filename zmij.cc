@@ -2274,6 +2274,51 @@ auto write_fixed(Float value, int precision, char* buffer) noexcept -> char* {
   return buffer + total + 1;
 }
 
+template <typename Float>
+auto write_hex(Float value, char* buffer) noexcept -> char* {
+  using traits = float_traits<Float>;
+  auto bits = traits::to_bits(value);
+  auto bin_exp = int(traits::get_exp(bits));
+  auto bin_sig = traits::get_sig(bits);
+
+  *buffer = '-';
+  buffer += traits::is_negative(bits);
+
+  bool is_normal = unsigned(bin_exp - 1) < unsigned(traits::exp_mask - 1);
+  if (!is_normal) [[ZMIJ_UNLIKELY]] {
+    if (bin_exp != 0) return write_inf_nan(buffer, bin_sig != 0);
+    // Subnormal shares the smallest normal exponent; zero cancels to 0 below.
+    bin_exp = bin_sig != 0 ? 1 : traits::exp_bias;
+  }
+  bin_exp -= traits::exp_bias;
+
+  *buffer++ = '0';
+  *buffer++ = 'x';
+  *buffer++ = char('0' + is_normal);
+
+  constexpr int width = int(sizeof(bin_sig)) * 8;
+  bin_sig = bin_sig << (width - traits::num_sig_bits);
+  if (bin_sig != 0) {
+    *buffer++ = '.';
+    do {
+      *buffer++ = "0123456789abcdef"[uint64_t(bin_sig >> (width - 4))];
+      bin_sig = bin_sig << 4;
+    } while (bin_sig != 0);
+  }
+
+  *buffer++ = 'p';
+  *buffer++ = bin_exp < 0 ? '-' : '+';
+  unsigned exp = bin_exp < 0 ? unsigned(-bin_exp) : unsigned(bin_exp);
+  char tmp[8];
+  char* t = tmp;
+  do {
+    *t++ = char('0' + exp % 10);
+    exp /= 10;
+  } while (exp != 0);
+  while (t != tmp) *buffer++ = *--t;
+  return buffer;
+}
+
 template auto write(float value, char* buffer) noexcept -> char*;
 template auto write(double value, char* buffer) noexcept -> char*;
 
@@ -2304,6 +2349,11 @@ template auto write_fixed(float value, int precision, char* buffer) noexcept
     -> char*;
 template auto write_fixed(double value, int precision, char* buffer) noexcept
     -> char*;
+
+template auto write_hex(double value, char* buffer) noexcept -> char*;
+#if LDBL_MANT_DIG != DBL_MANT_DIG
+template auto write_hex(long double value, char* buffer) noexcept -> char*;
+#endif
 
 }  // namespace detail
 }  // namespace zmij
