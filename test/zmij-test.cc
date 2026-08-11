@@ -954,16 +954,17 @@ TEST(double_test, write_hex_no_buffer) {
   EXPECT_EQ(std::string(buf, end), "-0x1");
 }
 
-// Use double-exact, normal values so the expected %La output is identical
-// whether long double is x87 80-bit, IEEE binary128, or plain double.
+// Double-exact values so the expected output is the same whether long double
+// is x87 80-bit, IEEE binary128, or plain double. This is not compared against
+// snprintf's %La: glibc's 80-bit %La uses a non-leading-1 form (e.g. "0xcp-3"
+// for 1.5), whereas write_hex always normalizes to a leading 0x1.
 TEST(long_double_test, write_hex) {
-  char buf[64], ref[64];
-  for (long double value : {1.5, -2.0, 0.5, 0.0, 1024.0, 3.25}) {
-    char* end = zmij::write_hex(buf, sizeof(buf), value);
-    snprintf(ref, sizeof(ref), "%La", value);
-    EXPECT_EQ(std::string(buf, end), std::string(ref))
-        << "value=" << double(value);
-  }
+  EXPECT_EQ(to_hex(1.5L), "0x1.8p+0");
+  EXPECT_EQ(to_hex(-2.0L), "-0x1p+1");
+  EXPECT_EQ(to_hex(0.5L), "0x1p-1");
+  EXPECT_EQ(to_hex(0.0L), "0x0p+0");
+  EXPECT_EQ(to_hex(1024.0L), "0x1p+10");
+  EXPECT_EQ(to_hex(3.25L), "0x1.ap+1");
 }
 
 #endif  // !ZMIJ_C
