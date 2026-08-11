@@ -2275,7 +2275,7 @@ auto write_fixed(Float value, int precision, char* buffer) noexcept -> char* {
 }
 
 template <typename Float>
-auto write_hex(Float value, char* buffer) noexcept -> char* {
+auto write_hex(Float value, char* buffer, bool prefix) noexcept -> char* {
   using traits = float_traits<Float>;
   auto bits = traits::to_bits(value);
   auto bin_exp = traits::get_exp(bits);
@@ -2297,8 +2297,10 @@ auto write_hex(Float value, char* buffer) noexcept -> char* {
   }
   bin_exp -= traits::exp_bias;
 
-  *buffer++ = '0';
-  *buffer++ = 'x';
+  if (prefix) {  // printf's %a uses a 0x prefix; std::to_chars omits it.
+    *buffer++ = '0';
+    *buffer++ = 'x';
+  }
   *buffer++ = char('0' + is_normal);
 
   constexpr int width = int(sizeof(bin_sig)) * 8;
@@ -2355,9 +2357,11 @@ template auto write_fixed(float value, int precision, char* buffer) noexcept
 template auto write_fixed(double value, int precision, char* buffer) noexcept
     -> char*;
 
-template auto write_hex(double value, char* buffer) noexcept -> char*;
+template auto write_hex(double value, char* buffer, bool prefix) noexcept
+    -> char*;
 #if LDBL_MANT_DIG != DBL_MANT_DIG
-template auto write_hex(long double value, char* buffer) noexcept -> char*;
+template auto write_hex(long double value, char* buffer, bool prefix) noexcept
+    -> char*;
 #endif
 
 }  // namespace detail

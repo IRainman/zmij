@@ -13,12 +13,13 @@
 
 namespace zmij {
 
-// Floating-point formatting style. Values match std::chars_format (hex is
-// unsupported), so general == fixed | scientific.
+// Floating-point formatting style. Values match std::chars_format, so
+// general == fixed | scientific.
 enum class format {
   scientific = 1,
   fixed = 2,
   general = 3,
+  hex = 4,
 };
 
 namespace detail {
@@ -73,9 +74,10 @@ template <typename Float>
 auto write_fixed(Float value, int precision, char* buffer) noexcept -> char*;
 
 // Writes `value` in hexadecimal floating-point notation (like printf's %a) in
-// its shortest form, e.g. -0x1.8p+1.
+// its shortest form, e.g. -0x1.8p+1. If `prefix` is false the leading "0x" is
+// omitted (e.g. -1.8p+1), matching std::to_chars.
 template <typename Float>
-auto write_hex(Float value, char* buffer) noexcept -> char*;
+auto write_hex(Float value, char* buffer, bool prefix = true) noexcept -> char*;
 
 }  // namespace detail
 
