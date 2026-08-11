@@ -914,6 +914,58 @@ TEST(double_test, write_general_irregular) {
   }
 }
 
+template <typename Float> static auto to_hex(Float value) -> std::string {
+  char buffer[zmij::buffer_sizes<Float>::hex];
+  return {buffer, zmij::write_hex(buffer, sizeof(buffer), value)};
+}
+
+TEST(float_test, write_hex) {
+  EXPECT_EQ(to_hex(1.0f), "0x1p+0");
+  EXPECT_EQ(to_hex(-3.5f), "-0x1.cp+1");
+  EXPECT_EQ(to_hex(0.1f), "0x1.99999ap-4");
+  EXPECT_EQ(to_hex(0.0f), "0x0p+0");
+  EXPECT_EQ(to_hex(-0.0f), "-0x0p+0");
+  EXPECT_EQ(to_hex(std::numeric_limits<float>::infinity()), "inf");
+  EXPECT_EQ(to_hex(std::numeric_limits<float>::quiet_NaN()), "nan");
+}
+
+TEST(double_test, write_hex) {
+  EXPECT_EQ(to_hex(1.0), "0x1p+0");
+  EXPECT_EQ(to_hex(2.0), "0x1p+1");
+  EXPECT_EQ(to_hex(0.5), "0x1p-1");
+  EXPECT_EQ(to_hex(-1.5), "-0x1.8p+0");
+  EXPECT_EQ(to_hex(0.0), "0x0p+0");
+  EXPECT_EQ(to_hex(-0.0), "-0x0p+0");
+  // Shortest form: trailing zero nibbles are dropped.
+  EXPECT_EQ(to_hex(3.14159265358979), "0x1.921fb54442d11p+1");
+  // Subnormals are normalized to a leading 0x1, matching printf's %a.
+  EXPECT_EQ(to_hex(std::numeric_limits<double>::denorm_min()), "0x1p-1074");
+  EXPECT_EQ(to_hex(std::numeric_limits<double>::min() -
+                   std::numeric_limits<double>::denorm_min()),
+            "0x1.ffffffffffffep-1023");
+  EXPECT_EQ(to_hex(std::numeric_limits<double>::infinity()), "inf");
+  EXPECT_EQ(to_hex(std::numeric_limits<double>::quiet_NaN()), "nan");
+}
+
+TEST(double_test, write_hex_no_buffer) {
+  // "-0x1.8p+0" truncated to the first 4 chars, end points past them.
+  char buf[4];
+  char* end = zmij::write_hex(buf, sizeof(buf), -1.5);
+  EXPECT_EQ(std::string(buf, end), "-0x1");
+}
+
+// Use double-exact, normal values so the expected %La output is identical
+// whether long double is x87 80-bit, IEEE binary128, or plain double.
+TEST(long_double_test, write_hex) {
+  char buf[64], ref[64];
+  for (long double value : {1.5, -2.0, 0.5, 0.0, 1024.0, 3.25}) {
+    char* end = zmij::write_hex(buf, sizeof(buf), value);
+    snprintf(ref, sizeof(ref), "%La", value);
+    EXPECT_EQ(std::string(buf, end), std::string(ref))
+        << "value=" << double(value);
+  }
+}
+
 #endif  // !ZMIJ_C
 
 auto main(int argc, char** argv) -> int {

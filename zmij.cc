@@ -2278,7 +2278,7 @@ template <typename Float>
 auto write_hex(Float value, char* buffer) noexcept -> char* {
   using traits = float_traits<Float>;
   auto bits = traits::to_bits(value);
-  auto bin_exp = int(traits::get_exp(bits));
+  auto bin_exp = traits::get_exp(bits);
   auto bin_sig = traits::get_sig(bits);
 
   *buffer = '-';
@@ -2287,8 +2287,13 @@ auto write_hex(Float value, char* buffer) noexcept -> char* {
   bool is_normal = unsigned(bin_exp - 1) < unsigned(traits::exp_mask - 1);
   if (!is_normal) [[ZMIJ_UNLIKELY]] {
     if (bin_exp != 0) return write_inf_nan(buffer, bin_sig != 0);
-    // Subnormal shares the smallest normal exponent; zero cancels to 0 below.
-    bin_exp = bin_sig != 0 ? 1 : traits::exp_bias;
+    if (bin_sig == 0) {  // zero: leading 0, exponent cancels to 0 below
+      bin_exp = traits::exp_bias;
+    } else {  // subnormal: normalize to a leading 1, matching printf's %a
+      normalize<Float>(bin_sig, bin_exp);
+      bin_sig = bin_sig ^ traits::implicit_bit;
+      is_normal = true;
+    }
   }
   bin_exp -= traits::exp_bias;
 
