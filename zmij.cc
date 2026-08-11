@@ -558,6 +558,10 @@ template <typename Float> struct float_traits : std::numeric_limits<Float> {
   static auto get_exp(sig_type bits) noexcept -> int64_t {
     return int64_t(uint64_t(bits >> exp_shift) & unsigned(exp_mask));
   }
+  static auto is_normal(int64_t bin_exp) noexcept -> bool {
+    // Fold subnormal/zero (exp 0) and inf/nan (exp exp_mask) into one check.
+    return unsigned(bin_exp - 1) < unsigned(exp_mask - 1);
+  }
 };
 
 template <typename Float>
@@ -1865,8 +1869,7 @@ auto write(Float value, char* buffer) noexcept -> char* {
   uint64_t threshold = traits::num_bits == 64 ? d->threshold : uint64_t(1e7);
 
   shortest_decimal dec;
-  bool is_normal = unsigned(bin_exp - 1) < unsigned(traits::exp_mask - 1);
-  if (!is_normal) [[ZMIJ_UNLIKELY]] {
+  if (!traits::is_normal(bin_exp)) [[ZMIJ_UNLIKELY]] {
     if (bin_exp != 0) return write_inf_nan(buffer, bin_sig != 0);
     if (bin_sig == 0) {
       *buffer = '0';
@@ -1968,8 +1971,7 @@ auto write_big(Float value, char* out, size_t n) noexcept -> size_t {
   writer w = {out, out + n, 0};
   if (traits::is_negative(bits)) w.write('-');
 
-  bool is_normal = unsigned(raw_exp - 1) < unsigned(traits::exp_mask - 1);
-  if (!is_normal) [[ZMIJ_UNLIKELY]] {
+  if (!traits::is_normal(raw_exp)) [[ZMIJ_UNLIKELY]] {
     if (raw_exp != 0) return w.write(bin_sig != 0 ? "nan" : "inf", 3);
     if (bin_sig == 0) return w.write('0');
     raw_exp = 1;
@@ -2075,8 +2077,7 @@ auto write_big(Float value, int precision, char* out, size_t n,
   writer w = {out, out + n, 0};
   if (traits::is_negative(bits)) w.write('-');
 
-  bool is_normal = unsigned(bin_exp - 1) < unsigned(traits::exp_mask - 1);
-  if (!is_normal) [[ZMIJ_UNLIKELY]] {
+  if (!traits::is_normal(bin_exp)) [[ZMIJ_UNLIKELY]] {
     if (bin_exp != 0)  // inf or nan
       return w.write(bin_sig != 0 ? "nan" : "inf", 3);
     if (bin_sig != 0) normalize<Float>(bin_sig, bin_exp);
@@ -2116,8 +2117,7 @@ auto write_scientific(Float value, int precision, char* buffer) noexcept
   *buffer = '-';
   buffer += traits::is_negative(bits);
 
-  bool is_normal = unsigned(bin_exp - 1) < unsigned(traits::exp_mask - 1);
-  if (!is_normal) [[ZMIJ_UNLIKELY]] {
+  if (!traits::is_normal(bin_exp)) [[ZMIJ_UNLIKELY]] {
     if (bin_exp != 0) return write_inf_nan(buffer, bin_sig != 0);
     if (bin_sig == 0) {  // zero, e.g. 0.000e+00
       memset(buffer, '0', precision + 1);
@@ -2145,8 +2145,7 @@ auto write_general(Float value, int precision, char* buffer) noexcept -> char* {
   *buffer = '-';
   buffer += traits::is_negative(bits);
 
-  bool is_normal = unsigned(bin_exp - 1) < unsigned(traits::exp_mask - 1);
-  if (!is_normal) [[ZMIJ_UNLIKELY]] {
+  if (!traits::is_normal(bin_exp)) [[ZMIJ_UNLIKELY]] {
     if (bin_exp != 0) return write_inf_nan(buffer, bin_sig != 0);
     if (bin_sig == 0) {  // zero
       *buffer = '0';
@@ -2198,8 +2197,7 @@ auto write_fixed(Float value, int precision, char* buffer) noexcept -> char* {
   *buffer = '-';
   buffer += traits::is_negative(bits);
 
-  bool is_normal = unsigned(bin_exp - 1) < unsigned(traits::exp_mask - 1);
-  if (!is_normal) [[ZMIJ_UNLIKELY]] {
+  if (!traits::is_normal(bin_exp)) [[ZMIJ_UNLIKELY]] {
     if (bin_exp != 0) return write_inf_nan(buffer, bin_sig != 0);
     if (bin_sig == 0) return write_zero(buffer, precision);  // e.g. 0.000
     normalize<Float>(bin_sig, bin_exp);
@@ -2284,7 +2282,7 @@ auto write_hex(Float value, char* buffer, bool prefix) noexcept -> char* {
   *buffer = '-';
   buffer += traits::is_negative(bits);
 
-  bool is_normal = unsigned(bin_exp - 1) < unsigned(traits::exp_mask - 1);
+  bool is_normal = traits::is_normal(bin_exp);
   if (!is_normal) [[ZMIJ_UNLIKELY]] {
     if (bin_exp != 0) return write_inf_nan(buffer, bin_sig != 0);
     if (bin_sig == 0) {  // zero: leading 0, exponent cancels to 0 below
