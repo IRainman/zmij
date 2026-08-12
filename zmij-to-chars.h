@@ -124,6 +124,35 @@ inline auto to_chars(char* first, char* last, long double value)
 #endif
 }
 
+/// Writes the shortest representation of `value` in the given `fmt` to
+/// [`first`, `last`), like std::to_chars with a format but no precision.
+///
+/// Only `hex` is currently implemented (shortest form, no 0x prefix); the
+/// decimal formats return {first, std::errc::not_supported}.
+///
+/// Returns:
+/// - {ptr, std::errc()} on success, with ptr past the last character written;
+/// - {last, std::errc::value_too_large} if the output does not fit, after
+///   writing a truncated result to [`first`, `last`).
+inline auto to_chars(char* first, char* last, float value, chars_format fmt)
+    -> to_chars_result {
+  if (fmt == chars_format::hex)
+    return detail::to_chars_hex(first, last, double(value), /*precision=*/-1);
+  return {first, std::errc::not_supported};
+}
+inline auto to_chars(char* first, char* last, double value, chars_format fmt)
+    -> to_chars_result {
+  if (fmt == chars_format::hex)
+    return detail::to_chars_hex(first, last, value, /*precision=*/-1);
+  return {first, std::errc::not_supported};
+}
+inline auto to_chars(char* first, char* last, long double value,
+                     chars_format fmt) -> to_chars_result {
+  if (fmt == chars_format::hex)
+    return detail::to_chars_hex(first, last, value, /*precision=*/-1);
+  return {first, std::errc::not_supported};
+}
+
 /// Writes `value` to [`first`, `last`) in the given `fmt` with `precision`
 /// digits, like std::to_chars with a format and precision. `precision` counts
 /// fractional digits for `fixed` and `scientific` and significant digits for
@@ -177,7 +206,7 @@ inline auto to_chars(char* first, char* last, long double value,
     precision = 1;
   size_t cap = size_t(last - first);
   size_t size = detail::write_big(value, precision, first, cap, fmt);
-  if (size == 0) return {last, std::errc::not_enough_memory};
+  if (size == 0) return {first, std::errc::not_enough_memory};
   if (size > cap) return {last, std::errc::value_too_large};
   return {first + size, {}};
 }

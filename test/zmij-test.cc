@@ -418,6 +418,17 @@ TEST(double_test, to_chars_format) {
                 -std::numeric_limits<double>::quiet_NaN()),
             "-nan");
 
+  // Format without precision: `hex` gives the shortest form, other formats are
+  // not yet supported.
+  auto r = zmij::to_chars(buffer, buffer + sizeof(buffer), 1.5,
+                          zmij::chars_format::hex);
+  EXPECT_EQ(r.ec, std::errc());
+  EXPECT_EQ(std::string(buffer, r.ptr), "1.8p+0");
+  r = zmij::to_chars(buffer, buffer + sizeof(buffer), 1.5,
+                     zmij::chars_format::scientific);
+  EXPECT_EQ(r.ec, std::errc::not_supported);
+  EXPECT_EQ(r.ptr, buffer);  // nothing written
+
   // Output too small: truncated result, ptr == last, value_too_large.
   char small[8];
   memset(small, '?', sizeof(small));
