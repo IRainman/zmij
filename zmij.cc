@@ -2285,16 +2285,13 @@ auto write_hex(Float value, char* buffer, bool prefix) noexcept -> char* {
   bool is_normal = traits::is_normal(bin_exp);
   if (!is_normal) [[ZMIJ_UNLIKELY]] {
     if (bin_exp != 0) return write_inf_nan(buffer, bin_sig != 0);
-    if (bin_sig == 0) {  // zero: leading 0, exponent cancels to 0 below
-      bin_exp = traits::exp_bias;
-    } else {  // subnormal: normalize to a leading 1, matching printf's %a
-      normalize<Float>(bin_sig, bin_exp);
-      is_normal = true;
-    }
+    if (bin_sig == 0) bin_exp = traits::exp_bias;  // This cancels to 0 below.
+    else normalize<Float>(bin_sig, bin_exp);
+    is_normal = bin_sig != 0;
   }
   bin_exp -= traits::exp_bias;
 
-  if (prefix) {  // printf's %a uses a 0x prefix; std::to_chars omits it.
+  if (prefix) {
     *buffer++ = '0';
     *buffer++ = 'x';
   }
@@ -2338,12 +2335,9 @@ auto write_hex(Float value, int precision, char* out, size_t n,
   bool is_normal = traits::is_normal(bin_exp);
   if (!is_normal) [[ZMIJ_UNLIKELY]] {
     if (bin_exp != 0) return w.write(bin_sig != 0 ? "nan" : "inf", 3);
-    if (bin_sig == 0) {  // zero: leading 0, exponent cancels to 0 below
-      bin_exp = traits::exp_bias;
-    } else {  // subnormal: normalize to a leading 1, matching printf's %a
-      normalize<Float>(bin_sig, bin_exp);
-      is_normal = true;
-    }
+    if (bin_sig == 0) bin_exp = traits::exp_bias;  // This cancels to 0 below.
+    else normalize<Float>(bin_sig, bin_exp);
+    is_normal = bin_sig != 0;
   }
   bin_exp -= traits::exp_bias;
 
@@ -2374,7 +2368,7 @@ auto write_hex(Float value, int precision, char* out, size_t n,
     }
   }
 
-  if (prefix) w.write("0x", 2);  // printf's %a uses a 0x prefix; to_chars omits.
+  if (prefix) w.write("0x", 2);
   w.write(char('0' + is_normal));
 
   if (precision > 0) {
