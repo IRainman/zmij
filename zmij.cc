@@ -921,6 +921,14 @@ inline auto digits2(size_t value) noexcept -> const char* {
   return &data[value * 2];
 }
 
+// Writes chars `a` and `b` to `out` and returns the position after them.
+ZMIJ_INLINE auto write2(char* out, char a, char b) noexcept -> char* {
+  uint16_t v = uint16_t(uint8_t(a) | uint8_t(b) << 8);
+  if (is_big_endian) v = uint16_t(v << 8 | v >> 8);
+  memcpy(out, &v, 2);
+  return out + 2;
+}
+
 constexpr int div10k_exp = 40;
 constexpr uint32_t div10k_sig = uint32_t((1ull << div10k_exp) / 10000 + 1);
 constexpr uint32_t neg10k = uint32_t((1ull << 32) - 10000);
@@ -1355,10 +1363,7 @@ ZMIJ_INLINE auto write_zero(char* buffer, int precision) noexcept -> char* {
 // Writes the exponent as 'e', a sign and at least two digits (e.g. e+05).
 template <typename Float>
 ZMIJ_INLINE auto write_exp(char* buffer, int dec_exp) noexcept -> char* {
-  uint16_t e_sign = dec_exp >= 0 ? ('+' << 8 | 'e') : ('-' << 8 | 'e');
-  if (is_big_endian) e_sign = e_sign << 8 | e_sign >> 8;
-  memcpy(buffer, &e_sign, 2);
-  buffer += 2;
+  buffer = write2(buffer, 'e', dec_exp >= 0 ? '+' : '-');
   uint32_t exp = dec_exp >= 0 ? uint32_t(dec_exp) : uint32_t(-dec_exp);
   if (float_traits<Float>::max_exponent10 >= 100) {
     constexpr bool wide = float_traits<Float>::max_exponent10 >= 1000;
@@ -1701,7 +1706,7 @@ auto write_fixed_big(char* buffer, uint64_t bin_sig, int bin_exp,
     memcpy(buffer + num_int_digits + 1, p + num_int_digits, precision);
     return buffer + num_int_digits + 1 + precision;
   }
-  memcpy(buffer, "0.", 2);  // |value| < 1: "0." + leading zeros + digits.
+  write2(buffer, '0', '.');  // |value| < 1: "0." + leading zeros + digits.
   int lead_zeros = precision - num_digits;
   memset(buffer + 2, '0', lead_zeros);
   memcpy(buffer + 2 + lead_zeros, p, num_digits);
@@ -2255,7 +2260,7 @@ auto write_fixed(Float value, int precision, char* buffer) noexcept -> char* {
   int total = num_int_digits + precision;  // significant digits + zero padding
 
   if (num_int_digits <= 0) {  // |value| < 1: "0." + leading zeros + digits
-    memcpy(buffer, "0.", 2);
+    write2(buffer, '0', '.');
     memset(buffer + 2, '0', -num_int_digits);
     buffer += 2 - num_int_digits;
     memcpy(buffer, &hi.digits, 16);
@@ -2291,10 +2296,7 @@ auto write_hex(Float value, char* buffer, bool prefix) noexcept -> char* {
   }
   bin_exp -= traits::exp_bias;
 
-  if (prefix) {
-    *buffer++ = '0';
-    *buffer++ = 'x';
-  }
+  if (prefix) buffer = write2(buffer, '0', 'x');
   *buffer++ = char('0' + !zero);
 
   constexpr int width = int(sizeof(bin_sig)) * 8;
@@ -2307,8 +2309,7 @@ auto write_hex(Float value, char* buffer, bool prefix) noexcept -> char* {
     } while (bin_sig != 0);
   }
 
-  *buffer++ = 'p';
-  *buffer++ = bin_exp < 0 ? '-' : '+';
+  buffer = write2(buffer, 'p', bin_exp < 0 ? '-' : '+');
   unsigned exp = unsigned(bin_exp < 0 ? -bin_exp : bin_exp);
   char digits[8];
   char* p = digits + sizeof(digits);
