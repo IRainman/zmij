@@ -2289,7 +2289,6 @@ auto write_hex(Float value, char* buffer, bool prefix) noexcept -> char* {
       bin_exp = traits::exp_bias;
     } else {  // subnormal: normalize to a leading 1, matching printf's %a
       normalize<Float>(bin_sig, bin_exp);
-      bin_sig = bin_sig ^ traits::implicit_bit;
       is_normal = true;
     }
   }
@@ -2313,15 +2312,16 @@ auto write_hex(Float value, char* buffer, bool prefix) noexcept -> char* {
 
   *buffer++ = 'p';
   *buffer++ = bin_exp < 0 ? '-' : '+';
-  unsigned exp = bin_exp < 0 ? unsigned(-bin_exp) : unsigned(bin_exp);
-  char tmp[8];
-  char* t = tmp;
+  unsigned exp = unsigned(bin_exp < 0 ? -bin_exp : bin_exp);
+  char digits[8];
+  char* p = digits + sizeof(digits);
   do {
-    *t++ = char('0' + exp % 10);
+    *--p = char('0' + exp % 10);
     exp /= 10;
   } while (exp != 0);
-  while (t != tmp) *buffer++ = *--t;
-  return buffer;
+  size_t n = size_t(digits + sizeof(digits) - p);
+  memcpy(buffer, p, n);
+  return buffer + n;
 }
 
 template auto write(float value, char* buffer) noexcept -> char*;
