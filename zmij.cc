@@ -2353,20 +2353,14 @@ auto write_hex(Float value, int precision, char* out, size_t n,
   if (keep < traits::num_sig_bits) {
     int drop = width - keep;
     auto half = decltype(bin_sig)(1) << (drop - 1);
-    // Round to nearest, ties to even (the leading 1 makes precision 0 odd).
-    bool round_up = (bin_sig & half) != 0 &&
-                    ((bin_sig & (half - 1)) != 0 || keep == 0 ||
-                     ((bin_sig >> drop) & 1) != 0);
-    bin_sig = keep == 0 ? 0 : (bin_sig >> drop) << drop;  // truncate
-    if (round_up) {
-      if (keep == 0) {  // fraction rounds up into the leading digit
-        ++bin_exp;
-      } else {
-        auto before = bin_sig;
-        bin_sig = bin_sig + (decltype(bin_sig)(1) << drop);
-        if (bin_sig < before) ++bin_exp;  // overflow carried into leading digit
-      }
-    }
+    // Round to nearest, ties to even: bias by (half - 1 + retained_lsb), then
+    // truncate. Above halfway rounds up; an exact tie rounds up only if the
+    // retained digit is odd. For precision 0 that digit is the odd leading 1.
+    auto lsb = keep == 0 ? 1 : (bin_sig >> drop) & 1;
+    auto before = bin_sig;
+    bin_sig += half - 1 + lsb;
+    if (bin_sig < before) ++bin_exp;
+    bin_sig = keep == 0 ? 0 : (bin_sig >> drop) << drop;
   }
 
   if (prefix) w.write("0x", 2);
@@ -2379,7 +2373,7 @@ auto write_hex(Float value, int precision, char* out, size_t n,
       w.write("0123456789abcdef"[uint64_t(bin_sig >> (width - 4))]);
       bin_sig = bin_sig << 4;
     }
-    w.write_zeros(precision - i);  // pad the fraction to precision
+    w.write_zeros(precision - i);
   }
 
   w.write('p');
