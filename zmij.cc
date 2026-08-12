@@ -2363,7 +2363,7 @@ auto write_hex(Float value, int precision, char* out, size_t n,
     // is set (odd); for precision 0 that bit is the implicit, odd leading 1.
     auto lsb = keep == 0 ? 1 : (bin_sig >> drop) & 1;
     auto before = bin_sig;
-    bin_sig += half - 1 + lsb;
+    bin_sig = bin_sig + (half - 1 + lsb);
     if (bin_sig < before) ++bin_exp;
     bin_sig = keep == 0 ? 0 : (bin_sig >> drop) << drop;
   }
