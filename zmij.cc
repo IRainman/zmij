@@ -1364,22 +1364,39 @@ ZMIJ_INLINE auto write_zero(char* buffer, int precision) noexcept -> char* {
 template <typename Float>
 ZMIJ_INLINE auto write_exp(char* buffer, int dec_exp) noexcept -> char* {
   buffer = write2(buffer, 'e', dec_exp >= 0 ? '+' : '-');
-  uint32_t exp = dec_exp >= 0 ? uint32_t(dec_exp) : uint32_t(-dec_exp);
+  uint32_t abs_exp = dec_exp >= 0 ? uint32_t(dec_exp) : uint32_t(-dec_exp);
   if (float_traits<Float>::max_exponent10 >= 100) {
     constexpr bool wide = float_traits<Float>::max_exponent10 >= 1000;
     uint32_t hi = use_umul128_hi64 && !wide
-                      ? umul128_hi64(exp, 0x290000000000000)
-                      : (exp * div100_sig) >> div100_exp;
+                      ? umul128_hi64(abs_exp, 0x290000000000000)
+                      : (abs_exp * div100_sig) >> div100_exp;
     if (wide) {
       *buffer = char('0' + hi / 10);
       buffer += hi >= 10;
     }
     *buffer = char('0' + (wide ? hi % 10 : hi));
-    buffer += exp >= 100;
-    exp -= hi * 100;
+    buffer += abs_exp >= 100;
+    abs_exp -= hi * 100;
   }
-  memcpy(buffer, digits2(exp), 2);
+  memcpy(buffer, digits2(abs_exp), 2);
   return buffer + 2;
+}
+
+// Writes a hex float's binary exponent as 'p', a sign, and at least one digit
+// (no leading-zero padding, unlike the decimal write_exp), returning the
+// position after it.
+ZMIJ_INLINE auto write_hex_exp(char* buffer, int bin_exp) noexcept -> char* {
+  buffer = write2(buffer, 'p', bin_exp < 0 ? '-' : '+');
+  unsigned abs_exp = unsigned(bin_exp < 0 ? -bin_exp : bin_exp);
+  char digits[8];
+  char* p = digits + sizeof(digits);
+  do {
+    *--p = char('0' + abs_exp % 10);
+    abs_exp /= 10;
+  } while (abs_exp != 0);
+  size_t n = size_t(digits + sizeof(digits) - p);
+  memcpy(buffer, p, n);
+  return buffer + n;
 }
 
 template <typename Float, typename UInt>
@@ -2309,17 +2326,7 @@ auto write_hex(Float value, char* buffer, bool prefix) noexcept -> char* {
     } while (bin_sig != 0);
   }
 
-  buffer = write2(buffer, 'p', bin_exp < 0 ? '-' : '+');
-  unsigned exp = unsigned(bin_exp < 0 ? -bin_exp : bin_exp);
-  char digits[8];
-  char* p = digits + sizeof(digits);
-  do {
-    *--p = char('0' + exp % 10);
-    exp /= 10;
-  } while (exp != 0);
-  size_t n = size_t(digits + sizeof(digits) - p);
-  memcpy(buffer, p, n);
-  return buffer + n;
+  return write_hex_exp(buffer, bin_exp);
 }
 
 template <typename Float>
@@ -2376,16 +2383,8 @@ auto write_hex(Float value, int precision, char* out, size_t n,
     w.write_zeros(precision - i);
   }
 
-  w.write('p');
-  w.write(bin_exp < 0 ? '-' : '+');
-  unsigned exp = unsigned(bin_exp < 0 ? -bin_exp : bin_exp);
-  char digits[8];
-  char* p = digits + sizeof(digits);
-  do {
-    *--p = char('0' + exp % 10);
-    exp /= 10;
-  } while (exp != 0);
-  return w.write(p, int(digits + sizeof(digits) - p));
+  char exp[8];
+  return w.write(exp, int(write_hex_exp(exp, bin_exp) - exp));
 }
 
 template auto write(float value, char* buffer) noexcept -> char*;
