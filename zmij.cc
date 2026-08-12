@@ -2374,10 +2374,12 @@ auto write_hex(Float value, int precision, char* out, size_t n,
 
   if (precision > 0) {
     w.write('.');
-    for (int i = 0; i < precision; ++i) {
+    int i = 0;
+    for (; i < precision && bin_sig != 0; ++i) {
       w.write("0123456789abcdef"[uint64_t(bin_sig >> (width - 4))]);
       bin_sig = bin_sig << 4;
     }
+    w.write_zeros(precision - i);  // pad the fraction to precision
   }
 
   w.write('p');
