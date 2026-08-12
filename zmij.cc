@@ -2353,9 +2353,9 @@ auto write_hex(Float value, int precision, char* out, size_t n,
   if (keep < traits::num_sig_bits) {
     int drop = width - keep;
     auto half = decltype(bin_sig)(1) << (drop - 1);
-    // Round to nearest, ties to even: bias by (half - 1 + retained_lsb), then
-    // truncate. Above halfway rounds up; an exact tie rounds up only if the
-    // retained digit is odd. For precision 0 that digit is the odd leading 1.
+    // Round to nearest, ties to even: bias by (half - 1 + lsb) then truncate,
+    // where lsb is the retained part's low bit. A tie rounds up only when lsb
+    // is set (odd); for precision 0 that bit is the implicit, odd leading 1.
     auto lsb = keep == 0 ? 1 : (bin_sig >> drop) & 1;
     auto before = bin_sig;
     bin_sig += half - 1 + lsb;
