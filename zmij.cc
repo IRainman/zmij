@@ -2344,7 +2344,7 @@ auto write_hex(Float value, int precision, char* out, size_t n,
 
   // Left-align the fraction so hex digits can be read off the top.
   constexpr int width = int(sizeof(bin_sig)) * 8;
-  bin_sig <<= width - traits::num_sig_bits;
+  bin_sig = bin_sig << (width - traits::num_sig_bits);
 
   // Round to `precision` hex digits (ties to even). A carry out of all kept
   // bits propagates into the leading digit, which for a normalized value just
@@ -2354,16 +2354,16 @@ auto write_hex(Float value, int precision, char* out, size_t n,
     int drop = width - keep;
     auto half = decltype(bin_sig)(1) << (drop - 1);
     // Round to nearest, ties to even (the leading 1 makes precision 0 odd).
-    bool round_up = (bin_sig & half) &&
-                    ((bin_sig & (half - 1)) || keep == 0 ||
-                     ((bin_sig >> drop) & 1));
+    bool round_up = (bin_sig & half) != 0 &&
+                    ((bin_sig & (half - 1)) != 0 || keep == 0 ||
+                     ((bin_sig >> drop) & 1) != 0);
     bin_sig = keep == 0 ? 0 : (bin_sig >> drop) << drop;  // truncate
     if (round_up) {
       if (keep == 0) {  // fraction rounds up into the leading digit
         ++bin_exp;
       } else {
         auto before = bin_sig;
-        bin_sig += decltype(bin_sig)(1) << drop;
+        bin_sig = bin_sig + (decltype(bin_sig)(1) << drop);
         if (bin_sig < before) ++bin_exp;  // overflow carried into leading digit
       }
     }
@@ -2376,7 +2376,7 @@ auto write_hex(Float value, int precision, char* out, size_t n,
     w.write('.');
     for (int i = 0; i < precision; ++i) {
       w.write("0123456789abcdef"[uint64_t(bin_sig >> (width - 4))]);
-      bin_sig <<= 4;
+      bin_sig = bin_sig << 4;
     }
   }
 
