@@ -149,10 +149,14 @@ TEST(float_test, to_chars_format) {
   snprintf(ref, sizeof(ref), "%.20e", 0.1f);
   EXPECT_EQ(std::string(big, result.ptr), std::string(ref));
 
-  // `hex` writes the shortest hexadecimal form (no 0x prefix), ignoring
-  // precision.
+  // `hex` writes `precision` fractional hex digits (no 0x prefix); a negative
+  // precision selects the shortest form.
   result = zmij::to_chars(buffer, buffer + sizeof(buffer), 1.5f,
                           zmij::chars_format::hex, 10);
+  EXPECT_EQ(result.ec, std::errc());
+  EXPECT_EQ(std::string(buffer, result.ptr), "1.8000000000p+0");
+  result = zmij::to_chars(buffer, buffer + sizeof(buffer), 1.5f,
+                          zmij::chars_format::hex, -1);
   EXPECT_EQ(result.ec, std::errc());
   EXPECT_EQ(std::string(buffer, result.ptr), "1.8p+0");
 }
@@ -400,11 +404,13 @@ TEST(double_test, to_chars_format) {
   EXPECT_EQ(fmt(zmij::chars_format::fixed, -1, 1.5), "1.500000");
   EXPECT_EQ(fmt(zmij::chars_format::scientific, -1, 1.5), "1.500000e+00");
 
-  // `hex` writes the shortest hexadecimal form (no 0x prefix), ignoring
-  // precision. Specials keep their "inf"/"nan" spelling (no prefix to strip).
-  EXPECT_EQ(fmt(zmij::chars_format::hex, 10, 1.5), "1.8p+0");
+  // `hex` writes `precision` fractional hex digits (no 0x prefix); a negative
+  // precision selects the shortest form. Specials keep their "inf"/"nan"
+  // spelling (no prefix to strip).
+  EXPECT_EQ(fmt(zmij::chars_format::hex, 10, 1.5), "1.8000000000p+0");
   EXPECT_EQ(fmt(zmij::chars_format::hex, 0, -2.0), "-1p+1");
-  EXPECT_EQ(fmt(zmij::chars_format::hex, 6, 0.0), "0p+0");
+  EXPECT_EQ(fmt(zmij::chars_format::hex, 6, 0.0), "0.000000p+0");
+  EXPECT_EQ(fmt(zmij::chars_format::hex, -1, 1.5), "1.8p+0");  // shortest
   EXPECT_EQ(fmt(zmij::chars_format::hex, 6,
                 std::numeric_limits<double>::infinity()),
             "inf");
@@ -780,16 +786,18 @@ TEST(long_double_test, to_chars_format) {
     }
   }
 
-  // `hex` writes the shortest hexadecimal form (no 0x prefix), ignoring
-  // precision. Not compared to %La: glibc's 80-bit %La uses a different form.
+  // `hex` writes `precision` fractional hex digits (no 0x prefix); a negative
+  // precision selects the shortest form. Not compared to %La: glibc's 80-bit
+  // %La uses a different form.
   auto hex = [&](int precision, long double value) {
     auto r = zmij::to_chars(buf, buf + sizeof(buf), value,
                             zmij::chars_format::hex, precision);
     EXPECT_EQ(r.ec, std::errc());
     return std::string(buf, r.ptr);
   };
-  EXPECT_EQ(hex(10, 1.5L), "1.8p+0");
+  EXPECT_EQ(hex(10, 1.5L), "1.8000000000p+0");
   EXPECT_EQ(hex(0, 1024.0L), "1p+10");
+  EXPECT_EQ(hex(-1, 1.5L), "1.8p+0");  // shortest
 
   // Too small: truncated result, ptr == last, value_too_large.
   char small[5];

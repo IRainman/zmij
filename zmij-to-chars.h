@@ -27,13 +27,18 @@ using chars_format = format;
 
 namespace detail {
 
-// Writes `value` in hexadecimal floating-point notation (see write_hex),
-// ignoring precision as zmij only emits the shortest form. The "0x" prefix is
-// omitted to match std::to_chars.
+// Writes `value` in hexadecimal floating-point notation (see write_hex) without
+// the "0x" prefix, to match std::to_chars. A negative `precision` selects the
+// shortest form; otherwise the fraction has exactly `precision` hex digits.
 template <typename Float>
-inline auto to_chars_hex(char* first, char* last, Float value)
+auto to_chars_hex(char* first, char* last, Float value, int precision)
     -> to_chars_result {
   size_t cap = size_t(last - first);
+  if (precision >= 0) {
+    size_t size = write_hex(value, precision, first, cap, /*prefix=*/false);
+    if (size > cap) return {last, std::errc::value_too_large};
+    return {first + size, {}};
+  }
   char buffer[buffer_sizes<Float>::hex];
   char* dst = cap >= buffer_sizes<Float>::hex ? first : buffer;
   size_t size = size_t(write_hex(value, dst, /*prefix=*/false) - dst);
@@ -44,8 +49,8 @@ inline auto to_chars_hex(char* first, char* last, Float value)
 }
 
 template <typename Float>
-inline auto to_chars(char* first, char* last, Float value, chars_format fmt,
-                     int precision) -> to_chars_result {
+auto to_chars(char* first, char* last, Float value, chars_format fmt,
+              int precision) -> to_chars_result {
   // Match printf: a negative precision defaults to 6, and `general` uses at
   // least one significant digit.
   if (precision < 0)
@@ -124,9 +129,10 @@ inline auto to_chars(char* first, char* last, long double value)
 /// Writes `value` to [`first`, `last`) in the given `fmt` with `precision`
 /// digits, like std::to_chars with a format and precision. `precision` counts
 /// fractional digits for `fixed` and `scientific` and significant digits for
-/// `general`. Matching printf, a negative `precision` defaults to 6 and
-/// `general` treats 0 as 1. `hex` ignores `precision` and always writes the
-/// shortest hexadecimal form without a 0x prefix, e.g. 1.8p+1.
+/// `general`, and fractional hex digits for `hex`. Matching printf, a negative
+/// `precision` defaults to 6 and `general` treats 0 as 1; for `hex` a negative
+/// `precision` selects the shortest form. `hex` omits the 0x prefix, e.g.
+/// 1.8p+1.
 ///
 /// Returns:
 /// - {ptr, std::errc()} on success, with ptr past the last character written;
@@ -135,21 +141,23 @@ inline auto to_chars(char* first, char* last, long double value)
 inline auto to_chars(char* first, char* last, float value, chars_format fmt,
                      int precision) -> to_chars_result {
   if (fmt == chars_format::hex)
-    return detail::to_chars_hex(first, last, double(value));
+    return detail::to_chars_hex(first, last, double(value), precision);
   return detail::to_chars(first, last, value, fmt, precision);
 }
 inline auto to_chars(char* first, char* last, double value, chars_format fmt,
                      int precision) -> to_chars_result {
-  if (fmt == chars_format::hex) return detail::to_chars_hex(first, last, value);
+  if (fmt == chars_format::hex)
+    return detail::to_chars_hex(first, last, value, precision);
   return detail::to_chars(first, last, value, fmt, precision);
 }
 
 /// Writes `value` to [`first`, `last`) in the given `fmt` with `precision`
 /// digits, like std::to_chars with a format and precision. `precision` counts
 /// fractional digits for `fixed` and `scientific` and significant digits for
-/// `general`. Matching printf, a negative `precision` defaults to 6 and
-/// `general` treats 0 as 1. `hex` ignores `precision` and always writes the
-/// shortest hexadecimal form without a 0x prefix, e.g. 1.8p+1.
+/// `general`, and fractional hex digits for `hex`. Matching printf, a negative
+/// `precision` defaults to 6 and `general` treats 0 as 1; for `hex` a negative
+/// `precision` selects the shortest form. `hex` omits the 0x prefix, e.g.
+/// 1.8p+1.
 ///
 /// Returns:
 /// - {ptr, std::errc()} on success, with ptr past the last character written;
@@ -162,7 +170,8 @@ inline auto to_chars(char* first, char* last, long double value,
   if (double(value) == value)
     return to_chars(first, last, double(value), fmt, precision);
 #if LDBL_MANT_DIG != DBL_MANT_DIG
-  if (fmt == chars_format::hex) return detail::to_chars_hex(first, last, value);
+  if (fmt == chars_format::hex)
+    return detail::to_chars_hex(first, last, value, precision);
 #endif
   // Match printf: a negative precision defaults to 6, and `general` uses at
   // least one significant digit.
