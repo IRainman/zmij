@@ -86,6 +86,18 @@ auto write_hex(Float value, char* buffer, bool prefix = true) noexcept -> char*;
 template <typename Float>
 auto write_hex(Float value, int precision, char* out, size_t n,
                bool prefix = true) noexcept -> size_t;
+#if LDBL_MANT_DIG == DBL_MANT_DIG
+template <>
+inline auto write_hex(long double value, char* buffer, bool prefix) noexcept
+    -> char* {
+  return write_hex(double(value), buffer, prefix);
+}
+template <>
+inline auto write_hex(long double value, int precision, char* out, size_t n,
+                      bool prefix) noexcept -> size_t {
+  return write_hex(double(value), precision, out, n, prefix);
+}
+#endif
 
 }  // namespace detail
 

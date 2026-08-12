@@ -34,16 +34,14 @@ template <typename Float>
 auto to_chars_hex(char* first, char* last, Float value, int precision)
     -> to_chars_result {
   size_t cap = size_t(last - first);
+  size_t size = 0;
   if (precision >= 0) {
-    size_t size = write_hex(value, precision, first, cap, /*prefix=*/false);
-    if (size > cap) return {last, std::errc::value_too_large};
-    return {first + size, {}};
+    size = write_hex(value, precision, first, cap, /*prefix=*/false);
+  } else {
+    char buffer[buffer_sizes<Float>::hex];
+    size = size_t(write_hex(value, buffer, /*prefix=*/false) - buffer);
+    memcpy(first, buffer, size < cap ? size : cap);
   }
-  char buffer[buffer_sizes<Float>::hex];
-  char* dst = cap >= buffer_sizes<Float>::hex ? first : buffer;
-  size_t size = size_t(write_hex(value, dst, /*prefix=*/false) - dst);
-  if (dst == first) return {first + size, {}};
-  memcpy(first, buffer, size < cap ? size : cap);
   if (size > cap) return {last, std::errc::value_too_large};
   return {first + size, {}};
 }
@@ -140,15 +138,15 @@ inline auto to_chars(char* first, char* last, long double value)
 ///   writing a truncated result to [`first`, `last`).
 inline auto to_chars(char* first, char* last, float value, chars_format fmt,
                      int precision) -> to_chars_result {
-  if (fmt == chars_format::hex)
-    return detail::to_chars_hex(first, last, double(value), precision);
-  return detail::to_chars(first, last, value, fmt, precision);
+  return fmt == chars_format::hex
+             ? detail::to_chars_hex(first, last, double(value), precision)
+             : detail::to_chars(first, last, value, fmt, precision);
 }
 inline auto to_chars(char* first, char* last, double value, chars_format fmt,
                      int precision) -> to_chars_result {
-  if (fmt == chars_format::hex)
-    return detail::to_chars_hex(first, last, value, precision);
-  return detail::to_chars(first, last, value, fmt, precision);
+  return fmt == chars_format::hex
+             ? detail::to_chars_hex(first, last, value, precision)
+             : detail::to_chars(first, last, value, fmt, precision);
 }
 
 /// Writes `value` to [`first`, `last`) in the given `fmt` with `precision`
@@ -169,10 +167,8 @@ inline auto to_chars(char* first, char* last, long double value,
                      chars_format fmt, int precision) -> to_chars_result {
   if (double(value) == value)
     return to_chars(first, last, double(value), fmt, precision);
-#if LDBL_MANT_DIG != DBL_MANT_DIG
   if (fmt == chars_format::hex)
     return detail::to_chars_hex(first, last, value, precision);
-#endif
   // Match printf: a negative precision defaults to 6, and `general` uses at
   // least one significant digit.
   if (precision < 0)
