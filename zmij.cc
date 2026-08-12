@@ -1382,10 +1382,8 @@ ZMIJ_INLINE auto write_exp(char* buffer, int dec_exp) noexcept -> char* {
   return buffer + 2;
 }
 
-// Writes a hex float's binary exponent as 'p', a sign, and at least one digit
-// (no leading-zero padding, unlike the decimal write_exp), returning the
-// position after it.
-ZMIJ_INLINE auto write_hex_exp(char* buffer, int bin_exp) noexcept -> char* {
+// Writes the binary exponent as 'p', a sign and at least one digit (e.g. p+3).
+auto write_hex_exp(char* buffer, int bin_exp) noexcept -> char* {
   buffer = write2(buffer, 'p', bin_exp < 0 ? '-' : '+');
   unsigned abs_exp = unsigned(bin_exp < 0 ? -bin_exp : bin_exp);
   char digits[8];
@@ -2390,18 +2388,8 @@ auto write_hex(Float value, int precision, char* out, size_t n,
 template auto write(float value, char* buffer) noexcept -> char*;
 template auto write(double value, char* buffer) noexcept -> char*;
 
-#if LDBL_MANT_DIG != DBL_MANT_DIG
-// write_big is a template to emit no code where long double == double.
-template auto write_big(long double value, char* out, size_t n) noexcept
-    -> size_t;
-#endif
-
 template auto write_big(double value, int precision, char* out, size_t n,
                         format fmt) noexcept -> size_t;
-#if LDBL_MANT_DIG != DBL_MANT_DIG
-template auto write_big(long double value, int precision, char* out, size_t n,
-                        format fmt) noexcept -> size_t;
-#endif
 
 template auto write_scientific(float value, int precision,
                                char* buffer) noexcept -> char*;
@@ -2422,7 +2410,14 @@ template auto write_hex(double value, char* buffer, bool prefix) noexcept
     -> char*;
 template auto write_hex(double value, int precision, char* out, size_t n,
                         bool prefix) noexcept -> size_t;
+
+// long double instantiations, only needed when it differs from double; else
+// the public wrappers forward long double to the double path.
 #if LDBL_MANT_DIG != DBL_MANT_DIG
+template auto write_big(long double value, char* out, size_t n) noexcept
+    -> size_t;
+template auto write_big(long double value, int precision, char* out, size_t n,
+                        format fmt) noexcept -> size_t;
 template auto write_hex(long double value, char* buffer, bool prefix) noexcept
     -> char*;
 template auto write_hex(long double value, int precision, char* out, size_t n,
