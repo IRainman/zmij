@@ -2324,6 +2324,79 @@ auto write_hex(Float value, char* buffer, bool prefix) noexcept -> char* {
   return buffer + n;
 }
 
+template <typename Float>
+auto write_hex(Float value, int precision, char* out, size_t n,
+               bool prefix) noexcept -> size_t {
+  using traits = float_traits<Float>;
+  auto bits = traits::to_bits(value);
+  auto bin_exp = traits::get_exp(bits);
+  auto bin_sig = traits::get_sig(bits);
+
+  writer w = {out, out + n, 0};
+  if (traits::is_negative(bits)) w.write('-');
+
+  bool is_normal = traits::is_normal(bin_exp);
+  if (!is_normal) [[ZMIJ_UNLIKELY]] {
+    if (bin_exp != 0) return w.write(bin_sig != 0 ? "nan" : "inf", 3);
+    if (bin_sig == 0) {  // zero: leading 0, exponent cancels to 0 below
+      bin_exp = traits::exp_bias;
+    } else {  // subnormal: normalize to a leading 1, matching printf's %a
+      normalize<Float>(bin_sig, bin_exp);
+      is_normal = true;
+    }
+  }
+  bin_exp -= traits::exp_bias;
+
+  // Left-align the fraction so hex digits can be read off the top.
+  constexpr int width = int(sizeof(bin_sig)) * 8;
+  bin_sig <<= width - traits::num_sig_bits;
+
+  // Round to `precision` hex digits (ties to even). A carry out of all kept
+  // bits propagates into the leading digit, which for a normalized value just
+  // increments the binary exponent.
+  int keep = precision * 4;
+  if (keep < traits::num_sig_bits) {
+    int drop = width - keep;
+    auto half = decltype(bin_sig)(1) << (drop - 1);
+    // Round to nearest, ties to even (the leading 1 makes precision 0 odd).
+    bool round_up = (bin_sig & half) &&
+                    ((bin_sig & (half - 1)) || keep == 0 ||
+                     ((bin_sig >> drop) & 1));
+    bin_sig = keep == 0 ? 0 : (bin_sig >> drop) << drop;  // truncate
+    if (round_up) {
+      if (keep == 0) {  // fraction rounds up into the leading digit
+        ++bin_exp;
+      } else {
+        auto before = bin_sig;
+        bin_sig += decltype(bin_sig)(1) << drop;
+        if (bin_sig < before) ++bin_exp;  // overflow carried into leading digit
+      }
+    }
+  }
+
+  if (prefix) w.write("0x", 2);  // printf's %a uses a 0x prefix; to_chars omits.
+  w.write(char('0' + is_normal));
+
+  if (precision > 0) {
+    w.write('.');
+    for (int i = 0; i < precision; ++i) {
+      w.write("0123456789abcdef"[uint64_t(bin_sig >> (width - 4))]);
+      bin_sig <<= 4;
+    }
+  }
+
+  w.write('p');
+  w.write(bin_exp < 0 ? '-' : '+');
+  unsigned exp = unsigned(bin_exp < 0 ? -bin_exp : bin_exp);
+  char digits[8];
+  char* p = digits + sizeof(digits);
+  do {
+    *--p = char('0' + exp % 10);
+    exp /= 10;
+  } while (exp != 0);
+  return w.write(p, int(digits + sizeof(digits) - p));
+}
+
 template auto write(float value, char* buffer) noexcept -> char*;
 template auto write(double value, char* buffer) noexcept -> char*;
 
@@ -2357,9 +2430,13 @@ template auto write_fixed(double value, int precision, char* buffer) noexcept
 
 template auto write_hex(double value, char* buffer, bool prefix) noexcept
     -> char*;
+template auto write_hex(double value, int precision, char* out, size_t n,
+                        bool prefix) noexcept -> size_t;
 #if LDBL_MANT_DIG != DBL_MANT_DIG
 template auto write_hex(long double value, char* buffer, bool prefix) noexcept
     -> char*;
+template auto write_hex(long double value, int precision, char* out, size_t n,
+                        bool prefix) noexcept -> size_t;
 #endif
 
 }  // namespace detail

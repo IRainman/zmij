@@ -75,9 +75,18 @@ auto write_fixed(Float value, int precision, char* buffer) noexcept -> char*;
 
 // Writes `value` in hexadecimal floating-point notation (like printf's %a) in
 // its shortest form, e.g. -0x1.8p+1. If `prefix` is false the leading "0x" is
-// omitted (e.g. -1.8p+1), matching std::to_chars.
+// omitted (e.g. -1.8p+1).
 template <typename Float>
 auto write_hex(Float value, char* buffer, bool prefix = true) noexcept -> char*;
+
+// Writes `value` in hexadecimal floating-point notation with exactly
+// `precision` hex digits after the point, correctly rounded (ties to even),
+// e.g. -0x1.80p+1, into `out`, truncating after `n` chars. Returns the total
+// length the result would need. If `prefix` is false the leading "0x" is
+// omitted.
+template <typename Float>
+auto write_hex(Float value, int precision, char* out, size_t n,
+               bool prefix = true) noexcept -> size_t;
 
 }  // namespace detail
 
