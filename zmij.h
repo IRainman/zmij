@@ -50,13 +50,6 @@ inline auto write_big(float value, int precision, char* out, size_t n,
                       format fmt) noexcept -> size_t {
   return write_big(double(value), precision, out, n, fmt);
 }
-#if LDBL_MANT_DIG == DBL_MANT_DIG
-template <>
-inline auto write_big(long double value, int precision, char* out, size_t n,
-                      format fmt) noexcept -> size_t {
-  return write_big(double(value), precision, out, n, fmt);
-}
-#endif
 
 // Returns the past-the-end pointer after writing min(size, n) chars to `out`.
 inline auto clamp_end(char* out, size_t size, size_t n) noexcept -> char* {
@@ -86,7 +79,15 @@ auto write_hex(Float value, char* buffer, bool prefix = true) noexcept -> char*;
 template <typename Float>
 auto write_hex(Float value, int precision, char* out, size_t n,
                bool prefix = true) noexcept -> size_t;
+
+// When long double == double it has no explicit instantiations, so forward the
+// long double detail writers to their double counterparts.
 #if LDBL_MANT_DIG == DBL_MANT_DIG
+template <>
+inline auto write_big(long double value, int precision, char* out, size_t n,
+                      format fmt) noexcept -> size_t {
+  return write_big(double(value), precision, out, n, fmt);
+}
 template <>
 inline auto write_hex(long double value, char* buffer, bool prefix) noexcept
     -> char* {
@@ -97,7 +98,7 @@ inline auto write_hex(long double value, int precision, char* out, size_t n,
                       bool prefix) noexcept -> size_t {
   return write_hex(double(value), precision, out, n, prefix);
 }
-#endif
+#endif  // LDBL_MANT_DIG == DBL_MANT_DIG
 
 }  // namespace detail
 
@@ -418,16 +419,12 @@ inline auto write_hex(char* out, size_t n, double value) noexcept -> char* {
 /// exceeds `n` characters, only the first `n` are written.
 inline auto write_hex(char* out, size_t n, long double value) noexcept
     -> char* {
-#if LDBL_MANT_DIG == DBL_MANT_DIG
-  return write_hex(out, n, double(value));
-#else
   if (n >= buffer_sizes<long double>::hex) return detail::write_hex(value, out);
   char buffer[buffer_sizes<long double>::hex];
   size_t size = detail::write_hex(value, buffer) - buffer;
   if (size > n) size = n;
   memcpy(out, buffer, size);
   return out + size;
-#endif
 }
 
 }  // namespace zmij
