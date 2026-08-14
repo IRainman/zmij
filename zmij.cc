@@ -1363,7 +1363,7 @@ ZMIJ_INLINE auto write_zero(char* buffer, int precision) noexcept -> char* {
 // Writes the exponent as 'e', a sign and at least two digits (e.g. e+05).
 template <typename Float>
 ZMIJ_INLINE auto write_exp(char* buffer, int dec_exp) noexcept -> char* {
-  static_assert(float_traits<Float>::max_exponent10 < 1000);
+  static_assert(float_traits<Float>::max_exponent10 < 1000, "");
   buffer = write2(buffer, 'e', dec_exp >= 0 ? '+' : '-');
   uint32_t abs_exp = dec_exp >= 0 ? uint32_t(dec_exp) : uint32_t(-dec_exp);
   if (float_traits<Float>::max_exponent10 >= 100) {

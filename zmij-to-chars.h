@@ -72,7 +72,8 @@ inline auto to_chars(double value, char* buffer, chars_format fmt) noexcept
   int lead_exp = dec.exp + num_digits - 1;  // leading digit's decimal exponent
   while (digits[num_digits - 1] == '0') --num_digits;  // strip trailing zeros
 
-  // %g uses fixed notation when the leading exponent is in [-4, num_digits).
+  // %g with precision = num_digits uses fixed notation when the leading
+  // exponent is in [-4, num_digits), else scientific (per the standard).
   bool fixed = general && lead_exp >= -4 && lead_exp < num_digits;
   if (!fixed) {
     // Scientific: leading digit, then '.' and the remaining significant digits.
@@ -186,6 +187,9 @@ inline auto to_chars(char* first, char* last, long double value)
 /// 0x prefix); the float and long double decimal formats return
 /// {first, not_supported}.
 ///
+/// `general` follows the printf %g rule with the precision set to the shortest
+/// round-tripping number of significant digits, as the standard requires.
+///
 /// Returns:
 /// - {ptr, std::errc()} on success, with ptr past the last character written;
 /// - {last, std::errc::value_too_large} if the output does not fit, after
@@ -201,9 +205,8 @@ inline auto to_chars(char* first, char* last, double value, chars_format fmt)
   if (fmt == chars_format::hex)
     return detail::to_chars_hex(first, last, value, /*precision=*/-1);
   if (fmt == chars_format::fixed) {
-    // The shortest fixed form is the value rounded to as many fractional digits
-    // as the shortest representation needs (max(0, -exp) of the significand
-    // with trailing zeros removed); let the precision writer render it.
+    // Delegate to the precision writer with the shortest fraction length
+    // (trailing zeros stripped), matching std::to_chars fixed.
     dec_fp dec = to_decimal(value);
     int precision = 0;
     if (dec.exp != non_finite_exp) {

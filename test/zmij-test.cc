@@ -418,16 +418,25 @@ TEST(double_test, to_chars_format) {
                 -std::numeric_limits<double>::quiet_NaN()),
             "-nan");
 
-  // Format without precision: `hex` gives the shortest form, other formats are
-  // not yet supported.
-  auto r = zmij::to_chars(buffer, buffer + sizeof(buffer), 1.5,
-                          zmij::chars_format::hex);
-  EXPECT_EQ(r.ec, std::errc());
-  EXPECT_EQ(std::string(buffer, r.ptr), "1.8p+0");
-  r = zmij::to_chars(buffer, buffer + sizeof(buffer), 1.5,
-                     zmij::chars_format::scientific);
-  EXPECT_EQ(r.ec, std::errc::not_supported);
-  EXPECT_EQ(r.ptr, buffer);  // nothing written
+  // Format without precision writes the shortest round-tripping form.
+  auto shortest = [&](zmij::chars_format f, double value) {
+    auto r = zmij::to_chars(buffer, buffer + sizeof(buffer), value, f);
+    EXPECT_EQ(r.ec, std::errc());
+    return std::string(buffer, r.ptr);
+  };
+  EXPECT_EQ(shortest(zmij::chars_format::hex, 1.5), "1.8p+0");
+  EXPECT_EQ(shortest(zmij::chars_format::scientific, 1.5), "1.5e+00");
+  EXPECT_EQ(shortest(zmij::chars_format::fixed, 1.5), "1.5");
+
+  // `general` without precision follows the printf %g rule with the precision
+  // set to the shortest significant-digit count, as the standard requires:
+  // fixed when the leading exponent is in [-4, num_sig), else scientific. Some
+  // libc++ builds instead apply %g's default precision of 6, so std::to_chars
+  // there disagrees, e.g. printing "100" and "1.234567e+06" for these cases.
+  EXPECT_EQ(shortest(zmij::chars_format::general, 100.0), "1e+02");
+  EXPECT_EQ(shortest(zmij::chars_format::general, 1234567.0), "1234567");
+  EXPECT_EQ(shortest(zmij::chars_format::general, 0.0001), "0.0001");
+  EXPECT_EQ(shortest(zmij::chars_format::general, 1.5), "1.5");
 
   // Output too small: truncated result, ptr == last, value_too_large.
   char small[8];
