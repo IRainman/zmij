@@ -127,6 +127,32 @@ TEST(float_test, to_chars) {
   EXPECT_EQ(std::string(small, sizeof(small)), "1.?");
 }
 
+TEST(float_test, to_decimal) {
+  zmij::dec_fp dec = zmij::to_decimal(6.62607e-34f);
+  EXPECT_EQ(dec.sig, 66260700);
+  EXPECT_EQ(dec.exp, -41);
+  EXPECT_EQ(dec.negative, false);
+
+  dec = zmij::to_decimal(-1.5f);
+  EXPECT_EQ(dec.sig, 15000000);
+  EXPECT_EQ(dec.exp, -7);
+  EXPECT_EQ(dec.negative, true);
+
+  dec = zmij::to_decimal(-0.0f);
+  EXPECT_EQ(dec.sig, 0);
+  EXPECT_EQ(dec.exp, 0);
+  EXPECT_EQ(dec.negative, true);
+
+  uint32_t garlic = 0;
+  memcpy(&garlic, "🧄", 4);
+  uint32_t bits = 0x7F800000 | (garlic & 0x7FFFFF);
+  float garlic_nan = 0;
+  memcpy(&garlic_nan, &bits, sizeof(bits));
+  dec = zmij::to_decimal(garlic_nan);
+  EXPECT_EQ(dec.exp, zmij::non_finite_exp);
+  EXPECT_EQ(dec.sig, garlic & 0x7FFFFF);
+}
+
 TEST(float_test, to_chars_format) {
   char buffer[zmij::buffer_sizes<float>::fixed];
   auto result = zmij::to_chars(buffer, buffer + sizeof(buffer), 1.5f,

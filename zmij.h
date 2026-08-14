@@ -13,6 +13,18 @@
 
 namespace zmij {
 
+enum {
+  non_finite_exp = int(~0u >> 1),
+};
+
+// A decimal floating-point number (negative ? -1 : 1) * sig * pow(10, exp).
+// If exp is non_finite_exp then the number is a NaN or an infinity.
+struct dec_fp {
+  unsigned long long sig;  // significand
+  int exp;                 // exponent
+  bool negative;
+};
+
 // Floating-point formatting style. Values match std::chars_format, so
 // general == fixed | scientific.
 enum class format {
@@ -26,6 +38,10 @@ namespace detail {
 
 // `buffer` params require at least buffer_sizes<Float> capacity;
 // `out`/`n` params write at most `n` characters.
+
+// Converts `value` to the shortest correctly rounded decimal (see to_decimal).
+template <typename Float>
+auto to_decimal(Float value) noexcept -> dec_fp;
 
 template <typename Float>
 auto write(Float value, char* buffer) noexcept -> char*;
@@ -106,22 +122,15 @@ inline auto write_hex(long double value, int precision, char* out, size_t n,
 
 }  // namespace detail
 
-enum {
-  non_finite_exp = int(~0u >> 1),
-};
-
-// A decimal floating-point number (negative ? -1 : 1) * sig * pow(10, exp).
-// If exp is non_finite_exp then the number is a NaN or an infinity.
-struct dec_fp {
-  unsigned long long sig;  // significand
-  int exp;                 // exponent
-  bool negative;
-};
-
 /// Converts `value` into the shortest correctly rounded decimal representation.
 /// Usage:
 ///   auto [sig, exp, negative] = to_decimal(6.62607015e-34);
-auto to_decimal(double value) noexcept -> dec_fp;
+inline auto to_decimal(float value) noexcept -> dec_fp {
+  return detail::to_decimal(value);
+}
+inline auto to_decimal(double value) noexcept -> dec_fp {
+  return detail::to_decimal(value);
+}
 
 // Minimum buffer sizes for the shortest `write`, one per floating-point type.
 enum {

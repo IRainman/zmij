@@ -1848,25 +1848,26 @@ auto write_big(writer& w, bigint num, int bin_exp, int precision, char* digits,
 
 namespace zmij {
 
-auto to_decimal(double value) noexcept -> dec_fp {
-  using traits = float_traits<double>;
+namespace detail {
+
+template <typename Float>
+auto to_decimal(Float value) noexcept -> dec_fp {
+  using traits = float_traits<Float>;
   auto bits = traits::to_bits(value);
   auto bin_exp = traits::get_exp(bits);  // binary exponent
   auto bin_sig = traits::get_sig(bits);  // binary significand
   auto negative = traits::is_negative(bits);
   if (bin_exp == 0 || bin_exp == traits::exp_mask) [[ZMIJ_UNLIKELY]] {
-    if (bin_exp != 0) return {bin_sig, int(~0u >> 1), negative};
+    if (bin_exp != 0) return {bin_sig, non_finite_exp, negative};
     if (bin_sig == 0) return {0, 0, negative};
     bin_exp = 1;
     bin_sig |= traits::implicit_bit;
   }
-  auto dec = ::to_decimal<double>(bin_sig ^ traits::implicit_bit, bin_exp,
-                                  bin_sig != 0, static_data);
+  auto dec = ::to_decimal<Float>(bin_sig ^ traits::implicit_bit, bin_exp,
+                                 bin_sig != 0, static_data);
   auto last_digit = -dec.has_last_digit & dec.last_digit;
   return {dec.sig * 10 + last_digit, dec.exp, negative};
 }
-
-namespace detail {
 
 auto write_big_exp(char* buffer, int dec_exp) noexcept -> char* {
   buffer = write2(buffer, 'e', dec_exp >= 0 ? '+' : '-');
@@ -2392,6 +2393,9 @@ auto write_hex(Float value, int precision, char* out, size_t n,
   char exp[8];
   return w.write(exp, int(write_hex_exp(exp, bin_exp) - exp));
 }
+
+template auto to_decimal(float value) noexcept -> dec_fp;
+template auto to_decimal(double value) noexcept -> dec_fp;
 
 template auto write(float value, char* buffer) noexcept -> char*;
 template auto write(double value, char* buffer) noexcept -> char*;
