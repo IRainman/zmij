@@ -66,6 +66,10 @@ auto write_general(Float value, int precision, char* buffer) noexcept -> char*;
 template <typename Float>
 auto write_fixed(Float value, int precision, char* buffer) noexcept -> char*;
 
+// Writes the decimal exponent as 'e', a sign and at least two digits, up to
+// four (e.g. e+05 or e+4932, enough for extended long double).
+auto write_big_exp(char* buffer, int dec_exp) noexcept -> char*;
+
 // Writes `value` in hexadecimal floating-point notation (like printf's %a) in
 // its shortest form, e.g. -0x1.8p+1. If `prefix` is false the leading "0x" is
 // omitted (e.g. -1.8p+1).

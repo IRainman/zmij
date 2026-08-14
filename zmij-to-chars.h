@@ -77,14 +77,7 @@ inline auto to_chars_scientific(double value, char* buffer) noexcept -> char* {
     for (int i = n - 2; i >= end; --i) *buffer++ = digits[i];
   }
 
-  // Exponent: 'e', sign, and at least two digits.
-  *buffer++ = 'e';
-  *buffer++ = dec_exp < 0 ? '-' : '+';
-  unsigned e = unsigned(dec_exp < 0 ? -dec_exp : dec_exp);
-  if (e >= 100) *buffer++ = char('0' + e / 100);
-  *buffer++ = char('0' + e / 10 % 10);
-  *buffer++ = char('0' + e % 10);
-  return buffer;
+  return write_big_exp(buffer, dec_exp);
 }
 
 template <typename Float>
