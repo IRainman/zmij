@@ -27,6 +27,12 @@ using chars_format = format;
 
 namespace detail {
 
+// Removes trailing decimal zeros from `dec`, increasing its exponent so that
+// sig * 10^exp is unchanged.
+inline void remove_trailing_zeros(dec_fp& dec) noexcept {
+  for (; dec.sig != 0 && dec.sig % 10 == 0; dec.sig /= 10) ++dec.exp;
+}
+
 // Writes `value` in hexadecimal floating-point notation (see write_hex) without
 // the "0x" prefix, to match std::to_chars. A negative `precision` selects the
 // shortest form; otherwise the fraction has exactly `precision` hex digits.
@@ -64,13 +70,13 @@ inline auto to_chars(double value, char* buffer, chars_format fmt) noexcept
     return general ? buffer : write_big_exp(buffer, 0);
   }
 
+  remove_trailing_zeros(dec);
   char buf[20];
   char* digits = buf + sizeof(buf);
   int num_digits = 0;
   for (unsigned long long sig = dec.sig; sig != 0; sig /= 10, ++num_digits)
     *--digits = char('0' + sig % 10);
   int lead_exp = dec.exp + num_digits - 1;  // leading digit's decimal exponent
-  while (digits[num_digits - 1] == '0') --num_digits;  // strip trailing zeros
 
   // %g with precision = num_digits uses fixed notation when the leading
   // exponent is in [-4, num_digits), else scientific (per the standard).
@@ -210,9 +216,8 @@ inline auto to_chars(char* first, char* last, double value, chars_format fmt)
     dec_fp dec = to_decimal(value);
     int precision = 0;
     if (dec.exp != non_finite_exp) {
-      int exp = dec.exp;
-      for (auto sig = dec.sig; sig != 0 && sig % 10 == 0; sig /= 10) ++exp;
-      precision = exp < 0 ? -exp : 0;
+      detail::remove_trailing_zeros(dec);
+      precision = dec.exp < 0 ? -dec.exp : 0;
     }
     return detail::to_chars(first, last, value, fmt, precision);
   }
