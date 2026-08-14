@@ -46,10 +46,13 @@ auto to_chars_hex(char* first, char* last, Float value, int precision)
   return {first + size, {}};
 }
 
-// Writes `value` in shortest scientific notation (e.g. 1.5e+00) to `buffer`,
-// which requires buffer_sizes<double>::scientific capacity, and returns a
-// pointer past the last character written.
-inline auto to_chars_scientific(double value, char* buffer) noexcept -> char* {
+// Writes `value` in its shortest form to `buffer`, either always in scientific
+// notation (e.g. 1.5e+00) or, for `general`, picking fixed or scientific per
+// the printf %g rule. Requires buffer_sizes<double>::scientific capacity and
+// returns a pointer past the last character written.
+inline auto to_chars(double value, char* buffer, chars_format fmt) noexcept
+    -> char* {
+  bool general = fmt == chars_format::general;
   dec_fp dec = to_decimal(value);
   if (dec.negative) *buffer++ = '-';
   if (dec.exp == non_finite_exp) {
@@ -57,27 +60,45 @@ inline auto to_chars_scientific(double value, char* buffer) noexcept -> char* {
     return buffer + 3;
   }
   if (dec.sig == 0) {
-    memcpy(buffer, "0e+00", 5);
-    return buffer + 5;
+    *buffer++ = '0';
+    return general ? buffer : write_big_exp(buffer, 0);
   }
 
-  // Decimal digits of the significand, most significant last.
-  char digits[20];
-  int n = 0;
-  for (unsigned long long sig = dec.sig; sig != 0; sig /= 10)
-    digits[n++] = char('0' + sig % 10);
-  int dec_exp = dec.exp + n - 1;
-  int end = 0;
-  while (digits[end] == '0') ++end;
+  char buf[20];
+  char* digits = buf + sizeof(buf);
+  int num_digits = 0;
+  for (unsigned long long sig = dec.sig; sig != 0; sig /= 10, ++num_digits)
+    *--digits = char('0' + sig % 10);
+  int lead_exp = dec.exp + num_digits - 1;  // leading digit's decimal exponent
+  while (digits[num_digits - 1] == '0') --num_digits;  // strip trailing zeros
 
-  // Leading digit, then '.' and the remaining significant digits.
-  *buffer++ = digits[n - 1];
-  if (n - 1 > end) {
+  // %g uses fixed notation when the leading exponent is in [-4, num_digits).
+  bool fixed = general && lead_exp >= -4 && lead_exp < num_digits;
+  if (!fixed) {
+    // Scientific: leading digit, then '.' and the remaining significant digits.
+    *buffer++ = digits[0];
+    if (num_digits > 1) {
+      *buffer++ = '.';
+      memcpy(buffer, digits + 1, size_t(num_digits - 1));
+      buffer += num_digits - 1;
+    }
+    return write_big_exp(buffer, lead_exp);
+  }
+
+  // Fixed: integer part (or a single 0), then the fractional digits prefixed
+  // with leading zeros for magnitudes below 1.
+  int num_int_digits = lead_exp >= 0 ? lead_exp + 1 : 0;
+  if (num_int_digits == 0) *buffer++ = '0';
+  memcpy(buffer, digits, size_t(num_int_digits));
+  buffer += num_int_digits;
+  if (num_int_digits < num_digits) {
     *buffer++ = '.';
-    for (int i = n - 2; i >= end; --i) *buffer++ = digits[i];
+    for (int z = lead_exp; z < -1; ++z) *buffer++ = '0';
+    memcpy(buffer, digits + num_int_digits,
+           size_t(num_digits - num_int_digits));
+    buffer += num_digits - num_int_digits;
   }
-
-  return write_big_exp(buffer, dec_exp);
+  return buffer;
 }
 
 template <typename Float>
@@ -161,8 +182,9 @@ inline auto to_chars(char* first, char* last, long double value)
 /// Writes the shortest representation of `value` in the given `fmt` to
 /// [`first`, `last`), like std::to_chars with a format but no precision.
 ///
-/// Only `hex` is currently implemented (shortest form, no 0x prefix); the
-/// decimal formats return {first, std::errc::not_supported}.
+/// For `double`, `scientific`, `general`, and `hex` are implemented (`hex` in
+/// shortest form without the 0x prefix); other cases, including `fixed` and the
+/// float and long double decimal formats, return {first, not_supported}.
 ///
 /// Returns:
 /// - {ptr, std::errc()} on success, with ptr past the last character written;
@@ -178,12 +200,12 @@ inline auto to_chars(char* first, char* last, double value, chars_format fmt)
     -> to_chars_result {
   if (fmt == chars_format::hex)
     return detail::to_chars_hex(first, last, value, /*precision=*/-1);
-  if (fmt == chars_format::scientific) {
+  if (fmt == chars_format::scientific || fmt == chars_format::general) {
     using bs = buffer_sizes<double>;
     size_t cap = size_t(last - first);
     char buffer[bs::scientific];
     char* dst = cap >= bs::scientific ? first : buffer;
-    char* end = detail::to_chars_scientific(value, dst);
+    char* end = detail::to_chars(value, dst, fmt);
     if (dst == first) return {end, {}};
     size_t size = size_t(end - buffer);
     memcpy(first, buffer, size < cap ? size : cap);
