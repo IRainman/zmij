@@ -185,6 +185,19 @@ TEST(float_test, to_chars_format) {
                           zmij::chars_format::hex, -1);
   EXPECT_EQ(result.ec, std::errc());
   EXPECT_EQ(std::string(buffer, result.ptr), "1.8p+0");
+
+  // Format without precision writes the shortest round-tripping form, same as
+  // the double path (see double_test.to_chars_format for the %g rule).
+  auto shortest = [&](zmij::chars_format f, float value) {
+    auto r = zmij::to_chars(buffer, buffer + sizeof(buffer), value, f);
+    EXPECT_EQ(r.ec, std::errc());
+    return std::string(buffer, r.ptr);
+  };
+  EXPECT_EQ(shortest(zmij::chars_format::hex, 1.5f), "1.8p+0");
+  EXPECT_EQ(shortest(zmij::chars_format::scientific, 1.5f), "1.5e+00");
+  EXPECT_EQ(shortest(zmij::chars_format::fixed, 0.0001f), "0.0001");
+  EXPECT_EQ(shortest(zmij::chars_format::general, 100.0f), "1e+02");
+  EXPECT_EQ(shortest(zmij::chars_format::general, 1234567.0f), "1234567");
 }
 
 TEST(float_test, write_precision) {
