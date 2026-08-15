@@ -33,6 +33,25 @@ inline void remove_trailing_zeros(dec_fp& dec) noexcept {
   for (; dec.sig != 0 && dec.sig % 10 == 0; dec.sig /= 10) ++dec.exp;
 }
 
+// Returns the std::to_chars-style result of writing `size` chars into
+// [`first`, `last`): the past-the-end pointer, or {last, value_too_large} if
+// `size` exceeds the capacity and the output was truncated.
+inline auto to_chars_end(char* first, char* last, size_t size)
+    -> to_chars_result {
+  if (size > size_t(last - first)) return {last, std::errc::value_too_large};
+  return {first + size, {}};
+}
+
+// Copies the [`buffer`, `end`) result into [`first`, `last`), truncating to
+// fit, and returns the to_chars_result (see to_chars_end).
+inline auto copy_to_chars(char* first, char* last, const char* buffer,
+                          const char* end) -> to_chars_result {
+  size_t cap = size_t(last - first);
+  size_t size = size_t(end - buffer);
+  memcpy(first, buffer, size < cap ? size : cap);
+  return to_chars_end(first, last, size);
+}
+
 // Writes `value` in hexadecimal floating-point notation (see write_hex) without
 // the "0x" prefix, to match std::to_chars. A negative `precision` selects the
 // shortest form; otherwise the fraction has exactly `precision` hex digits.
@@ -48,8 +67,7 @@ auto to_chars_hex(char* first, char* last, Float value, int precision)
     size = size_t(write_hex(buffer, value, /*prefix=*/false) - buffer);
     memcpy(first, buffer, size < cap ? size : cap);
   }
-  if (size > cap) return {last, std::errc::value_too_large};
-  return {first + size, {}};
+  return to_chars_end(first, last, size);
 }
 
 // Writes `value` in its shortest form to `buffer`, either always in scientific
@@ -123,8 +141,7 @@ auto to_chars(char* first, char* last, Float value, chars_format fmt,
   int max_precision = fmt == chars_format::scientific ? 17 : 18;
   if (precision > max_precision) {
     size_t size = write_big(first, cap, value, precision, fmt);
-    if (size > cap) return {last, std::errc::value_too_large};
-    return {first + size, {}};
+    return to_chars_end(first, last, size);
   }
 
   using bs = buffer_sizes<Float>;
@@ -139,10 +156,7 @@ auto to_chars(char* first, char* last, Float value, chars_format fmt,
   else
     end = write_general(dst, value, precision);
   if (dst == first) return {end, {}};  // Wrote directly into the output.
-  size_t size = size_t(end - buffer);
-  memcpy(first, buffer, size < cap ? size : cap);
-  if (size > cap) return {last, std::errc::value_too_large};
-  return {first + size, {}};
+  return copy_to_chars(first, last, buffer, end);
 }
 
 // Writes `value` in its shortest form in the given `fmt` to [`first`, `last`),
@@ -163,16 +177,12 @@ auto to_chars(char* first, char* last, Float value, chars_format fmt)
     }
     return to_chars(first, last, value, fmt, precision);
   }
-  using bs = buffer_sizes<Float>;
   size_t cap = size_t(last - first);
-  char buffer[bs::scientific];
-  char* dst = cap >= bs::scientific ? first : buffer;
+  char buffer[buffer_sizes<Float>::scientific];
+  char* dst = cap >= sizeof(buffer) ? first : buffer;
   char* end = to_chars(value, dst, fmt);
   if (dst == first) return {end, {}};
-  size_t size = size_t(end - buffer);
-  memcpy(first, buffer, size < cap ? size : cap);
-  if (size > cap) return {last, std::errc::value_too_large};
-  return {first + size, {}};
+  return copy_to_chars(first, last, buffer, end);
 }
 
 }  // namespace detail
@@ -185,34 +195,26 @@ auto to_chars(char* first, char* last, Float value, chars_format fmt)
 /// - {last, std::errc::value_too_large} if the output does not fit, after
 ///   writing a truncated result to [`first`, `last`).
 inline auto to_chars(char* first, char* last, float value) -> to_chars_result {
-  if (size_t(last - first) >= float_buffer_size)
-    return {detail::write(first, value), {}};
   char buffer[float_buffer_size];
-  size_t cap = size_t(last - first);
-  size_t size = size_t(detail::write(buffer, value) - buffer);
-  memcpy(first, buffer, size < cap ? size : cap);
-  if (size > cap) return {last, std::errc::value_too_large};
-  return {first + size, {}};
+  if (size_t(last - first) >= sizeof(buffer))
+    return {detail::write(first, value), {}};
+  return detail::copy_to_chars(first, last, buffer,
+                               detail::write(buffer, value));
 }
 inline auto to_chars(char* first, char* last, double value) -> to_chars_result {
-  if (size_t(last - first) >= double_buffer_size)
-    return {detail::write(first, value), {}};
   char buffer[double_buffer_size];
-  size_t cap = size_t(last - first);
-  size_t size = size_t(detail::write(buffer, value) - buffer);
-  memcpy(first, buffer, size < cap ? size : cap);
-  if (size > cap) return {last, std::errc::value_too_large};
-  return {first + size, {}};
+  if (size_t(last - first) >= sizeof(buffer))
+    return {detail::write(first, value), {}};
+  return detail::copy_to_chars(first, last, buffer,
+                               detail::write(buffer, value));
 }
 inline auto to_chars(char* first, char* last, long double value)
     -> to_chars_result {
 #if LDBL_MANT_DIG == DBL_MANT_DIG
   return to_chars(first, last, double(value));
 #else
-  size_t cap = size_t(last - first);
-  size_t size = detail::write_big(first, cap, value);
-  if (size > cap) return {last, std::errc::value_too_large};
-  return {first + size, {}};
+  size_t size = detail::write_big(first, size_t(last - first), value);
+  return detail::to_chars_end(first, last, size);
 #endif
 }
 
@@ -299,8 +301,7 @@ inline auto to_chars(char* first, char* last, long double value,
   size_t cap = size_t(last - first);
   size_t size = detail::write_big(first, cap, value, precision, fmt);
   if (size == 0) return {first, std::errc::not_enough_memory};
-  if (size > cap) return {last, std::errc::value_too_large};
-  return {first + size, {}};
+  return detail::to_chars_end(first, last, size);
 }
 
 }  // namespace zmij
