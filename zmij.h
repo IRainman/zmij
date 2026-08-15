@@ -183,8 +183,8 @@ template <> struct buffer_sizes<long double> {
 /// Returns a pointer past the last character written; if the representation
 /// exceeds `n` characters, only the first `n` are written.
 inline auto write(char* out, size_t n, float value) noexcept -> char* {
-  if (n >= float_buffer_size) return detail::write(value, out);
   char buffer[float_buffer_size];
+  if (n >= sizeof(buffer)) return detail::write(value, out);
   return detail::copy_clamped(out, n, buffer, detail::write(value, buffer));
 }
 
@@ -194,8 +194,8 @@ inline auto write(char* out, size_t n, float value) noexcept -> char* {
 /// Returns a pointer past the last character written; if the representation
 /// exceeds `n` characters, only the first `n` are written.
 inline auto write(char* out, size_t n, double value) noexcept -> char* {
-  if (n >= double_buffer_size) return detail::write(value, out);
   char buffer[double_buffer_size];
+  if (n >= sizeof(buffer)) return detail::write(value, out);
   return detail::copy_clamped(out, n, buffer, detail::write(value, buffer));
 }
 
@@ -227,9 +227,9 @@ inline auto write_scientific(char* out, size_t n, float value,
     auto size = detail::write_big(value, precision, out, n, format::scientific);
     return detail::clamp_end(out, size, n);
   }
-  if (n >= buffer_sizes<float>::scientific)
-    return detail::write_scientific(value, precision + 1, out);
   char buffer[buffer_sizes<float>::scientific];
+  if (n >= sizeof(buffer))
+    return detail::write_scientific(value, precision + 1, out);
   return detail::copy_clamped(
       out, n, buffer, detail::write_scientific(value, precision + 1, buffer));
 }
@@ -247,9 +247,9 @@ inline auto write_scientific(char* out, size_t n, double value,
     auto size = detail::write_big(value, precision, out, n, format::scientific);
     return detail::clamp_end(out, size, n);
   }
-  if (n >= buffer_sizes<double>::scientific)
-    return detail::write_scientific(value, precision + 1, out);
   char buffer[buffer_sizes<double>::scientific];
+  if (n >= sizeof(buffer))
+    return detail::write_scientific(value, precision + 1, out);
   return detail::copy_clamped(
       out, n, buffer, detail::write_scientific(value, precision + 1, buffer));
 }
@@ -285,11 +285,10 @@ inline auto write_general(char* out, size_t n, float value,
     auto size = detail::write_big(value, precision, out, n, format::general);
     return detail::clamp_end(out, size, n);
   }
-  if (n >= buffer_sizes<float>::scientific)
-    return detail::write_general(value, precision, out);
   char buffer[buffer_sizes<float>::scientific];
-  return detail::copy_clamped(
-      out, n, buffer, detail::write_general(value, precision, buffer));
+  if (n >= sizeof(buffer)) return detail::write_general(value, precision, out);
+  return detail::copy_clamped(out, n, buffer,
+                              detail::write_general(value, precision, buffer));
 }
 
 /// Writes `value` in general format with up to `precision` significant digits
@@ -307,11 +306,10 @@ inline auto write_general(char* out, size_t n, double value,
     auto size = detail::write_big(value, precision, out, n, format::general);
     return detail::clamp_end(out, size, n);
   }
-  if (n >= buffer_sizes<double>::scientific)
-    return detail::write_general(value, precision, out);
   char buffer[buffer_sizes<double>::scientific];
-  return detail::copy_clamped(
-      out, n, buffer, detail::write_general(value, precision, buffer));
+  if (n >= sizeof(buffer)) return detail::write_general(value, precision, out);
+  return detail::copy_clamped(out, n, buffer,
+                              detail::write_general(value, precision, buffer));
 }
 
 /// Writes `value` in general format with up to `precision` significant digits
@@ -346,11 +344,10 @@ inline auto write_fixed(char* out, size_t n, float value,
     auto size = detail::write_big(value, precision, out, n, format::fixed);
     return detail::clamp_end(out, size, n);
   }
-  if (n >= buffer_sizes<float>::fixed)
-    return detail::write_fixed(value, precision, out);
   char buffer[buffer_sizes<float>::fixed];
-  return detail::copy_clamped(
-      out, n, buffer, detail::write_fixed(value, precision, buffer));
+  if (n >= sizeof(buffer)) return detail::write_fixed(value, precision, out);
+  return detail::copy_clamped(out, n, buffer,
+                              detail::write_fixed(value, precision, buffer));
 }
 
 /// Writes `value` in fixed notation with exactly `precision` digits after the
@@ -367,11 +364,10 @@ inline auto write_fixed(char* out, size_t n, double value,
     auto size = detail::write_big(value, precision, out, n, format::fixed);
     return detail::clamp_end(out, size, n);
   }
-  if (n >= buffer_sizes<double>::fixed)
-    return detail::write_fixed(value, precision, out);
   char buffer[buffer_sizes<double>::fixed];
-  return detail::copy_clamped(
-      out, n, buffer, detail::write_fixed(value, precision, buffer));
+  if (n >= sizeof(buffer)) return detail::write_fixed(value, precision, out);
+  return detail::copy_clamped(out, n, buffer,
+                              detail::write_fixed(value, precision, buffer));
 }
 
 /// Writes `value` in fixed notation with exactly `precision` digits after the
@@ -408,8 +404,8 @@ inline auto write_hex(char* out, size_t n, float value) noexcept -> char* {
 /// Returns a pointer past the last character written; if the representation
 /// exceeds `n` characters, only the first `n` are written.
 inline auto write_hex(char* out, size_t n, double value) noexcept -> char* {
-  if (n >= buffer_sizes<double>::hex) return detail::write_hex(value, out);
   char buffer[buffer_sizes<double>::hex];
+  if (n >= sizeof(buffer)) return detail::write_hex(value, out);
   return detail::copy_clamped(out, n, buffer, detail::write_hex(value, buffer));
 }
 
@@ -420,8 +416,8 @@ inline auto write_hex(char* out, size_t n, double value) noexcept -> char* {
 /// exceeds `n` characters, only the first `n` are written.
 inline auto write_hex(char* out, size_t n, long double value) noexcept
     -> char* {
-  if (n >= buffer_sizes<long double>::hex) return detail::write_hex(value, out);
   char buffer[buffer_sizes<long double>::hex];
+  if (n >= sizeof(buffer)) return detail::write_hex(value, out);
   return detail::copy_clamped(out, n, buffer, detail::write_hex(value, buffer));
 }
 
