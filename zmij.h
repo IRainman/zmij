@@ -67,20 +67,6 @@ inline auto write_big(char* out, size_t n, float value, int precision,
   return write_big(out, n, double(value), precision, fmt);
 }
 
-// Returns the past-the-end pointer after writing min(size, n) chars to `out`.
-inline auto clamp_end(char* out, size_t size, size_t n) noexcept -> char* {
-  return out + (size < n ? size : n);
-}
-
-// Copies the result in [`buffer`, `end`) to `out`, truncating after `n` chars,
-// and returns the past-the-end pointer.
-inline auto copy_clamped(char* out, size_t n, const char* buffer,
-                         const char* end) noexcept -> char* {
-  size_t size = size_t(end - buffer);
-  memcpy(out, buffer, size < n ? size : n);
-  return clamp_end(out, size, n);
-}
-
 template <typename Float>
 auto write_scientific(char* buffer, Float value, int precision) noexcept
     -> char*;
@@ -128,6 +114,20 @@ inline auto write_hex(char* out, size_t n, long double value, int precision,
   return write_hex(out, n, double(value), precision, prefix);
 }
 #endif  // LDBL_MANT_DIG == DBL_MANT_DIG
+
+// Returns the past-the-end pointer after writing min(size, n) chars to `out`.
+inline auto clamp_end(char* out, size_t size, size_t n) noexcept -> char* {
+  return out + (size < n ? size : n);
+}
+
+// Copies the result in [`buffer`, `end`) to `out`, truncating after `n` chars,
+// and returns the past-the-end pointer.
+inline auto copy_clamped(char* out, size_t n, const char* buffer,
+                         const char* end) noexcept -> char* {
+  size_t size = size_t(end - buffer);
+  memcpy(out, buffer, size < n ? size : n);
+  return clamp_end(out, size, n);
+}
 
 }  // namespace detail
 
