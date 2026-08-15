@@ -42,10 +42,10 @@ auto to_chars_hex(char* first, char* last, Float value, int precision)
   size_t cap = size_t(last - first);
   size_t size = 0;
   if (precision >= 0) {
-    size = write_hex(value, precision, first, cap, /*prefix=*/false);
+    size = write_hex(first, cap, value, precision, /*prefix=*/false);
   } else {
     char buffer[buffer_sizes<Float>::hex];
-    size = size_t(write_hex(value, buffer, /*prefix=*/false) - buffer);
+    size = size_t(write_hex(buffer, value, /*prefix=*/false) - buffer);
     memcpy(first, buffer, size < cap ? size : cap);
   }
   if (size > cap) return {last, std::errc::value_too_large};
@@ -122,7 +122,7 @@ auto to_chars(char* first, char* last, Float value, chars_format fmt,
   // Scientific counts fractional digits, so 18 would need 19 significant.
   int max_precision = fmt == chars_format::scientific ? 17 : 18;
   if (precision > max_precision) {
-    size_t size = write_big(value, precision, first, cap, fmt);
+    size_t size = write_big(first, cap, value, precision, fmt);
     if (size > cap) return {last, std::errc::value_too_large};
     return {first + size, {}};
   }
@@ -133,11 +133,11 @@ auto to_chars(char* first, char* last, Float value, chars_format fmt,
   char* dst = cap >= max_size ? first : buffer;
   char* end;
   if (fmt == chars_format::scientific)
-    end = write_scientific(value, precision + 1, dst);
+    end = write_scientific(dst, value, precision + 1);
   else if (fmt == chars_format::fixed)
-    end = write_fixed(value, precision, dst);
+    end = write_fixed(dst, value, precision);
   else
-    end = write_general(value, precision, dst);
+    end = write_general(dst, value, precision);
   if (dst == first) return {end, {}};  // Wrote directly into the output.
   size_t size = size_t(end - buffer);
   memcpy(first, buffer, size < cap ? size : cap);
@@ -186,20 +186,20 @@ auto to_chars(char* first, char* last, Float value, chars_format fmt)
 ///   writing a truncated result to [`first`, `last`).
 inline auto to_chars(char* first, char* last, float value) -> to_chars_result {
   if (size_t(last - first) >= float_buffer_size)
-    return {detail::write(value, first), {}};
+    return {detail::write(first, value), {}};
   char buffer[float_buffer_size];
   size_t cap = size_t(last - first);
-  size_t size = size_t(detail::write(value, buffer) - buffer);
+  size_t size = size_t(detail::write(buffer, value) - buffer);
   memcpy(first, buffer, size < cap ? size : cap);
   if (size > cap) return {last, std::errc::value_too_large};
   return {first + size, {}};
 }
 inline auto to_chars(char* first, char* last, double value) -> to_chars_result {
   if (size_t(last - first) >= double_buffer_size)
-    return {detail::write(value, first), {}};
+    return {detail::write(first, value), {}};
   char buffer[double_buffer_size];
   size_t cap = size_t(last - first);
-  size_t size = size_t(detail::write(value, buffer) - buffer);
+  size_t size = size_t(detail::write(buffer, value) - buffer);
   memcpy(first, buffer, size < cap ? size : cap);
   if (size > cap) return {last, std::errc::value_too_large};
   return {first + size, {}};
@@ -210,7 +210,7 @@ inline auto to_chars(char* first, char* last, long double value)
   return to_chars(first, last, double(value));
 #else
   size_t cap = size_t(last - first);
-  size_t size = detail::write_big(value, first, cap);
+  size_t size = detail::write_big(first, cap, value);
   if (size > cap) return {last, std::errc::value_too_large};
   return {first + size, {}};
 #endif
@@ -297,7 +297,7 @@ inline auto to_chars(char* first, char* last, long double value,
   else if (precision == 0 && fmt == chars_format::general)
     precision = 1;
   size_t cap = size_t(last - first);
-  size_t size = detail::write_big(value, precision, first, cap, fmt);
+  size_t size = detail::write_big(first, cap, value, precision, fmt);
   if (size == 0) return {first, std::errc::not_enough_memory};
   if (size > cap) return {last, std::errc::value_too_large};
   return {first + size, {}};
