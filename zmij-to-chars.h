@@ -82,6 +82,10 @@ auto to_chars_hex(char* first, char* last, Float value, int precision)
   }
   return to_chars_end(first, last, size);
 }
+inline auto to_chars_hex(char* first, char* last, float value, int precision)
+    -> to_chars_result {
+  return to_chars_hex(first, last, double(value), precision);
+}
 
 // Writes `value` in its shortest form to `buffer`, either always in scientific
 // notation (e.g. 1.5e+00) or, for `general`, picking fixed or scientific per
@@ -190,11 +194,11 @@ template <typename Float>
 auto to_chars(char* first, char* last, Float value, chars_format fmt)
     -> to_chars_result {
   if (fmt == chars_format::hex)
-    return to_chars_hex(first, last, double(value), /*precision=*/-1);
+    return to_chars_hex(first, last, value, /*precision=*/-1);
   if (fmt == chars_format::fixed) {
     // Delegate to the precision writer with the shortest fraction length
     // (trailing zeros stripped), matching std::to_chars fixed.
-    dec_fp<> dec = to_decimal(value);
+    auto dec = zmij::to_decimal(value);
     int precision = 0;
     if (dec.exp != non_finite_exp) {
       remove_trailing_zeros(dec);
@@ -246,9 +250,7 @@ inline auto to_chars(char* first, char* last, long double value)
 /// Writes the shortest representation of `value` in the given `fmt` to
 /// [`first`, `last`), like std::to_chars with a format but no precision.
 ///
-/// For `float` and `double` all formats are implemented (`hex` in shortest form
-/// without the 0x prefix); the long double decimal formats return
-/// {first, not_supported}.
+/// `hex` uses the shortest form without the 0x prefix, e.g. 1.8p+1.
 ///
 /// `general` follows the printf %g rule with the precision set to the shortest
 /// round-tripping number of significant digits, as the standard requires.
@@ -256,7 +258,9 @@ inline auto to_chars(char* first, char* last, long double value)
 /// Returns:
 /// - {ptr, std::errc()} on success, with ptr past the last character written;
 /// - {last, std::errc::value_too_large} if the output does not fit, after
-///   writing a truncated result to [`first`, `last`).
+///   writing a truncated result to [`first`, `last`);
+/// - {last, std::errc::not_enough_memory} on allocation failure (only possible
+///   for `fixed` with an extended long double).
 inline auto to_chars(char* first, char* last, float value, chars_format fmt)
     -> to_chars_result {
   return detail::to_chars(first, last, value, fmt);
@@ -267,9 +271,7 @@ inline auto to_chars(char* first, char* last, double value, chars_format fmt)
 }
 inline auto to_chars(char* first, char* last, long double value,
                      chars_format fmt) -> to_chars_result {
-  if (fmt == chars_format::hex)
-    return detail::to_chars_hex(first, last, value, /*precision=*/-1);
-  return {first, std::errc::not_supported};
+  return detail::to_chars(first, last, value, fmt);
 }
 
 /// Writes `value` to [`first`, `last`) in the given `fmt` with `precision`

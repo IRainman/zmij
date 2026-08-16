@@ -894,6 +894,28 @@ TEST(long_double_test, to_chars_format) {
   EXPECT_EQ(hex(0, 1024.0L), "1p+10");
   EXPECT_EQ(hex(-1, 1.5L), "1.8p+0");  // shortest
 
+  // Format without precision writes the shortest round-tripping form (same %g
+  // rule as double; see double_test.to_chars_format).
+  auto shortest = [&](zmij::chars_format f, long double value) {
+    auto s = zmij::to_chars(buf, buf + sizeof(buf), value, f);
+    EXPECT_EQ(s.ec, std::errc());
+    return std::string(buf, s.ptr);
+  };
+  EXPECT_EQ(shortest(zmij::chars_format::hex, 1.5L), "1.8p+0");
+  EXPECT_EQ(shortest(zmij::chars_format::scientific, 1.5L), "1.5e+00");
+  EXPECT_EQ(shortest(zmij::chars_format::fixed, 0.0001L), "0.0001");
+  EXPECT_EQ(shortest(zmij::chars_format::general, 100.0L), "1e+02");
+  EXPECT_EQ(shortest(zmij::chars_format::general, 1234567.0L), "1234567");
+
+  if (LDBL_MANT_DIG != DBL_MANT_DIG) {
+    // An extended value drives to_decimal_big; each format must round-trip.
+    long double extended = 1.0L + 0x1p-63L;
+    for (zmij::chars_format f :
+         {zmij::chars_format::scientific, zmij::chars_format::fixed,
+          zmij::chars_format::general})
+      EXPECT_EQ(strtold(shortest(f, extended).c_str(), nullptr), extended);
+  }
+
   // Too small: truncated result, ptr == last, value_too_large.
   char small[5];
   memset(small, '?', sizeof(small));
