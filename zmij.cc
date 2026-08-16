@@ -231,23 +231,6 @@ ZMIJ_INLINE auto select(uint64_t condition, int64_t true_value,
 using zmij::detail::uint128;
 using zmij::detail::uint128_t;
 
-// Divides x by 10 in place and returns the remainder.
-ZMIJ_INLINE auto divmod10(uint128_t& x) noexcept -> uint64_t {
-#if ZMIJ_USE_INT128
-  uint64_t r = uint64_t(x % 10);
-  x /= 10;
-  return r;
-#else
-  auto div = [](uint64_t& w, uint64_t rem) -> uint64_t {
-    uint64_t hi = rem << 32 | w >> 32;
-    uint64_t lo = (hi % 10) << 32 | uint32_t(w);
-    w = (hi / 10) << 32 | (lo / 10);
-    return lo % 10;
-  };
-  return div(x.lo, div(x.hi, 0));
-#endif
-}
-
 #if ZMIJ_USE_INT128 && defined(__APPLE__)
 constexpr bool use_umul128_hi64 = true;  // Use umul128_hi64 for division.
 #else

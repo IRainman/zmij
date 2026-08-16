@@ -120,6 +120,23 @@ using uint128_t = unsigned __int128;
 using uint128_t = uint128;
 #endif  // ZMIJ_USE_INT128
 
+// Divides x by 10 in place and returns the remainder.
+inline auto divmod10(uint128_t& x) noexcept -> uint64_t {
+#if ZMIJ_USE_INT128
+  uint64_t r = uint64_t(x % 10);
+  x /= 10;
+  return r;
+#else
+  auto div = [](uint64_t& w, uint64_t rem) -> uint64_t {
+    uint64_t hi = rem << 32 | w >> 32;
+    uint64_t lo = (hi % 10) << 32 | uint32_t(w);
+    w = (hi / 10) << 32 | (lo / 10);
+    return lo % 10;
+  };
+  return div(x.lo, div(x.hi, 0));
+#endif
+}
+
 // `buffer` params require at least buffer_sizes<Float> capacity;
 // `out`/`n` params write at most `n` characters.
 

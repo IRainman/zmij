@@ -27,10 +27,23 @@ using chars_format = format;
 
 namespace detail {
 
+// Divides x by 10 in place and returns the remainder.
+inline auto divmod10(uint64_t& x) noexcept -> uint64_t {
+  uint64_t r = x % 10;
+  x /= 10;
+  return r;
+}
+
 // Removes trailing decimal zeros from `dec`, increasing its exponent so that
 // sig * 10^exp is unchanged.
-inline void remove_trailing_zeros(dec_fp<>& dec) noexcept {
-  for (; dec.sig != 0 && dec.sig % 10 == 0; dec.sig /= 10) ++dec.exp;
+template <typename Sig>
+inline void remove_trailing_zeros(dec_fp<Sig>& dec) noexcept {
+  for (;;) {
+    Sig q = dec.sig;
+    if (q == Sig(0) || divmod10(q) != 0) break;
+    dec.sig = q;
+    ++dec.exp;
+  }
 }
 
 // Returns the std::to_chars-style result of writing `size` chars into
@@ -77,7 +90,7 @@ auto to_chars_hex(char* first, char* last, Float value, int precision)
 template <typename Float>
 auto to_chars(Float value, char* buffer, chars_format fmt) noexcept -> char* {
   bool general = fmt == chars_format::general;
-  dec_fp<> dec = to_decimal(value);
+  auto dec = zmij::to_decimal(value);
   if (dec.negative) *buffer++ = '-';
   if (dec.exp == non_finite_exp) {
     memcpy(buffer, dec.sig != 0 ? "nan" : "inf", 3);
@@ -89,11 +102,11 @@ auto to_chars(Float value, char* buffer, chars_format fmt) noexcept -> char* {
   }
 
   remove_trailing_zeros(dec);
-  char buf[20];
+  char buf[40];  // long double's shortest form has up to 36 significant digits
   char* digits = buf + sizeof(buf);
   int num_digits = 0;
-  for (unsigned long long sig = dec.sig; sig != 0; sig /= 10, ++num_digits)
-    *--digits = char('0' + sig % 10);
+  for (auto sig = dec.sig; sig != decltype(sig)(0); ++num_digits)
+    *--digits = char('0' + int(divmod10(sig)));
   int lead_exp = dec.exp + num_digits - 1;  // leading digit's decimal exponent
 
   // %g with precision = num_digits uses fixed notation when the leading
