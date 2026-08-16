@@ -1771,7 +1771,7 @@ namespace zmij {
 namespace detail {
 
 template <typename Float>
-auto to_decimal(Float value) noexcept -> dec_fp {
+auto to_decimal(Float value) noexcept -> dec_fp<> {
   using traits = float_traits<Float>;
   auto bits = traits::to_bits(value);
   auto bin_exp = traits::get_exp(bits);  // binary exponent
@@ -2314,8 +2314,8 @@ auto write_hex(char* out, size_t n, Float value, int precision,
   return w.write(exp, int(write_hex_exp(exp, bin_exp) - exp));
 }
 
-template auto to_decimal(float value) noexcept -> dec_fp;
-template auto to_decimal(double value) noexcept -> dec_fp;
+template auto to_decimal(float value) noexcept -> dec_fp<>;
+template auto to_decimal(double value) noexcept -> dec_fp<>;
 
 template auto write(char* buffer, float value) noexcept -> char*;
 template auto write(char* buffer, double value) noexcept -> char*;

@@ -20,9 +20,9 @@ enum {
 
 // A decimal floating-point number (negative ? -1 : 1) * sig * pow(10, exp).
 // If exp is non_finite_exp then the number is a NaN or an infinity.
-struct dec_fp {
-  unsigned long long sig;  // significand
-  int exp;                 // exponent
+template <typename Sig = unsigned long long> struct dec_fp {
+  Sig sig;  // significand
+  int exp;  // exponent
   bool negative;
 };
 
@@ -124,8 +124,7 @@ using uint128_t = uint128;
 // `out`/`n` params write at most `n` characters.
 
 // Converts `value` to the shortest correctly rounded decimal (see to_decimal).
-template <typename Float>
-auto to_decimal(Float value) noexcept -> dec_fp;
+template <typename Float> auto to_decimal(Float value) noexcept -> dec_fp<>;
 
 template <typename Float>
 auto write(char* buffer, Float value) noexcept -> char*;
@@ -218,10 +217,10 @@ inline auto copy_clamped(char* out, size_t n, const char* buffer,
 /// Converts `value` into the shortest correctly rounded decimal representation.
 /// Usage:
 ///   auto [sig, exp, negative] = to_decimal(6.62607015e-34);
-inline auto to_decimal(float value) noexcept -> dec_fp {
+inline auto to_decimal(float value) noexcept -> dec_fp<> {
   return detail::to_decimal(value);
 }
-inline auto to_decimal(double value) noexcept -> dec_fp {
+inline auto to_decimal(double value) noexcept -> dec_fp<> {
   return detail::to_decimal(value);
 }
 

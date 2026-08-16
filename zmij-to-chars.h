@@ -29,7 +29,7 @@ namespace detail {
 
 // Removes trailing decimal zeros from `dec`, increasing its exponent so that
 // sig * 10^exp is unchanged.
-inline void remove_trailing_zeros(dec_fp& dec) noexcept {
+inline void remove_trailing_zeros(dec_fp<>& dec) noexcept {
   for (; dec.sig != 0 && dec.sig % 10 == 0; dec.sig /= 10) ++dec.exp;
 }
 
@@ -77,7 +77,7 @@ auto to_chars_hex(char* first, char* last, Float value, int precision)
 template <typename Float>
 auto to_chars(Float value, char* buffer, chars_format fmt) noexcept -> char* {
   bool general = fmt == chars_format::general;
-  dec_fp dec = to_decimal(value);
+  dec_fp<> dec = to_decimal(value);
   if (dec.negative) *buffer++ = '-';
   if (dec.exp == non_finite_exp) {
     memcpy(buffer, dec.sig != 0 ? "nan" : "inf", 3);
@@ -169,7 +169,7 @@ auto to_chars(char* first, char* last, Float value, chars_format fmt)
   if (fmt == chars_format::fixed) {
     // Delegate to the precision writer with the shortest fraction length
     // (trailing zeros stripped), matching std::to_chars fixed.
-    dec_fp dec = to_decimal(value);
+    dec_fp<> dec = to_decimal(value);
     int precision = 0;
     if (dec.exp != non_finite_exp) {
       remove_trailing_zeros(dec);
