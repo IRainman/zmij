@@ -35,6 +35,14 @@ enum class format {
   hex = 4,
 };
 
+// Minimum buffer sizes for the shortest `write`, one per floating-point type.
+enum {
+  float_buffer_size = 17,
+  double_buffer_size = 34,
+  // Worst case is IEEE binary128: 1 sign + 36 digits + '.' + "e-dddd".
+  long_double_buffer_size = 44,
+};
+
 namespace detail {
 
 struct uint128 {
@@ -202,6 +210,15 @@ auto write_hex(char* out, size_t n, Float value, int precision,
 // When long double == double it has no explicit instantiations, so forward the
 // long double detail writers to their double counterparts.
 #if LDBL_MANT_DIG == DBL_MANT_DIG
+// There is no write_big for double, so route shortest through write.
+template <>
+inline auto write_big(char* out, size_t n, long double value) noexcept
+    -> size_t {
+  char buffer[double_buffer_size];
+  size_t size = size_t(write(buffer, double(value)) - buffer);
+  memcpy(out, buffer, size < n ? size : n);
+  return size;
+}
 template <>
 inline auto write_big(char* out, size_t n, long double value, int precision,
                       format fmt) noexcept -> size_t {
@@ -253,14 +270,6 @@ inline auto to_decimal(long double value) noexcept
   return detail::to_decimal_big(value);
 #endif
 }
-
-// Minimum buffer sizes for the shortest `write`, one per floating-point type.
-enum {
-  float_buffer_size = 17,
-  double_buffer_size = 34,
-  // Worst case is IEEE binary128: 1 sign + 36 digits + '.' + "e-dddd".
-  long_double_buffer_size = 44,
-};
 
 /// Buffer sizes for the write* functions, usable in generic code as
 /// buffer_sizes<Float>::shortest, ::scientific, ::fixed, and ::hex.
@@ -318,13 +327,8 @@ inline auto write(char* out, size_t n, double value) noexcept -> char* {
 /// Returns a pointer past the last character written; if the representation
 /// exceeds `n` characters, only the first `n` are written.
 inline auto write(char* out, size_t n, long double value) noexcept -> char* {
-#if LDBL_MANT_DIG == DBL_MANT_DIG
-  return write(out, n, double(value));
-#else
-  // Shortest cannot fall back to double: a double-shortest decimal may not
-  // round-trip at long double precision.
+  if (LDBL_MANT_DIG == DBL_MANT_DIG) return write(out, n, double(value));
   return detail::clamp_end(out, detail::write_big(out, n, value), n);
-#endif
 }
 
 /// Writes `value` in scientific format with `precision` digits after the
