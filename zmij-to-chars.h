@@ -172,6 +172,18 @@ auto to_chars(char* first, char* last, Float value, chars_format fmt,
   return copy_to_chars(first, last, buffer, end);
 }
 
+template <>
+inline auto to_chars(char* first, char* last, long double value,
+                     chars_format fmt, int precision) -> to_chars_result {
+  if (precision < 0)
+    precision = 6;
+  else if (precision == 0 && fmt == chars_format::general)
+    precision = 1;
+  size_t size = write_big(first, size_t(last - first), value, precision, fmt);
+  if (size == 0) return {first, std::errc::not_enough_memory};
+  return to_chars_end(first, last, size);
+}
+
 // Writes `value` in its shortest form in the given `fmt` to [`first`, `last`),
 // like std::to_chars with a format but no precision.
 template <typename Float>
@@ -303,18 +315,9 @@ inline auto to_chars(char* first, char* last, long double value,
                      chars_format fmt, int precision) -> to_chars_result {
   if (double(value) == value)
     return to_chars(first, last, double(value), fmt, precision);
-  if (fmt == chars_format::hex)
-    return detail::to_chars_hex(first, last, value, precision);
-  // Match printf: a negative precision defaults to 6, and `general` uses at
-  // least one significant digit.
-  if (precision < 0)
-    precision = 6;
-  else if (precision == 0 && fmt == chars_format::general)
-    precision = 1;
-  size_t cap = size_t(last - first);
-  size_t size = detail::write_big(first, cap, value, precision, fmt);
-  if (size == 0) return {first, std::errc::not_enough_memory};
-  return detail::to_chars_end(first, last, size);
+  return fmt == chars_format::hex
+             ? detail::to_chars_hex(first, last, value, precision)
+             : detail::to_chars(first, last, value, fmt, precision);
 }
 
 }  // namespace zmij
