@@ -239,12 +239,9 @@ inline auto to_chars(char* first, char* last, double value) -> to_chars_result {
 }
 inline auto to_chars(char* first, char* last, long double value)
     -> to_chars_result {
-#if LDBL_MANT_DIG == DBL_MANT_DIG
-  return to_chars(first, last, double(value));
-#else
+  if (LDBL_MANT_DIG == DBL_MANT_DIG) return to_chars(first, last, double(value));
   size_t size = detail::write_big(first, size_t(last - first), value);
   return detail::to_chars_end(first, last, size);
-#endif
 }
 
 /// Writes the shortest representation of `value` in the given `fmt` to
