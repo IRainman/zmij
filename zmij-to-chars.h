@@ -96,7 +96,7 @@ auto to_chars(Float value, char* buffer, chars_format fmt) noexcept -> char* {
   bool general = fmt == chars_format::general;
   auto dec = zmij::to_decimal(value);
   if (dec.negative) *buffer++ = '-';
-  if (dec.exp == non_finite_exp) {
+  if (dec.exp == nonfinite_exp) {
     memcpy(buffer, dec.sig != 0 ? "nan" : "inf", 3);
     return buffer + 3;
   }
@@ -200,7 +200,7 @@ auto to_chars(char* first, char* last, Float value, chars_format fmt)
     // (trailing zeros stripped), matching std::to_chars fixed.
     auto dec = zmij::to_decimal(value);
     int precision = 0;
-    if (dec.exp != non_finite_exp) {
+    if (dec.exp != nonfinite_exp) {
       remove_trailing_zeros(dec);
       precision = dec.exp < 0 ? -dec.exp : 0;
     }

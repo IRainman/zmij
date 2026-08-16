@@ -149,7 +149,7 @@ TEST(float_test, to_decimal) {
   float garlic_nan = 0;
   memcpy(&garlic_nan, &bits, sizeof(bits));
   dec = zmij::to_decimal(garlic_nan);
-  EXPECT_EQ(dec.exp, zmij::non_finite_exp);
+  EXPECT_EQ(dec.exp, zmij::nonfinite_exp);
   EXPECT_EQ(dec.sig, garlic & 0x7FFFFF);
 }
 
@@ -727,12 +727,12 @@ TEST(long_double_test, to_decimal) {
   EXPECT_TRUE(dec.negative);
 
   dec = zmij::to_decimal(limits::infinity());
-  EXPECT_EQ(dec.exp, zmij::non_finite_exp);
+  EXPECT_EQ(dec.exp, zmij::nonfinite_exp);
   EXPECT_EQ(dec.sig, decltype(dec.sig)(0));
   EXPECT_FALSE(dec.negative);
 
   dec = zmij::to_decimal(limits::quiet_NaN());
-  EXPECT_EQ(dec.exp, zmij::non_finite_exp);
+  EXPECT_EQ(dec.exp, zmij::nonfinite_exp);
   EXPECT_NE(dec.sig, decltype(dec.sig)(0));
 
   // The 128-bit significand has no division operator in the portable fallback,

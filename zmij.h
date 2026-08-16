@@ -15,11 +15,11 @@
 namespace zmij {
 
 enum {
-  non_finite_exp = int(~0u >> 1),
+  nonfinite_exp = int(~0u >> 1),
 };
 
 // A decimal floating-point number (negative ? -1 : 1) * sig * pow(10, exp).
-// If exp is non_finite_exp then the number is a NaN or an infinity.
+// If exp is nonfinite_exp then the number is a NaN or an infinity.
 template <typename Sig = uint64_t> struct dec_fp {
   Sig sig;  // significand
   int exp;  // exponent

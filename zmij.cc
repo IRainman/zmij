@@ -1761,7 +1761,7 @@ auto to_decimal(Float value) noexcept -> dec_fp<> {
   auto bin_sig = traits::get_sig(bits);  // binary significand
   auto negative = traits::is_negative(bits);
   if (bin_exp == 0 || bin_exp == traits::exp_mask) [[ZMIJ_UNLIKELY]] {
-    if (bin_exp != 0) return {bin_sig, non_finite_exp, negative};
+    if (bin_exp != 0) return {bin_sig, nonfinite_exp, negative};
     if (bin_sig == 0) return {0, 0, negative};
     bin_exp = 1;
     bin_sig |= traits::implicit_bit;
@@ -1901,7 +1901,7 @@ auto to_decimal_big(Float value) noexcept -> dec_fp<uint128_t> {
   bool negative = traits::is_negative(bits);
 
   if (!traits::is_normal(raw_exp)) [[ZMIJ_UNLIKELY]] {
-    if (raw_exp != 0) return {bin_sig, non_finite_exp, negative};
+    if (raw_exp != 0) return {bin_sig, nonfinite_exp, negative};
     if (bin_sig == 0) return {0, 0, negative};
     raw_exp = 1;
     bin_sig = bin_sig | traits::implicit_bit;
@@ -1989,7 +1989,7 @@ auto write_big(char* out, size_t n, Float value) noexcept -> size_t {
 
   writer w = {out, out + n, 0};
   if (dec.negative) w.write('-');
-  if (dec.exp == non_finite_exp)
+  if (dec.exp == nonfinite_exp)
     return w.write(dec.sig != uint128_t(0) ? "nan" : "inf", 3);
   if (dec.sig == uint128_t(0)) return w.write('0');
 
