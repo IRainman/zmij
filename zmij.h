@@ -20,7 +20,7 @@ enum {
 
 // A decimal floating-point number (negative ? -1 : 1) * sig * pow(10, exp).
 // If exp is non_finite_exp then the number is a NaN or an infinity.
-template <typename Sig = unsigned long long> struct dec_fp {
+template <typename Sig = uint64_t> struct dec_fp {
   Sig sig;  // significand
   int exp;  // exponent
   bool negative;
@@ -126,6 +126,10 @@ using uint128_t = uint128;
 // Converts `value` to the shortest correctly rounded decimal (see to_decimal).
 template <typename Float> auto to_decimal(Float value) noexcept -> dec_fp<>;
 
+// Wide-significand variant for long double (see to_decimal).
+template <typename Float>
+auto to_decimal_big(Float value) noexcept -> dec_fp<uint128_t>;
+
 template <typename Float>
 auto write(char* buffer, Float value) noexcept -> char*;
 
@@ -222,6 +226,15 @@ inline auto to_decimal(float value) noexcept -> dec_fp<> {
 }
 inline auto to_decimal(double value) noexcept -> dec_fp<> {
   return detail::to_decimal(value);
+}
+inline auto to_decimal(long double value) noexcept
+    -> dec_fp<detail::uint128_t> {
+#if LDBL_MANT_DIG == DBL_MANT_DIG
+  dec_fp<> dec = detail::to_decimal(double(value));
+  return {dec.sig, dec.exp, dec.negative};
+#else
+  return detail::to_decimal_big(value);
+#endif
 }
 
 // Minimum buffer sizes for the shortest `write`, one per floating-point type.

@@ -1910,18 +1910,16 @@ auto write(char* buffer, Float value) noexcept -> char* {
 }
 
 template <typename Float>
-auto write_big(char* out, size_t n, Float value) noexcept -> size_t {
+auto to_decimal_big(Float value) noexcept -> dec_fp<uint128_t> {
   using traits = float_traits<Float>;
   auto bits = traits::to_bits(value);
   auto raw_exp = traits::get_exp(bits);
   auto bin_sig = traits::get_sig(bits);
-
-  writer w = {out, out + n, 0};
-  if (traits::is_negative(bits)) w.write('-');
+  bool negative = traits::is_negative(bits);
 
   if (!traits::is_normal(raw_exp)) [[ZMIJ_UNLIKELY]] {
-    if (raw_exp != 0) return w.write(bin_sig != 0 ? "nan" : "inf", 3);
-    if (bin_sig == 0) return w.write('0');
+    if (raw_exp != 0) return {bin_sig, non_finite_exp, negative};
+    if (bin_sig == 0) return {0, 0, negative};
     raw_exp = 1;
     bin_sig = bin_sig | traits::implicit_bit;
   }
@@ -1998,14 +1996,27 @@ auto write_big(char* out, size_t n, Float value) noexcept -> size_t {
   uint128_t dec_sig = trim_down || trim_up
                           ? integral - last_digit + trim_up * 10
                           : integral + round_up;
+  return {dec_sig, dec_exp, negative};
+}
+
+template <typename Float>
+auto write_big(char* out, size_t n, Float value) noexcept -> size_t {
+  using traits = float_traits<Float>;
+  dec_fp<uint128_t> dec = to_decimal_big(value);
+
+  writer w = {out, out + n, 0};
+  if (dec.negative) w.write('-');
+  if (dec.exp == non_finite_exp)
+    return w.write(dec.sig != uint128_t(0) ? "nan" : "inf", 3);
+  if (dec.sig == uint128_t(0)) return w.write('0');
 
   // Convert the significand to digits, msb first, and drop trailing zeros.
   char digits[40];
   char* start = digits + sizeof(digits);
-  for (uint128_t x = dec_sig; x != uint128_t(0);)
+  for (uint128_t x = dec.sig; x != uint128_t(0);)
     *--start = char('0' + divmod10(x));
   int num_digits = int(digits + sizeof(digits) - start);
-  int lead_exp = dec_exp + num_digits - 1;
+  int lead_exp = dec.exp + num_digits - 1;
   while (num_digits > 1 && start[num_digits - 1] == '0') --num_digits;
 
   bool fixed = lead_exp >= traits::min_fixed_dec_exp &&
@@ -2346,6 +2357,7 @@ template auto write_hex(char* out, size_t n, double value, int precision,
 // long double instantiations, only needed when it differs from double; else
 // the public wrappers forward long double to the double path.
 #if LDBL_MANT_DIG != DBL_MANT_DIG
+template auto to_decimal_big(long double value) noexcept -> dec_fp<uint128_t>;
 template auto write_big(char* out, size_t n, long double value) noexcept
     -> size_t;
 template auto write_big(char* out, size_t n, long double value, int precision,

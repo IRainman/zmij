@@ -718,6 +718,42 @@ TEST(double_test, write_big_reports_true_length) {
   EXPECT_EQ(needed, expected);                // true length, > capacity
 }
 
+TEST(long_double_test, to_decimal) {
+  using limits = std::numeric_limits<long double>;
+
+  auto dec = zmij::to_decimal(-0.0L);
+  EXPECT_EQ(dec.sig, decltype(dec.sig)(0));
+  EXPECT_EQ(dec.exp, 0);
+  EXPECT_TRUE(dec.negative);
+
+  dec = zmij::to_decimal(limits::infinity());
+  EXPECT_EQ(dec.exp, zmij::non_finite_exp);
+  EXPECT_EQ(dec.sig, decltype(dec.sig)(0));
+  EXPECT_FALSE(dec.negative);
+
+  dec = zmij::to_decimal(limits::quiet_NaN());
+  EXPECT_EQ(dec.exp, zmij::non_finite_exp);
+  EXPECT_NE(dec.sig, decltype(dec.sig)(0));
+
+  // The 128-bit significand has no division operator in the portable fallback,
+  // so reconstruct the value only when uint128_t is the native __int128.
+#  if ZMIJ_USE_INT128
+  for (long double value : {1.5L, -2.5L, 3.14159265358979323846L, 1e300L,
+                            limits::denorm_min(), limits::max()}) {
+    dec = zmij::to_decimal(value);
+    char digits[64];
+    char* d = digits + sizeof(digits);
+    auto sig = dec.sig;
+    if (sig == 0) *--d = '0';
+    for (; sig != 0; sig /= 10) *--d = char('0' + int(sig % 10));
+    std::string s = dec.negative ? "-" : "";
+    s.append(d, digits + sizeof(digits) - d);
+    s += "e" + std::to_string(dec.exp);
+    EXPECT_EQ(strtold(s.c_str(), nullptr), value) << "s=" << s;
+  }
+#  endif
+}
+
 // Use double-exact values (plain double literals) so the expected output is the
 // same whether long double is the x87 80-bit, IEEE binary128 or double format,
 // keeping the test portable across platforms.
