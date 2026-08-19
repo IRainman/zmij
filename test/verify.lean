@@ -3,19 +3,16 @@ import Mathlib
 -- Exact rational value represented by binary significand f and exponent e.
 def value (f : ℕ) (e : ℤ) : ℚ := f * 2 ^ e
 
--- Lower rounding boundary for a regularly spaced floating-point value (m⁻).
-def lower (f : ℕ) (e : ℤ) : ℚ := (f - 1 / 2) * 2 ^ e
-
--- Upper rounding boundary (m⁺).
-def upper (f : ℕ) (e : ℤ) : ℚ := (f + 1 / 2) * 2 ^ e
+-- One ULP for a regularly spaced value with exponent e.
+def ulp (e : ℤ) : ℚ := 2 ^ e
 
 -- Whether the exact rational result r rounds to the regularly spaced value
 -- f · 2^e under round-to-nearest, ties-to-even.
 def Roundtrips (f : ℕ) (e : ℤ) (r : ℚ) : Prop :=
   if f % 2 = 0 then
-    lower f e ≤ r ∧ r ≤ upper f e
+    |r - value f e| ≤ ulp e / 2
   else
-    lower f e < r ∧ r < upper f e
+    |r - value f e| < ulp e / 2
 
 -- Whether f · 2^e is a regularly spaced normal binary64 value,
 -- excluding powers of 2.
@@ -118,7 +115,7 @@ theorem decimal_significand_distance
     (h : Regular f e) :
     let (d, k) := toDecimal f e
     let x := value f e * 10 ^ (-k)
-    let u := (2 : ℚ) ^ e * 10 ^ (-k)
+    let u := ulp e * 10 ^ (-k)
     if f % 2 = 0 then
       |d - x| ≤ u / 2
     else
@@ -130,9 +127,9 @@ theorem decimal_significand_distance
         (if c.roundD0 || c.roundU0 then c.decTen else c.decOne, c.k) := rfl
   rw [hto]
 
-  -- Match the goal's exact inverse notation to prevent type mismatch
+  -- Match the goal's exact inverse notation to prevent type mismatch.
   let x := value f e * (10 ^ c.k)⁻¹
-  let u := (2 : ℚ) ^ e * (10 ^ c.k)⁻¹
+  let u := ulp e * (10 ^ c.k)⁻¹
 
   let InRange (dec : ℕ) : Prop :=
     if f % 2 = 0 then |dec - x| ≤ u / 2 else |dec - x| < u / 2
@@ -144,46 +141,17 @@ theorem decimal_significand_distance
   by_cases hd0 : c.roundD0 = true
   · simp [hd0]
     exact hten_d0 hd0
-  · have hd0' : c.roundD0 = false := by revert hd0; cases c.roundD0 <;> simp
+  · have hd0' : c.roundD0 = false := by
+      revert hd0
+      cases c.roundD0 <;> simp
     by_cases hu0 : c.roundU0 = true
     · simp [hd0', hu0]
       exact hten_u0 hu0
-    · have hu0' : c.roundU0 = false := by revert hu0; cases c.roundU0 <;> simp
+    · have hu0' : c.roundU0 = false := by
+        revert hu0
+        cases c.roundU0 <;> simp
       simp [hd0', hu0']
       exact hone
-
--- The decimal significand produced by yy lies within the rounding interval
--- after scaling by the decimal exponent.
-theorem decimal_significand_in_interval
-    (f : ℕ) (e : ℤ)
-    (h : Regular f e) :
-    let (d, k) := toDecimal f e
-    let p10 := 10 ^ (-k)
-    if f % 2 = 0 then
-      lower f e * p10 ≤ d ∧ d ≤ upper f e * p10
-    else
-      lower f e * p10 < d ∧ d < upper f e * p10 := by
-  rcases hdk : toDecimal f e with ⟨d, k⟩
-  dsimp only
-
-  let x := value f e * 10 ^ (-k)
-  let u := (2 : ℚ) ^ e * 10 ^ (-k)
-
-  have hd := decimal_significand_distance f e h
-
-  have hlower : lower f e * 10 ^ (-k) = x - u / 2 := by
-    dsimp [x, u, lower, value]; ring
-
-  have hupper : upper f e * 10 ^ (-k) = x + u / 2 := by
-    dsimp [x, u, upper, value]; ring
-
-  split_ifs with heven <;> rw [hlower, hupper]
-  · have hd' : |d - x| ≤ u / 2 := by simpa [hdk, x, u, heven] using hd
-    obtain ⟨hl, hr⟩ := abs_le.mp hd'
-    constructor <;> linarith
-  · have hd' : |d - x| < u / 2 := by simpa [hdk, x, u, heven] using hd
-    obtain ⟨hl, hr⟩ := abs_lt.mp hd'
-    constructor <;> linarith
 
 -- The decimal representation produced by yy round-trips to the original value.
 theorem yy_roundtrips
@@ -192,24 +160,50 @@ theorem yy_roundtrips
     let (d, k) := toDecimal f e
     Roundtrips f e (d * 10 ^ k) := by
   rcases hdk : toDecimal f e with ⟨d, k⟩
-  have hi := decimal_significand_in_interval f e h
-  simp only [hdk] at hi
 
-  have hpow_ne : (10 : ℚ) ^ k ≠ 0 := by positivity
+  have hp : (0 : ℚ) < 10 ^ k := by positivity
+
   have hcancel : (10 : ℚ) ^ (-k) * 10 ^ k = 1 := by
-    simpa only [zpow_neg] using inv_mul_cancel₀ hpow_ne
+    simpa only [zpow_neg] using inv_mul_cancel₀ (ne_of_gt hp)
 
-  have hrescale (x : ℚ) : x = x * 10 ^ (-k) * 10 ^ k := by
-    rw [mul_assoc, hcancel, mul_one]
+  have hdiff :
+      ((d : ℚ) - value f e * 10 ^ (-k)) * 10 ^ k =
+        d * 10 ^ k - value f e := by
+    calc
+      ((d : ℚ) - value f e * 10 ^ (-k)) * 10 ^ k =
+          d * 10 ^ k - value f e * (10 ^ (-k) * 10 ^ k) := by
+            ring
+      _ = d * 10 ^ k - value f e := by
+            rw [hcancel, mul_one]
+
+  have habs :
+      |(d : ℚ) * 10 ^ k - value f e| =
+        |(d : ℚ) - value f e * 10 ^ (-k)| * 10 ^ k := by
+    rw [← hdiff, abs_mul, abs_of_pos hp]
+
+  have hscale :
+      (ulp e * 10 ^ (-k) / 2) * 10 ^ k = ulp e / 2 := by
+    calc
+      (ulp e * 10 ^ (-k) / 2) * 10 ^ k =
+          (ulp e / 2) * (10 ^ (-k) * 10 ^ k) := by
+            ring
+      _ = ulp e / 2 := by
+            rw [hcancel, mul_one]
 
   simp only [Roundtrips]
+  split_ifs with heven
+  · have hd :
+        |(d : ℚ) - value f e * 10 ^ (-k)| ≤
+          ulp e * 10 ^ (-k) / 2 := by
+      simpa [hdk, heven] using decimal_significand_distance f e h
 
-  -- Split parity and prove both bounds from the scaled interval.
-  split_ifs at hi ⊢ <;> constructor <;>
-    first
-    | rw [hrescale (lower f e)]
-      gcongr
-      exact hi.1
-    | rw [hrescale (upper f e)]
-      gcongr
-      exact hi.2
+    rw [habs, ← hscale]
+    exact mul_le_mul_of_nonneg_right hd (le_of_lt hp)
+
+  · have hd :
+        |(d : ℚ) - value f e * 10 ^ (-k)| <
+          ulp e * 10 ^ (-k) / 2 := by
+      simpa [hdk, heven] using decimal_significand_distance f e h
+
+    rw [habs, ← hscale]
+    exact mul_lt_mul_of_pos_right hd hp
