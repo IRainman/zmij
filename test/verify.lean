@@ -166,44 +166,21 @@ theorem yy_roundtrips
   have hcancel : (10 : ℚ) ^ (-k) * 10 ^ k = 1 := by
     simpa only [zpow_neg] using inv_mul_cancel₀ (ne_of_gt hp)
 
-  have hdiff :
+  have hrescale_error :
       ((d : ℚ) - value f e * 10 ^ (-k)) * 10 ^ k =
         d * 10 ^ k - value f e := by
-    calc
-      ((d : ℚ) - value f e * 10 ^ (-k)) * 10 ^ k =
-          d * 10 ^ k - value f e * (10 ^ (-k) * 10 ^ k) := by
-            ring
-      _ = d * 10 ^ k - value f e := by
-            rw [hcancel, mul_one]
-
-  have habs :
-      |(d : ℚ) * 10 ^ k - value f e| =
-        |(d : ℚ) - value f e * 10 ^ (-k)| * 10 ^ k := by
-    rw [← hdiff, abs_mul, abs_of_pos hp]
+    rw [sub_mul, mul_assoc, hcancel, mul_one]
 
   have hscale :
       (ulp e * 10 ^ (-k) / 2) * 10 ^ k = ulp e / 2 := by
-    calc
-      (ulp e * 10 ^ (-k) / 2) * 10 ^ k =
-          (ulp e / 2) * (10 ^ (-k) * 10 ^ k) := by
-            ring
-      _ = ulp e / 2 := by
-            rw [hcancel, mul_one]
+    rw [div_mul_eq_mul_div, mul_assoc, hcancel, mul_one]
+
+  have hdist := decimal_significand_distance f e h
 
   simp only [Roundtrips]
-  split_ifs with heven
-  · have hd :
-        |(d : ℚ) - value f e * 10 ^ (-k)| ≤
-          ulp e * 10 ^ (-k) / 2 := by
-      simpa [hdk, heven] using decimal_significand_distance f e h
-
-    rw [habs, ← hscale]
-    exact mul_le_mul_of_nonneg_right hd (le_of_lt hp)
-
-  · have hd :
-        |(d : ℚ) - value f e * 10 ^ (-k)| <
-          ulp e * 10 ^ (-k) / 2 := by
-      simpa [hdk, heven] using decimal_significand_distance f e h
-
-    rw [habs, ← hscale]
-    exact mul_lt_mul_of_pos_right hd hp
+  split_ifs with heven <;>
+    rw [← hrescale_error, abs_mul, abs_of_pos hp, ← hscale]
+  · exact mul_le_mul_of_nonneg_right
+      (by simpa [hdk, heven] using hdist) (le_of_lt hp)
+  · exact mul_lt_mul_of_pos_right
+      (by simpa [hdk, heven] using hdist) hp
