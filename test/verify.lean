@@ -2,7 +2,7 @@ import Mathlib.Tactic
 import Mathlib.Data.Rat.Floor
 import Mathlib.Data.Nat.Log
 
--- The range check below evaluates 2^1074 and enumerates 2046 exponents in the
+-- The finite checks below evaluate 2^1074 and enumerate 2046 exponents in the
 -- kernel, so raise the elaborator's exponentiation and recursion guards.
 set_option maxRecDepth 100000
 set_option exponentiation.threshold 5000
@@ -25,7 +25,7 @@ def Roundtrips (f : ℕ) (e : ℤ) (r : ℚ) : Prop :=
 -- excluding powers of 2.
 def Regular (f : ℕ) (e : ℤ) : Prop :=
   2 ^ 52 < f ∧ f < 2 ^ 53 ∧
-    -1074 ≤ e ∧ e ≤ 971
+   -1074 ≤ e ∧ e ≤ 971
 
 -- Binary exponent of 10^k used to normalize its 128-bit significand.
 def power10Exponent (k : ℤ) : ℤ :=
@@ -511,7 +511,7 @@ theorem scaled_value_error_bound (f : ℕ) (e : ℤ) (hr : Regular f e) :
 -- exact value. For e ≠ 0, combine round_bound and scaled_value_error_bound to
 -- get a distance below 1/2 + 2⁻⁶³, then use margin_lower. For e = 0, we have
 -- decOne = f = x exactly.
-theorem dec_one_distance
+theorem dec_one_error_bound
     (f : ℕ) (e : ℤ)
     (h : Regular f e) :
     let c := toDecimalCandidates f e
@@ -573,13 +573,13 @@ theorem dec_one_distance
 theorem dec_ten_separation_core (f : ℕ) (e : ℤ) (h : Regular f e) :
     let c := toDecimalCandidates f e
     let ten : ℕ := sigHi f e - sigHi f e % 10
+    let s : ℚ := 2 ^ (1 - e) * 10 ^ c.k
     (c.roundD0 = true →
-        if f % 2 = 0 then |2 * (f : ℚ) - (ten : ℚ) * (2 ^ (1 - e) * 10 ^ c.k)| ≤ 1
-        else |2 * (f : ℚ) - (ten : ℚ) * (2 ^ (1 - e) * 10 ^ c.k)| < 1) ∧
+        if f % 2 = 0 then |2 * (f : ℚ) - (ten : ℚ) * s| ≤ 1
+        else |2 * (f : ℚ) - (ten : ℚ) * s| < 1) ∧
       (c.roundU0 = true →
-        if f % 2 = 0 then
-          |2 * (f : ℚ) - ((ten : ℚ) + 10) * (2 ^ (1 - e) * 10 ^ c.k)| ≤ 1
-        else |2 * (f : ℚ) - ((ten : ℚ) + 10) * (2 ^ (1 - e) * 10 ^ c.k)| < 1) := by
+        if f % 2 = 0 then |2 * (f : ℚ) - ((ten : ℚ) + 10) * s| ≤ 1
+        else |2 * (f : ℚ) - ((ten : ℚ) + 10) * s| < 1) := by
   sorry
 
 -- Convert the scaled separation bounds for the multiple-of-ten candidates
@@ -701,14 +701,14 @@ theorem roundD0_not_roundU0
   -- Clear the definitions so the remaining integer reasoning is linear.
   clear_value cc hlf k P
 
-  -- roundD0 = true means cc ≤ halfUlp.
+  -- roundD0 implies cc ≤ halfUlp.
   have hcc_le : cc ≤ hlf := by
     rw [hroundD0_def] at hd0
     split at hd0
     · omega
     · rw [decide_eq_true_eq] at hd0; omega
 
-  -- roundU0 = true means 10·P ≤ cc + halfUlp + 1.
+  -- roundU0 implies 10·P ≤ cc + halfUlp + 1.
   have hge : c.roundU0 = true → 10 * P ≤ cc + hlf + 1 := by
     intro ht
     rw [hroundU0_def] at ht
@@ -752,7 +752,7 @@ theorem decimal_significand_error_bound
       |dec - x| < u / 2
 
   have hone : InRange c.decOne := by
-    have hs := dec_one_distance f e h
+    have hs := dec_one_error_bound f e h
     simp only [InRange, c, x, u]
     split_ifs <;> linarith [hs]
 
