@@ -466,8 +466,7 @@ would put a single modular progression inside an interval of width below
 `den·U`, a window of relative width `U/N ≈ 2^(-63.3)`. The finite certificates
 rule this out for every exponent. This is where verify.py counts solutions with
 `floor_sum`; here a refutation certificate reaches the same conclusion with one
-small check per window, and the exponent range is kernel-checked in blocks of
-64.
+small check per window.
 -/
 
 -- The exact distance from the multiple-of-ten candidate to the scaled value,
@@ -541,6 +540,11 @@ theorem trim_tie_k_zero (f : ℕ) (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971)
   ring
 
 /-! ### Refuting the trim windows
+
+A Nadezhin-style separation proof, as used in Schubfach, was considered but
+still requires a finite Diophantine check over the binary64 significand range.
+The direct modular-window formulation below matches yy more closely and is
+substantially simpler.
 
 Both bounds reduce to one arithmetic question per exponent. Writing `num/den`
 for the exact power of ten, `modulus = N·den` and `g = 2·num`, a violation
@@ -632,13 +636,14 @@ def modWindowsRefuted (g modulus lo1 hi1 lo2 hi2 q : ℤ) : Bool :=
   modWindowRefuted g modulus (2 ^ 52 + 1) (2 ^ 53 - 1) lo1 hi1 q &&
     modWindowRefuted g modulus (2 ^ 52 + 1) (2 ^ 53 - 1) lo2 hi2 q
 
--- The multiplier is searched for in the kernel rather than tabulated.
--- Convergent denominators of `g/modulus` give the relevant best rational
--- approximations. The Euclidean remainder `v` that produces `qc` is the error
+-- The multiplier is searched for rather than tabulated, by the elaborator
+-- rather than by the kernel. Convergent denominators of `g/modulus` give the
+-- relevant best rational approximations. The Euclidean remainder `v` that
+-- produces `qc` is the error
 -- `|g·qc - modulus·p|`; it must fall below `modulus/2^53` before a window can
 -- be refuted. Testing that first skips the small denominators and leaves at
 -- most three window checks per exponent.
-def modCertSearch (g modulus lo1 hi1 lo2 hi2 : ℤ) : ℕ → ℤ → ℤ → ℤ → ℤ → ℤ
+private def modCertSearch (g modulus lo1 hi1 lo2 hi2 : ℤ) : ℕ → ℤ → ℤ → ℤ → ℤ → ℤ
   | 0, _, _, _, qc => qc
   | n + 1, u, v, qp, qc =>
     if decide (2 ^ 53 * v < modulus)
@@ -649,94 +654,58 @@ def modCertSearch (g modulus lo1 hi1 lo2 hi2 : ℤ) : ℕ → ℤ → ℤ → �
     else
       modCertSearch g modulus lo1 hi1 lo2 hi2 n v (u % v) qc (u / v * qc + qp)
 
-def trimWindowsEmpty (e : ℤ) : Bool :=
+-- Both windows of one exponent, refuted by a given multiplier: a handful of
+-- big-integer operations, with the search for the multiplier left outside.
+def trimCertificateValid (e q : ℤ) : Bool :=
   let num : ℤ := trimNum e
   let bnd : ℤ := trimBnd e
   let modulus : ℤ := trimScale e
   modWindowsRefuted (2 * num) modulus
     (num + 1) (bnd - 1) (modulus - bnd) (modulus - num - 1)
-    (modCertSearch (2 * num) modulus
-      (num + 1) (bnd - 1) (modulus - bnd) (modulus - num - 1)
-      80 modulus (2 * num % modulus) 0 1)
+    q
 
 /-! #### Certifying the exponent range
 
-The 2046 exponents are certified in blocks of 64. A `decide` keeps every
-intermediate of the searches it runs alive until the whole declaration is
-checked, and the ladder produces a few hundred numbers of about a thousand bits
-per exponent, so the cost of one block grows quadratically in its width. The
-full range in a single declaration needs tens of gigabytes, while 32 separate
-declarations of 64 exponents stay under a second each.
+Finding a multiplier and checking one are separated along the trust boundary.
+`findTrimCertificate` runs during elaboration, outside the proof term. The
+tactic below quotes the multiplier it returns as an integer literal, and the
+kernel then checks `trimCertificateValid` on that literal. The search procedure
+is untrusted: if it produces a bad multiplier, the kernel check fails. Thus only
+the certificate appears in the proof term, not the computation that found it.
+
+Previously the search itself was reduced by the kernel through `decide`, which
+kept the intermediate search computation alive while checking the declaration
+and made this section expensive.
 -/
 
-def trimChunk (i : ℕ) : Bool :=
-  (List.range 64).all fun j => trimWindowsEmpty (-1074 + 64 * i + j)
+private def findTrimCertificate (e : ℤ) : ℤ :=
+  let num : ℤ := trimNum e
+  let bnd : ℤ := trimBnd e
+  let modulus : ℤ := trimScale e
+  modCertSearch (2 * num) modulus
+    (num + 1) (bnd - 1) (modulus - bnd) (modulus - num - 1)
+    80 modulus (2 * num % modulus) 0 1
 
-section
-
-set_option exponentiation.threshold 5000
-theorem trim_chunk_00 : trimChunk 0 = true := by decide
-theorem trim_chunk_01 : trimChunk 1 = true := by decide
-theorem trim_chunk_02 : trimChunk 2 = true := by decide
-theorem trim_chunk_03 : trimChunk 3 = true := by decide
-theorem trim_chunk_04 : trimChunk 4 = true := by decide
-theorem trim_chunk_05 : trimChunk 5 = true := by decide
-theorem trim_chunk_06 : trimChunk 6 = true := by decide
-theorem trim_chunk_07 : trimChunk 7 = true := by decide
-theorem trim_chunk_08 : trimChunk 8 = true := by decide
-theorem trim_chunk_09 : trimChunk 9 = true := by decide
-theorem trim_chunk_10 : trimChunk 10 = true := by decide
-theorem trim_chunk_11 : trimChunk 11 = true := by decide
-theorem trim_chunk_12 : trimChunk 12 = true := by decide
-theorem trim_chunk_13 : trimChunk 13 = true := by decide
-theorem trim_chunk_14 : trimChunk 14 = true := by decide
-theorem trim_chunk_15 : trimChunk 15 = true := by decide
-theorem trim_chunk_16 : trimChunk 16 = true := by decide
-theorem trim_chunk_17 : trimChunk 17 = true := by decide
-theorem trim_chunk_18 : trimChunk 18 = true := by decide
-theorem trim_chunk_19 : trimChunk 19 = true := by decide
-theorem trim_chunk_20 : trimChunk 20 = true := by decide
-theorem trim_chunk_21 : trimChunk 21 = true := by decide
-theorem trim_chunk_22 : trimChunk 22 = true := by decide
-theorem trim_chunk_23 : trimChunk 23 = true := by decide
-theorem trim_chunk_24 : trimChunk 24 = true := by decide
-theorem trim_chunk_25 : trimChunk 25 = true := by decide
-theorem trim_chunk_26 : trimChunk 26 = true := by decide
-theorem trim_chunk_27 : trimChunk 27 = true := by decide
-theorem trim_chunk_28 : trimChunk 28 = true := by decide
-theorem trim_chunk_29 : trimChunk 29 = true := by decide
-theorem trim_chunk_30 : trimChunk 30 = true := by decide
-theorem trim_chunk_31 : trimChunk 31 = true := by decide
-
-end
-
-theorem trim_chunk_all (i : ℕ) (hi : i < 32) : trimChunk i = true := by
-  interval_cases i
-  exacts [
-    trim_chunk_00, trim_chunk_01, trim_chunk_02, trim_chunk_03,
-    trim_chunk_04, trim_chunk_05, trim_chunk_06, trim_chunk_07,
-    trim_chunk_08, trim_chunk_09, trim_chunk_10, trim_chunk_11,
-    trim_chunk_12, trim_chunk_13, trim_chunk_14, trim_chunk_15,
-    trim_chunk_16, trim_chunk_17, trim_chunk_18, trim_chunk_19,
-    trim_chunk_20, trim_chunk_21, trim_chunk_22, trim_chunk_23,
-    trim_chunk_24, trim_chunk_25, trim_chunk_26, trim_chunk_27,
-    trim_chunk_28, trim_chunk_29, trim_chunk_30, trim_chunk_31
-  ]
+open Lean Elab Tactic Meta in
+/-- Close a goal `∃ q, trimCertificateValid e q = true` for a literal exponent
+`e` by searching for a multiplier and quoting it into the proof term. -/
+elab "trim_cert" : tactic => do
+  let target ← whnfR (← (← getMainGoal).getType)
+  let_expr Exists _ pred := target
+    | throwError "trim_cert: expected `∃ q, trimCertificateValid e q = true`"
+  let_expr Eq _ lhs _ := pred.bindingBody!
+    | throwError "trim_cert: expected an equation under the existential"
+  let_expr trimCertificateValid e _ := lhs
+    | throwError "trim_cert: expected `trimCertificateValid e q`, got {lhs}"
+  let some exponent := e.int?
+    | throwError "trim_cert: the exponent {e} is not a literal"
+  let q ← Term.exprToSyntax (toExpr (findTrimCertificate exponent))
+  evalTactic (← `(tactic| exact ⟨$q, by decide +kernel⟩))
 
 theorem trim_windows_empty (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
-    trimWindowsEmpty e = true := by
-  let chunk := (e + 1074) / 64
-  let offset := e - 64 * chunk + 1074
-  have hc := trim_chunk_all chunk.toNat (by
-    dsimp [chunk]
-    omega)
-  simp only [trimChunk, List.all_eq_true, List.mem_range] at hc
-  have hr := hc offset.toNat (by
-    dsimp [offset, chunk]
-    omega)
-  rwa [show -1074 + 64 * (chunk.toNat : ℤ) + (offset.toNat : ℤ) = e from by
-    dsimp [offset, chunk]
-    omega] at hr
+    ∃ q, trimCertificateValid e q = true := by
+  obtain ⟨hlo, hhi⟩ := he
+  interval_cases e <;> trim_cert
 
 -- Scaling the window residue by `den` and adding back the truncation error
 -- `2·f·τ` preserves the residue modulo `n·den`, provided the sum has not
@@ -909,8 +878,8 @@ theorem trim_gap_not_in_windows (f : ℕ) (e : ℤ) (h : Regular f e) :
     ¬(trimNum e < trimGap f e ∧ trimGap f e < trimBnd e) ∧
       ¬(trimScale e ≤ trimGap f e + trimBnd e ∧
         trimGap f e + trimNum e < trimScale e) := by
-  have hcert := trim_windows_empty e h.2.2
-  simp only [trimWindowsEmpty, modWindowsRefuted, Bool.and_eq_true] at hcert
+  obtain ⟨q, hcert⟩ := trim_windows_empty e h.2.2
+  simp only [trimCertificateValid, modWindowsRefuted, Bool.and_eq_true] at hcert
   obtain ⟨hlo_cert, hhi_cert⟩ := hcert
   constructor
   · rintro ⟨hlo, hhi⟩
