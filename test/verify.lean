@@ -36,6 +36,53 @@ def Regular (f : ℕ) (e : ℤ) : Prop :=
   2 ^ 52 < f ∧ f < 2 ^ 53 ∧
    -1074 ≤ e ∧ e ≤ 971
 
+/-! ### Decimal reduction -/
+
+-- Removes trailing zeros from a decimal significand, shifting the exponent to
+-- preserve the represented value.
+def reduceDecimal (dec : ℕ × ℤ) : ℕ × ℤ :=
+  if 0 < dec.1 ∧ dec.1 % 10 = 0 then reduceDecimal (dec.1 / 10, dec.2 + 1)
+  else dec
+termination_by dec.1
+decreasing_by omega
+
+-- Reduction leaves either zero or a significand with no trailing zero.
+theorem reduce_reduced (dec : ℕ × ℤ) :
+    (reduceDecimal dec).1 = 0 ∨ (reduceDecimal dec).1 % 10 ≠ 0 := by
+  fun_induction reduceDecimal dec with
+  | case1 dec _ ih => exact ih
+  | case2 dec hstop => omega
+
+-- Reduction shifts the exponent by the number of zeros stripped and removes
+-- the corresponding power of ten from the significand.
+theorem reduce_shift (dec : ℕ × ℤ) :
+    ∃ t : ℕ, (reduceDecimal dec).2 = dec.2 + t
+      ∧ dec.1 = (reduceDecimal dec).1 * 10 ^ t := by
+  fun_induction reduceDecimal dec with
+  | case1 dec hgo ih =>
+    obtain ⟨t, hk, hd⟩ := ih
+    dsimp only at hk hd
+    refine ⟨t + 1, by push_cast; omega, ?_⟩
+    rw [pow_succ, ← Nat.mul_assoc, ← hd]
+    omega
+  | case2 dec _ => exact ⟨0, by simp, by simp⟩
+
+-- Trailing zeros can move between the significand and the exponent.
+theorem ten_pow_shift (d t : ℕ) (k : ℤ) :
+    ((d * 10 ^ t : ℕ) : ℚ) * 10 ^ k = (d : ℚ) * 10 ^ (k + (t : ℤ)) := by
+  push_cast
+  rw [zpow_add₀ (by norm_num : (10 : ℚ) ≠ 0), zpow_natCast]
+  ring
+
+-- Reduction is value-preserving.
+theorem reduce_value (dec : ℕ × ℤ) :
+    let (d, k) := reduceDecimal dec
+    (d : ℚ) * 10 ^ k = (dec.1 : ℚ) * 10 ^ dec.2 := by
+  obtain ⟨t, hkt, hstrip⟩ := reduce_shift dec
+  rcases hred : reduceDecimal dec with ⟨d, k⟩
+  simp only [hred] at hkt hstrip
+  rw [hstrip, hkt, ten_pow_shift]
+
 /-! ### The truncated power of ten -/
 
 -- Binary exponent of 10^k used to normalize its 128-bit significand.
@@ -1663,6 +1710,10 @@ the grid one decimal digit coarser. yy emits `decOne` exactly when neither trim
 flag fires, and yy could have dropped a digit exactly when the rounding interval
 contains a multiple of ten.
 
+yy represents a dropped digit by leaving a trailing zero in the significand,
+rather than by incrementing the exponent. Its result is therefore reduced
+before stating full shortness.
+
 The interval is narrower than one coarse step, so the two trim candidates are
 the only multiples of ten it can contain. Each candidate round-trips exactly
 when its corresponding flag fires: `dec_ten_down` and `dec_ten_up` prove
@@ -1675,50 +1726,6 @@ windows are possible only for odd `f`, so each needs its own certificate
 together with the complementary low-bits bound
 `2^54·τ ≤ den·(U - p10 % U)`.
 -/
-
--- yy reports a dropped digit as a trailing zero rather than by shifting the
--- exponent, so its answer has to be reduced before `Shortest` can hold of it.
-def reduceDecimal (p : ℕ × ℤ) : ℕ × ℤ :=
-  if 0 < p.1 ∧ p.1 % 10 = 0 then reduceDecimal (p.1 / 10, p.2 + 1) else p
-termination_by p.1
-decreasing_by omega
-
--- Reduction leaves either zero or a significand with no trailing zero.
-theorem reduce_reduced (p : ℕ × ℤ) :
-    (reduceDecimal p).1 = 0 ∨ (reduceDecimal p).1 % 10 ≠ 0 := by
-  fun_induction reduceDecimal p with
-  | case1 p _ ih => exact ih
-  | case2 p hstop => omega
-
--- Reduction shifts the exponent by the number of zeros stripped and removes
--- the corresponding power of ten from the significand.
-theorem reduce_shift (p : ℕ × ℤ) :
-    ∃ t : ℕ, (reduceDecimal p).2 = p.2 + t
-      ∧ p.1 = (reduceDecimal p).1 * 10 ^ t := by
-  fun_induction reduceDecimal p with
-  | case1 p hgo ih =>
-    obtain ⟨t, hk, hd⟩ := ih
-    dsimp only at hk hd
-    refine ⟨t + 1, by push_cast; omega, ?_⟩
-    rw [pow_succ, ← Nat.mul_assoc, ← hd]
-    omega
-  | case2 p _ => exact ⟨0, by simp, by simp⟩
-
--- Trailing zeros can move between the significand and the exponent.
-theorem ten_pow_shift (d t : ℕ) (k : ℤ) :
-    ((d * 10 ^ t : ℕ) : ℚ) * 10 ^ k = (d : ℚ) * 10 ^ (k + (t : ℤ)) := by
-  push_cast
-  rw [zpow_add₀ (by norm_num : (10 : ℚ) ≠ 0), zpow_natCast]
-  ring
-
--- Reduction is value-preserving.
-theorem reduce_value (p : ℕ × ℤ) :
-    let (d, k) := reduceDecimal p
-    (d : ℚ) * 10 ^ k = (p.1 : ℚ) * 10 ^ p.2 := by
-  obtain ⟨t, hkt, hstrip⟩ := reduce_shift p
-  rcases hred : reduceDecimal p with ⟨d, k⟩
-  simp only [hred] at hkt hstrip
-  rw [hstrip, hkt, ten_pow_shift]
 
 -- Round-tripping in the candidate scale: the scaled candidate is within `num`
 -- of the scaled value, with the strict odd case weakened to `≤`.
