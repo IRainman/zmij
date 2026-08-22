@@ -1,20 +1,20 @@
 import Mathlib.Algebra.Order.Floor.Semifield
 import Mathlib.Tactic
 
--- The finite checks below enumerate up to 2046 exponents in the kernel. The
--- three that `decide` over the whole range raise the recursion guard where they
--- appear, and those evaluating 10^324 also raise the elaborator's
--- exponentiation guard.
+-- The finite checks below enumerate up to 2046 exponents in the kernel.
+-- Range-wide `decide` checks raise the recursion guard where they appear,
+-- and those evaluating 10^324 also raise the elaborator's exponentiation
+-- guard.
 
 /-! ### The specification -/
 
--- Exact rational value represented by binary significand f and exponent e.
+-- Exact rational value represented by binary significand `f` and exponent `e`.
 def value (f : ℕ) (e : ℤ) : ℚ := f * 2 ^ e
 
--- One ULP for a regularly spaced value with exponent e.
+-- One ULP for a regularly spaced value with exponent `e`.
 def ulp (e : ℤ) : ℚ := 2 ^ e
 
--- Whether the exact rational result r rounds to the regularly spaced value
+-- Whether the exact rational result `r` rounds to the regularly spaced value
 -- f · 2^e under round-to-nearest, ties-to-even.
 def Roundtrips (f : ℕ) (e : ℤ) (r : ℚ) : Prop :=
   if f % 2 = 0 then
@@ -483,8 +483,8 @@ def trimScale (e : ℤ) : ℕ := trimModulus e * trimDen e
 -- `trimSig` so the certificate remains purely natural-number computation.
 def trimBnd (e : ℤ) : ℕ := trimDen e * (trimNum e / trimDen e + trimUnit e)
 
--- Integer form of `2·p10 + 2 ≤ N`, using `trimNum / trimDen` for the truncated
--- significand so the finite check reduces directly by kernel computation.
+-- Integer form of `2·p10 + 2 ≤ N`, with the truncation expressed as natural
+-- division so the finite check reduces directly by kernel computation.
 def trimNarrowHolds (e : ℤ) : Bool :=
   decide (2 * (trimNum e / trimDen e) + 2 ≤ trimModulus e)
 
@@ -1599,7 +1599,7 @@ theorem dec_ten_up (f : ℕ) (e : ℤ) (h : Regular f e)
 /-! ### Round-trip correctness -/
 
 -- The decimal significand produced by yy is within half a scaled ULP
--- of the exact value, with equality allowed only when f is even.
+-- of the exact value, with equality allowed only when `f` is even.
 theorem decimal_significand_error_bound
     (f : ℕ) (e : ℤ)
     (h : Regular f e) :
@@ -1805,8 +1805,8 @@ theorem coarse_roundtrip_unique (f : ℕ) (e : ℤ) (h : Regular f e) (c₁ c₂
     exact_mod_cast (show (c₂ : ℚ) < (c₁ : ℚ) + 10 by linarith)
   omega
 
--- A regular value is more than half a ULP away from zero, so the zero
--- significand never round-trips.
+-- A value in the `Regular` range is more than half a ULP away from zero, so
+-- the zero significand never round-trips.
 theorem not_roundtrips_zero (f : ℕ) (e : ℤ) (h : Regular f e) :
     ¬Roundtrips f e 0 := by
   have hf : (2 : ℚ) ^ 52 < (f : ℚ) := by exact_mod_cast h.1
@@ -1871,7 +1871,8 @@ theorem yy_eq_of_coarse_roundtrip (f : ℕ) (e : ℤ) (h : Regular f e) (d : ℕ
 -- is also a multiple of ten at yy's original exponent. Completeness therefore
 -- makes yy select that candidate, and uniqueness forces the reduced significand
 -- to have a trailing zero. Reduction rules this out unless the reduced
--- significand is zero, and zero never round-trips a regular value.
+-- significand is zero, and zero cannot round-trip to a value in the `Regular`
+-- range.
 theorem yy_shortest (f : ℕ) (e : ℤ) (h : Regular f e) :
     let (d, k) := reduceDecimal (toDecimal f e)
     Shortest f e d k := by
