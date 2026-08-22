@@ -303,9 +303,16 @@ def trimModulus (e : ℤ) : ℕ := 10 * 2 ^ (128 - decimalShift e)
 -- One unit in the last place of the packed comparison.
 def trimUnit (e : ℤ) : ℕ := 2 ^ (68 - decimalShift e)
 
--- The exact remainder above the multiple-of-ten candidate, in units of
--- `2^(h-128)` of the scaled value: `ten·2^(128-h) + trimResidue = 2·f·p10`.
-def trimResidue (f : ℕ) (e : ℤ) : ℕ := 2 * f * trimSig e % trimModulus e
+-- yy produces two candidates from the same product `2·f·p10`, differing only
+-- in the step `m` between admissible values: `2^(128-h)` for `sigHi` and ten
+-- times that for its multiple of ten. In both, the candidate is the quotient
+-- `2·f·p10 / m` and `stepResidue` is the exact remainder above it, in units of
+-- `2^(h-128)` of the scaled value.
+def stepResidue (m f : ℕ) (e : ℤ) : ℕ := 2 * f * trimSig e % m
+
+-- The remainder above the multiple-of-ten candidate:
+-- `ten·2^(128-h) + trimResidue = 2·f·p10`.
+def trimResidue (f : ℕ) (e : ℤ) : ℕ := stepResidue (trimModulus e) f e
 
 -- `scaledSignificand` is the shifted product with the low 64 bits discarded.
 theorem scaled_significand_eq (f : ℕ) (e : ℤ) :
@@ -383,25 +390,22 @@ theorem trim_c_eq (f : ℕ) (e : ℤ) (hsh : decimalShift e < 4) :
     rw [sig_lo_eq, hmod, Nat.div_div_eq_div_mul, ← pow_add]
   rw [hhi, hlo, hscaled, div_window]
 
--- The multiple-of-ten candidate together with the window residue recovers the
--- full product: `ten·2^(128-h) + W = 2·f·p10`.
-theorem trim_residue_add_ten (f : ℕ) (e : ℤ) (hsh : decimalShift e < 4) :
-    (sigHi f e - sigHi f e % 10) * 2 ^ (128 - decimalShift e) + trimResidue f e
-      = 2 * f * trimSig e := by
-  set h := decimalShift e
-  set z := 2 * f * trimSig e
-  have hpos : 0 < (2 : ℕ) ^ h := by positivity
-  have hdiv : sigHi f e / 10 = z / trimModulus e := by
+-- `sigHi` is the quotient at the unit step. The multiple-of-ten candidate is
+-- ten times the quotient at the window step.
+theorem sig_hi_quotient (f : ℕ) (e : ℤ) (hsh : decimalShift e < 4) :
+    sigHi f e = 2 * f * trimSig e / 2 ^ (128 - decimalShift e) := by
+  rw [sig_hi_eq, pow_shift_split e 128 (by omega),
+    Nat.mul_div_mul_left _ _ (by positivity)]
+
+theorem sig_hi_ten_quotient (f : ℕ) (e : ℤ) (hsh : decimalShift e < 4) :
+    sigHi f e - sigHi f e % 10
+      = 10 * (2 * f * trimSig e / trimModulus e) := by
+  have hdiv : sigHi f e / 10 = 2 * f * trimSig e / trimModulus e := by
     rw [sig_hi_eq, Nat.div_div_eq_div_mul, pow_split e hsh,
-      Nat.mul_div_mul_left _ _ hpos]
-  have hten : sigHi f e - sigHi f e % 10 = 10 * (z / trimModulus e) := by
-    have hmod := Nat.div_add_mod (sigHi f e) 10
-    rw [← hdiv]
-    omega
-  rw [hten, trimResidue,
-    show 10 * (z / trimModulus e) * 2 ^ (128 - h) =
-      trimModulus e * (z / trimModulus e) from by rw [trimModulus]; ring]
-  exact Nat.div_add_mod z (trimModulus e)
+      Nat.mul_div_mul_left _ _ (by positivity)]
+  have hmod := Nat.div_add_mod (sigHi f e) 10
+  rw [← hdiv]
+  omega
 
 /-! ### What the rounding certificates say about the window
 
@@ -468,13 +472,19 @@ rule this out for every exponent. This is where verify.py counts solutions with
 small check per window.
 -/
 
--- The exact distance from the multiple-of-ten candidate to the scaled value,
--- with the denominator of the exact power of ten cleared: `den·W + 2·f·τ`.
-def trimGap (f : ℕ) (e : ℤ) : ℕ :=
-  trimDen e * trimResidue f e + 2 * f * (trimNum e % trimDen e)
+-- The exact distance from a candidate to the scaled value, with the
+-- denominator of the exact power of ten cleared: the residue contributes
+-- `den·W` and the truncation `p10Exact - p10 = τ/den` costs `2·f·τ`. The step
+-- itself is cleared the same way.
+def stepGap (m f : ℕ) (e : ℤ) : ℕ :=
+  trimDen e * stepResidue m f e + 2 * f * (trimNum e % trimDen e)
 
--- The window modulus with the same denominator cleared.
-def trimScale (e : ℤ) : ℕ := trimModulus e * trimDen e
+def stepScale (m : ℕ) (e : ℤ) : ℕ := m * trimDen e
+
+-- The distance to the multiple-of-ten candidate, and the window modulus.
+def trimGap (f : ℕ) (e : ℤ) : ℕ := stepGap (trimModulus e) f e
+
+def trimScale (e : ℤ) : ℕ := stepScale (trimModulus e) e
 
 -- How far a gap can be from the multiple-of-ten candidate and still be accepted
 -- by a packed comparison: `den·(p10 + U)`. Written as `num / den` rather than
@@ -692,7 +702,8 @@ theorem trim_mod_shift (p den τ n f : ℕ)
 
 theorem trim_gap_mod (f : ℕ) (e : ℤ) (hlt : trimGap f e < trimScale e) :
     2 * trimNum e * f % trimScale e = trimGap f e := by
-  rw [trimGap, trimResidue, trim_sig_nat, trimScale] at hlt ⊢
+  rw [trimGap, stepGap, stepResidue, trim_sig_nat, trimScale, stepScale]
+    at hlt ⊢
   rw [show 2 * trimNum e * f
       = 2 * (trimNum e / trimDen e * trimDen e + trimNum e % trimDen e) * f
       from by rw [Nat.div_add_mod']]
@@ -710,7 +721,7 @@ theorem trim_no_window_hit {lo hi q : ℤ} (f : ℕ) (e : ℤ)
   obtain ⟨hf_lo, hf_hi, _, _⟩ := h
   have hscale_pos : (0 : ℤ) < (trimScale e : ℤ) :=
     Int.natCast_pos.mpr (by
-      rw [trimScale, trimModulus]
+      rw [trimScale, stepScale, trimModulus]
       exact Nat.mul_pos (by positivity) (trim_den_pos e))
   refine not_window_hit (f := (f : ℤ))
     (j := ((2 * trimNum e * f / trimScale e : ℕ) : ℤ))
@@ -737,7 +748,7 @@ theorem trim_bnd_le_scale (e : ℤ) (hsh : decimalShift e < 4) :
   have hp_lt : trimSig e < 2 ^ 128 := power10_significand_lt _
   have hgap : (2 : ℕ) ^ 128 + 2 ^ 68 ≤ 10 * 2 ^ 125 := by norm_num
   have hwindow : trimSig e + trimUnit e ≤ trimModulus e := by omega
-  rw [trimScale, Nat.mul_comm (trimModulus e)]
+  rw [trimScale, stepScale, Nat.mul_comm (trimModulus e)]
   exact Nat.mul_le_mul_left _ hwindow
 
 -- `p10Exact ≥ 2^127`, with the denominator cleared.
@@ -791,7 +802,47 @@ theorem trim_num_split (e : ℤ) :
 
 theorem trim_scale_split (e : ℤ) :
     trimDen e * trimModulus e = trimScale e := by
-  rw [trimScale]; ring
+  rw [trimScale, stepScale]; ring
+
+-- Whatever the step, the candidate scaled back up plus the gap is the scaled
+-- value `2·f·num`: `Nat.div_add_mod` recovers the product from the quotient
+-- and `trim_num_split` the power of ten from its truncation.
+theorem step_quotient_add_gap (m f : ℕ) (e : ℤ) :
+    2 * f * trimSig e / m * stepScale m e + stepGap m f e
+      = 2 * f * trimNum e := by
+  rw [stepScale, stepGap, stepResidue]
+  calc 2 * f * trimSig e / m * (m * trimDen e)
+        + (trimDen e * (2 * f * trimSig e % m)
+          + 2 * f * (trimNum e % trimDen e))
+      = trimDen e * (m * (2 * f * trimSig e / m) + 2 * f * trimSig e % m)
+          + 2 * f * (trimNum e % trimDen e) := by ring
+    _ = 2 * f * (trimDen e * trimSig e + trimNum e % trimDen e) := by
+        rw [Nat.div_add_mod]; ring
+    _ = 2 * f * trimNum e := by rw [trim_num_split]
+
+-- The truncation error of the power of ten, `2·f·τ` with `τ < den` and
+-- `2·f < 2^54`.
+theorem trim_trunc_lt (f : ℕ) (e : ℤ) (h : Regular f e) :
+    2 * f * (trimNum e % trimDen e) < 2 ^ 54 * trimDen e :=
+  lt_of_le_of_lt (Nat.mul_le_mul_right _ (by have := h.2.1; omega))
+    (mul_lt_mul_of_pos_left (Nat.mod_lt _ (trim_den_pos e)) (by positivity))
+
+-- Whatever the step, the gap can overshoot it, but by less than `num`: the
+-- residue stays below the step, and `num ≥ 2^127·den` absorbs the truncation
+-- error.
+theorem step_gap_lt_scale_add (m f : ℕ) (e : ℤ) (h : Regular f e)
+    (hm : 0 < m) : stepGap m f e < stepScale m e + trimNum e := by
+  have hres : trimDen e * stepResidue m f e < stepScale m e := by
+    rw [stepScale, stepResidue, Nat.mul_comm m]
+    exact mul_lt_mul_of_pos_left (Nat.mod_lt _ hm) (trim_den_pos e)
+  have hlow := trim_trunc_lt f e h
+  have htrunc : 2 ^ 54 * trimDen e ≤ trimNum e :=
+    le_trans
+      (Nat.mul_le_mul_right _
+        (Nat.pow_le_pow_right (by norm_num) (by norm_num)))
+      (trim_num_lower e)
+  rw [stepGap]
+  omega
 
 -- The bridge every trim bound crosses: the gap is `den` times the residue plus
 -- the truncation error `2·f·τ`, and `trim_low_bits` keeps that error inside the
@@ -800,7 +851,7 @@ theorem trim_gap_sandwich (f : ℕ) (e : ℤ) (h : Regular f e) :
     trimDen e * trimResidue f e ≤ trimGap f e ∧
       trimGap f e ≤ trimDen e * trimResidue f e
         + trimSig e % trimUnit e * trimDen e := by
-  rw [trimGap]
+  rw [trimGap, stepGap, ← trimResidue]
   have htrunc : 2 * f * (trimNum e % trimDen e)
       ≤ trimSig e % trimUnit e * trimDen e := by
     calc
@@ -908,7 +959,6 @@ theorem trim_tie_gap_eq (f : ℕ) (e : ℤ)
   let τ := trimNum e % trimDen e
   have hnum : trimNum e = trimDen e * trimSig e + τ := by
     simpa [τ] using (trim_num_split e).symm
-  rw [trimGap, trimScale]
   change trimDen e * trimResidue f e + 2 * f * τ + trimNum e =
     trimModulus e * trimDen e + (2 * f + 1) * τ
   rw [hnum, htie]
@@ -1028,31 +1078,10 @@ theorem trim_scale_lt (f : ℕ) (e : ℤ) (h : Regular f e)
       exact Nat.lt_add_of_pos_right
         (Nat.mul_pos (by omega) (Nat.pos_of_ne_zero hτ))
 
--- The gap can overshoot the modulus, but by less than `num`: the residue is
--- below the modulus and the truncation error contributes at most `2^68·den`,
--- which `num ≥ 2^127·den` absorbs. This is the free side of the trim-up bound.
+-- The free side of the trim-up bound, at the multiple-of-ten step.
 theorem trim_gap_lt_scale_add (f : ℕ) (e : ℤ) (h : Regular f e) :
-    trimGap f e < trimScale e + trimNum e := by
-  have hw : trimResidue f e < trimModulus e :=
-    Nat.mod_lt _ (by rw [trimModulus]; positivity)
-  have hres : trimDen e * trimResidue f e < trimScale e := by
-    rw [← trim_scale_split e]
-    exact mul_lt_mul_of_pos_left hw (trim_den_pos e)
-  have hu : trimSig e % trimUnit e < 2 ^ 68 :=
-    lt_of_lt_of_le (Nat.mod_lt _ (trim_unit_pos e))
-      (by rw [trimUnit]; exact Nat.pow_le_pow_right (by norm_num) (by omega))
-  have htrunc : trimSig e % trimUnit e * trimDen e ≤ trimNum e := by
-    calc
-      trimSig e % trimUnit e * trimDen e
-          ≤ 2 ^ 68 * trimDen e := Nat.mul_le_mul_right _ hu.le
-      _ ≤ 2 ^ 127 * trimDen e :=
-        Nat.mul_le_mul_right _
-          (Nat.pow_le_pow_right (by norm_num) (by norm_num))
-      _ ≤ trimNum e := trim_num_lower e
-  have hsand : trimGap f e
-      ≤ trimDen e * trimResidue f e + trimSig e % trimUnit e * trimDen e :=
-    (trim_gap_sandwich f e h).2
-  omega
+    trimGap f e < trimScale e + trimNum e :=
+  step_gap_lt_scale_add _ f e h (by rw [trimModulus]; positivity)
 
 /-! ### From integer bounds to half-ULP bounds
 
@@ -1063,7 +1092,12 @@ power of ten enters only through `trim_mul_eq`, which expresses `trimMul` as
 bound `|cand - x| ≤ u/2` is a comparison of `trimGap` with `trimNum`.
 -/
 
-def trimMul (e : ℤ) : ℕ := 2 ^ (128 - decimalShift e) * trimDen e
+-- The unit step, cleared. The window step is ten of them.
+def trimMul (e : ℤ) : ℕ := stepScale (2 ^ (128 - decimalShift e)) e
+
+theorem trim_scale_eq_ten_mul (e : ℤ) : trimScale e = 10 * trimMul e := by
+  simp only [trimScale, trimMul, stepScale, trimModulus]
+  ring
 
 -- Exponent alignment: the inverse scale `s = 2^(1-e)·10^k` turns the
 -- power-of-ten factor `10^(-k)·2^(128-pe)` into `2^(128-h)`.
@@ -1101,7 +1135,7 @@ theorem trim_mul_eq (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
         = trimNum e := by
     rw [power10_exact_ratio, ← trimNum, ← trimDen,
       div_mul_cancel₀ _ (ne_of_gt hd)]
-  rw [trimMul]
+  rw [trimMul, stepScale]
   push_cast
   rw [← exact_scale e he, ← hnum]
   ring
@@ -1128,26 +1162,31 @@ theorem trim_mul_value (f : ℕ) (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
   rw [← trim_mul_half_ulp e he, value, ulp]
   ring
 
--- The trim-down candidate sits exactly `trimGap` below the scaled value. In
--- naturals it is `2·f·num - gap`: `trim_residue_add_ten` supplies the main term
--- and `trim_num_split` the low bits of the power of ten.
-theorem dec_ten_down_scaled_error (f : ℕ) (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
-    (((sigHi f e - sigHi f e % 10 : ℕ) : ℚ)
-        - value f e * (10 ^ decimalExponent e)⁻¹) * (trimMul e : ℚ)
-      = -(trimGap f e : ℚ) := by
-  have hnat : (sigHi f e - sigHi f e % 10) * trimMul e + trimGap f e
-      = 2 * f * trimNum e := by
-    calc (sigHi f e - sigHi f e % 10) * trimMul e + trimGap f e
-        = ((sigHi f e - sigHi f e % 10) * 2 ^ (128 - decimalShift e)
-              + trimResidue f e) * trimDen e
-            + 2 * f * (trimNum e % trimDen e) := by
-          rw [trimMul, trimGap]; ring
-      _ = 2 * f * (trimDen e * trimSig e + trimNum e % trimDen e) := by
-          rw [trim_residue_add_ten f e (decimal_shift_lt_four e he)]; ring
-      _ = 2 * f * trimNum e := by rw [trim_num_split]
+-- Both candidates reach ℚ the same way: cleared of the scale, a candidate
+-- accounting for the whole product except its gap sits exactly that gap below
+-- the scaled value.
+theorem scaled_error_of_nat {cand gap : ℕ} (f : ℕ) (e : ℤ)
+    (he : -1074 ≤ e ∧ e ≤ 971)
+    (hnat : cand * trimMul e + gap = 2 * f * trimNum e) :
+    ((cand : ℚ) - value f e * (10 ^ decimalExponent e)⁻¹) * (trimMul e : ℚ)
+      = -(gap : ℚ) := by
   have hcast := congrArg (fun n : ℕ => (n : ℚ)) hnat
   push_cast at hcast
   linear_combination hcast - trim_mul_value f e he
+
+-- The trim-down candidate sits exactly `trimGap` below the scaled value: it is
+-- the quotient at the window step, which is ten unit steps.
+theorem dec_ten_down_scaled_error (f : ℕ) (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
+    (((sigHi f e - sigHi f e % 10 : ℕ) : ℚ)
+        - value f e * (10 ^ decimalExponent e)⁻¹) * (trimMul e : ℚ)
+      = -(trimGap f e : ℚ) :=
+  scaled_error_of_nat f e he <| by
+    calc (sigHi f e - sigHi f e % 10) * trimMul e + trimGap f e
+        = 2 * f * trimSig e / trimModulus e * trimScale e + trimGap f e := by
+          rw [sig_hi_ten_quotient f e (decimal_shift_lt_four e he),
+            trim_scale_eq_ten_mul]
+          ring
+      _ = 2 * f * trimNum e := step_quotient_add_gap _ f e
 
 -- The trim-up candidate sits `trimScale - trimGap` above the scaled value,
 -- since the scale sends a decimal step of `10` to the window modulus.
@@ -1156,7 +1195,7 @@ theorem dec_ten_up_scaled_error (f : ℕ) (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 
         - value f e * (10 ^ decimalExponent e)⁻¹) * (trimMul e : ℚ)
       = (trimScale e : ℚ) - (trimGap f e : ℚ) := by
   have hten : (10 : ℚ) * (trimMul e : ℚ) = (trimScale e : ℚ) := by
-    rw [trimScale, trimModulus, trimMul]; push_cast; ring
+    rw [trim_scale_eq_ten_mul]; push_cast; ring
   linear_combination dec_ten_down_scaled_error f e he + hten
 
 -- Scaling by `trimMul` loses nothing: a candidate with scaled error `dist` is
@@ -1173,7 +1212,8 @@ theorem half_ulp_iff_scaled_error {cand dist : ℚ} (f : ℕ) (e : ℤ)
   intro k x u
   have hpos : (0 : ℚ) < (trimMul e : ℚ) :=
     Nat.cast_pos.mpr
-      (by rw [trimMul]; exact Nat.mul_pos (by positivity) (trim_den_pos e))
+      (by rw [trimMul, stepScale]
+          exact Nat.mul_pos (by positivity) (trim_den_pos e))
   have hdist : |cand - x| * (trimMul e : ℚ) = |dist| := by
     rw [← hscale, abs_mul, abs_of_pos hpos]
   exact ⟨by rw [← mul_le_mul_iff_of_pos_right hpos, hdist,
@@ -1190,36 +1230,19 @@ remainder relative to half the window `2^(128-h)`, with only the bits below
 `k = 0` the candidate is exact instead.
 -/
 
--- The exact remainder above `sigHi`, in units of `2^(h-128)` of the scaled
--- value: `sigHi·2^(128-h) + oneResidue = 2·f·p10`.
+-- The same residue and gap at the unit step: `sigHi·2^(128-h) + oneResidue`
+-- is the product `2·f·p10`, and `oneGap` is the distance from `sigHi` to the
+-- scaled value once the denominator is cleared.
 def oneResidue (f : ℕ) (e : ℤ) : ℕ :=
-  2 * f * trimSig e % 2 ^ (128 - decimalShift e)
+  stepResidue (2 ^ (128 - decimalShift e)) f e
 
--- The exact distance from `sigHi` to the scaled value, with the denominator of
--- the exact power of ten cleared: `den·oneResidue + 2·f·τ`.
-def oneGap (f : ℕ) (e : ℤ) : ℕ :=
-  trimDen e * oneResidue f e + 2 * f * (trimNum e % trimDen e)
+def oneGap (f : ℕ) (e : ℤ) : ℕ := stepGap (2 ^ (128 - decimalShift e)) f e
 
--- The unit-step candidate together with the window residue recovers the full
--- product: `sigHi·2^(128-h) + oneResidue = 2·f·p10`.
-theorem one_residue_add_hi (f : ℕ) (e : ℤ) (hsh : decimalShift e < 4) :
-    sigHi f e * 2 ^ (128 - decimalShift e) + oneResidue f e
-      = 2 * f * trimSig e := by
-  rw [sig_hi_eq, pow_shift_split e 128 (by omega),
-    Nat.mul_div_mul_left _ _ (by positivity), oneResidue]
-  exact Nat.div_add_mod' _ _
-
--- The unit-step analogue of `dec_ten_down_scaled_error`, in naturals: `sigHi`
--- scaled up, plus the gap, is the scaled value `2·f·num`.
+-- `sigHi` scaled up, plus the gap, is the scaled value `2·f·num`.
 theorem sig_hi_add_one_gap (f : ℕ) (e : ℤ) (hsh : decimalShift e < 4) :
     sigHi f e * trimMul e + oneGap f e = 2 * f * trimNum e := by
-  calc sigHi f e * trimMul e + oneGap f e
-      = (sigHi f e * 2 ^ (128 - decimalShift e) + oneResidue f e) * trimDen e
-          + 2 * f * (trimNum e % trimDen e) := by
-        rw [trimMul, oneGap]; ring
-    _ = 2 * f * (trimDen e * trimSig e + trimNum e % trimDen e) := by
-        rw [one_residue_add_hi f e hsh]; ring
-    _ = 2 * f * trimNum e := by rw [trim_num_split]
+  rw [sig_hi_quotient f e hsh]
+  exact step_quotient_add_gap _ f e
 
 -- What `roundU1` says about the remainder: yy compares the discarded word with
 -- half its range, so the test is on the remainder against half the window
@@ -1233,7 +1256,7 @@ theorem one_round_half (f : ℕ) (e : ℤ) (hsh : decimalShift e < 4) :
   have hpos : (0 : ℕ) < 2 ^ (64 - decimalShift e) := by positivity
   -- `sigLo` is the remainder with the bits below the last kept one dropped.
   have hlo : sigLo f e = oneResidue f e / 2 ^ (64 - decimalShift e) := by
-    rw [sig_lo_eq, oneResidue, pow_shift_split e 128 (by omega),
+    rw [sig_lo_eq, oneResidue, stepResidue, pow_shift_split e 128 (by omega),
       Nat.mul_mod_mul_left, pow_shift_split e 64 (by omega),
       Nat.mul_div_mul_left _ _ (by positivity)]
   have hpow : (2 : ℕ) ^ 63 * 2 ^ (64 - decimalShift e)
@@ -1276,7 +1299,7 @@ theorem one_exact_of_k_zero (f : ℕ) (e : ℤ) (hsh : decimalShift e < 4)
   have hsig : trimSig e = 2 ^ 127 := by
     rw [trim_sig_nat, heq, Nat.mul_div_cancel _ (trim_den_pos e)]
   have hres : oneResidue f e = 0 := by
-    rw [oneResidue, hsig,
+    rw [oneResidue, stepResidue, hsig,
       show 2 * f * 2 ^ 127
           = f * 2 ^ decimalShift e * 2 ^ (128 - decimalShift e) from by
         calc 2 * f * 2 ^ 127 = f * 2 ^ 128 := by ring
@@ -1285,7 +1308,7 @@ theorem one_exact_of_k_zero (f : ℕ) (e : ℤ) (hsh : decimalShift e < 4)
           _ = f * 2 ^ decimalShift e * 2 ^ (128 - decimalShift e) := by ring]
     exact Nat.mul_mod_left _ _
   refine ⟨hres, ?_⟩
-  rw [oneGap, hres, heq, Nat.mul_mod_left]
+  rw [oneGap, stepGap, ← oneResidue, hres, heq, Nat.mul_mod_left]
   simp
 
 -- The certificate in the quantities the trim layer uses.
@@ -1308,9 +1331,7 @@ theorem one_half_window_lt (f : ℕ) (e : ℤ) (h : Regular f e)
     trimDen e * (2 ^ (127 - decimalShift e) + 2 ^ (64 - decimalShift e))
         + 2 * f * (trimNum e % trimDen e) < trimNum e := by
   have hden := trim_den_pos e
-  have hlow : 2 * f * (trimNum e % trimDen e) < 2 ^ 54 * trimDen e :=
-    lt_of_le_of_lt (Nat.mul_le_mul_right _ (by have := h.2.1; omega))
-      (mul_lt_mul_of_pos_left (Nat.mod_lt _ hden) (by positivity))
+  have hlow := trim_trunc_lt f e h
   calc trimDen e * (2 ^ (127 - decimalShift e) + 2 ^ (64 - decimalShift e))
           + 2 * f * (trimNum e % trimDen e)
       < trimDen e * (2 ^ 127 + 2 ^ 64) + 2 ^ 54 * trimDen e :=
@@ -1345,7 +1366,6 @@ theorem one_scale_bounds (f : ℕ) (e : ℤ) (h : Regular f e)
     (hu1 : (toDecimalCandidates f e).roundU1 = true) :
     trimMul e < oneGap f e + trimNum e ∧ oneGap f e < trimMul e + trimNum e := by
   have hsh := decimal_shift_lt_four e h.2.2
-  have hden := trim_den_pos e
   have hres := (one_round_half f e hsh).1 hu1
   -- `k` is not zero, or the remainder would be zero and `roundU1` could not
   -- have fired.
@@ -1357,35 +1377,27 @@ theorem one_scale_bounds (f : ℕ) (e : ℤ) (h : Regular f e)
   have hhalf : trimDen e * 2 ^ (127 - decimalShift e) < trimNum e :=
     lt_of_le_of_lt (le_trans (Nat.mul_le_mul_left _ (Nat.le_add_right _ _))
       (Nat.le_add_right _ _)) hmargin
-  constructor
-  · calc trimMul e
-        = trimDen e * 2 ^ (127 - decimalShift e)
-            + trimDen e * 2 ^ (127 - decimalShift e) := by
-          rw [trimMul,
-            show (2 : ℕ) ^ (128 - decimalShift e)
-                = 2 * 2 ^ (127 - decimalShift e) from by
-              rw [← pow_succ']; congr 1; omega]
-          ring
-      _ < trimNum e + oneGap f e :=
-          Nat.add_lt_add_of_lt_of_le hhalf
-            (le_trans (Nat.mul_le_mul_left _ hres) (Nat.le_add_right _ _))
-      _ = oneGap f e + trimNum e := Nat.add_comm _ _
-  · have hwindow : oneResidue f e < 2 ^ (128 - decimalShift e) :=
-      Nat.mod_lt _ (by positivity)
-    exact Nat.add_lt_add
-      (by rw [trimMul, Nat.mul_comm (2 ^ (128 - decimalShift e))]
-          exact mul_lt_mul_of_pos_left hwindow hden)
-      (lt_of_le_of_lt (Nat.le_add_left _ _) hmargin)
+  refine ⟨?_, step_gap_lt_scale_add _ f e h (by positivity)⟩
+  calc trimMul e
+      = trimDen e * 2 ^ (127 - decimalShift e)
+          + trimDen e * 2 ^ (127 - decimalShift e) := by
+        rw [trimMul, stepScale,
+          show (2 : ℕ) ^ (128 - decimalShift e)
+              = 2 * 2 ^ (127 - decimalShift e) from by
+            rw [← pow_succ']; congr 1; omega]
+        ring
+    _ < trimNum e + oneGap f e :=
+        Nat.add_lt_add_of_lt_of_le hhalf
+          (le_trans (Nat.mul_le_mul_left _ hres) (Nat.le_add_right _ _))
+    _ = oneGap f e + trimNum e := Nat.add_comm _ _
 
 -- `sigHi` sits exactly `oneGap` below the scaled value.
 theorem sig_hi_scaled_error (f : ℕ) (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
     ((sigHi f e : ℚ) - value f e * (10 ^ decimalExponent e)⁻¹)
         * (trimMul e : ℚ)
-      = -(oneGap f e : ℚ) := by
-  have hcast := congrArg (fun n : ℕ => (n : ℚ))
+      = -(oneGap f e : ℚ) :=
+  scaled_error_of_nat f e he
     (sig_hi_add_one_gap f e (decimal_shift_lt_four e he))
-  push_cast at hcast
-  linear_combination hcast - trim_mul_value f e he
 
 -- The unit-step candidate is strictly within half a scaled ULP of the exact
 -- value.
