@@ -242,7 +242,6 @@ theorem decimal_shift_lt_four (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
     decimalShift e < 4 := by
   unfold decimalShift decimalExponent
   omega
-
 section
 
 -- The checks compute powers as large as `10^324`.
@@ -489,23 +488,9 @@ def trimLowBitsHolds (e : ℤ) : Bool :=
   let den := trimDen e
   decide (2 ^ 54 * (num % den) ≤ num / den % trimUnit e * den)
 
--- An exact trim-up tie forces `N ∣ (2f+1)·p10`; since `2f+1` is odd and
--- `N = 5·2^(129-h)`, all of that power of two must come from `p10`.
-def trimTieNeedsKZero (e : ℤ) : Bool :=
-  let num := trimNum e
-  let den := trimDen e
-  decide (decimalExponent e = 0 ∨ ¬2 ^ (129 - decimalShift e) ∣ num / den)
-
-section
-set_option exponentiation.threshold 5000
-
+set_option exponentiation.threshold 5000 in
 theorem trim_low_bits_all :
     ∀ e ∈ Finset.Icc (-1074 : ℤ) 971, trimLowBitsHolds e = true := by decide
-
-theorem trim_tie_needs_k_zero_all :
-    ∀ e ∈ Finset.Icc (-1074 : ℤ) 971, trimTieNeedsKZero e = true := by decide
-
-end
 
 -- The low bits `p10 % U` discarded by the packed comparison dominate the
 -- truncation error `p10Exact - p10 = τ/den`. This settles every case where the
@@ -518,26 +503,6 @@ theorem trim_low_bits (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
   have hcert := trim_low_bits_all e (by simpa [Finset.mem_Icc] using he)
   simp only [trimLowBitsHolds, decide_eq_true_eq] at hcert
   rwa [trim_sig_nat]
-
--- An exact trim-up tie is only possible for `k = 0`. This is why `roundU0`
--- needs its `k = 0 ∧ t1 = t0` branch: at `k = 0`, `p10` is exactly `2^127`,
--- so it is untruncated and divisible by the window unit, and a genuine tie
--- appears as `t1 = t0` rather than `t1 + 1 = t0`.
-theorem trim_tie_k_zero (f : ℕ) (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971)
-    (hsh : decimalShift e < 4)
-    (hdvd : trimModulus e ∣ (2 * f + 1) * trimSig e) :
-    decimalExponent e = 0 := by
-  have hcert := trim_tie_needs_k_zero_all e (by simpa [Finset.mem_Icc] using he)
-  simp only [trimTieNeedsKZero, decide_eq_true_eq, ← trim_sig_nat] at hcert
-  refine hcert.resolve_right (not_not.mpr ?_)
-  refine Nat.Coprime.dvd_of_dvd_mul_left
-    (Nat.Coprime.pow_left _
-      ((Nat.prime_two.coprime_iff_not_dvd).mpr (by omega)))
-    (dvd_trans ⟨5, ?_⟩ hdvd)
-  rw [trimModulus,
-    show 129 - decimalShift e = (128 - decimalShift e) + 1 from by omega,
-    pow_succ]
-  ring
 
 /-! ### Refuting the trim windows
 
@@ -933,9 +898,97 @@ theorem trim_scale_le (f : ℕ) (e : ℤ) (h : Regular f e)
     omega
   exact (trim_gap_not_in_windows f e h).2 ⟨hfar, hcon⟩
 
--- Strict trim-up soundness for the final `t0 ≤ t1` test. Equality is an exact
--- tie, which forces `k = 0` by `trim_tie_k_zero`; that case belongs to the
--- dedicated `k = 0 ∧ t1 = t0` branch instead. -/
+-- Equality in the packed comparison scales to
+-- `gap + num = scale + (2f+1)·τ`: the truncation remainder is exactly the
+-- slack in the corresponding exact bound.
+theorem trim_tie_gap_eq (f : ℕ) (e : ℤ)
+    (htie : trimModulus e = trimResidue f e + trimSig e) :
+    trimGap f e + trimNum e
+      = trimScale e + (2 * f + 1) * (trimNum e % trimDen e) := by
+  let τ := trimNum e % trimDen e
+  have hnum : trimNum e = trimDen e * trimSig e + τ := by
+    simpa [τ] using (trim_num_split e).symm
+  rw [trimGap, trimScale]
+  change trimDen e * trimResidue f e + 2 * f * τ + trimNum e =
+    trimModulus e * trimDen e + (2 * f + 1) * τ
+  rw [hnum, htie]
+  ring
+
+-- Packed equality forces `2^(129-h) ∣ p10`: since
+-- `trimModulus = 5·2^(129-h)` and `2f+1` is odd, all of that power of two
+-- must come from `p10`.
+theorem trim_tie_pow_two_dvd (f : ℕ) (e : ℤ) (hsh : decimalShift e < 4)
+    (htie : trimModulus e = trimResidue f e + trimSig e) :
+    2 ^ (129 - decimalShift e) ∣ trimSig e := by
+  have hw : trimResidue f e = 2 * f * trimSig e % trimModulus e := rfl
+  have hdvd : trimModulus e ∣ (2 * f + 1) * trimSig e := by
+    refine ⟨2 * f * trimSig e / trimModulus e + 1, ?_⟩
+    have hq := Nat.div_add_mod (2 * f * trimSig e) (trimModulus e)
+    calc (2 * f + 1) * trimSig e = 2 * f * trimSig e + trimSig e := by ring
+      _ = trimModulus e * (2 * f * trimSig e / trimModulus e)
+          + (trimResidue f e + trimSig e) := by rw [hw]; omega
+      _ = trimModulus e * (2 * f * trimSig e / trimModulus e + 1) := by
+          rw [← htie]; ring
+  refine Nat.Coprime.dvd_of_dvd_mul_left
+    (Nat.Coprime.pow_left _
+      ((Nat.prime_two.coprime_iff_not_dvd).mpr (by omega)))
+    (dvd_trans ⟨5, ?_⟩ hdvd)
+  rw [trimModulus,
+    show 129 - decimalShift e = (128 - decimalShift e) + 1 from by omega,
+    pow_succ]
+  ring
+
+-- An exact cached power admits a tie only at `k = 0`. For `k > 0` its
+-- denominator retains a factor of five; for `k < 0` it has too few factors of
+-- two. At `k = 0`, `p10 = 2^127`, the special tie handled by `roundU0`.
+theorem trim_exact_tie_k_zero (f : ℕ) (e : ℤ) (h : Regular f e)
+    (hτ : trimNum e % trimDen e = 0)
+    (htie : trimModulus e = trimResidue f e + trimSig e) :
+    decimalExponent e = 0 := by
+  have hsplit : trimDen e * trimSig e = trimNum e := by
+    simpa [hτ] using trim_num_split e
+  rcases lt_trichotomy (decimalExponent e) 0 with hk | hk | hk
+  · exfalso
+    have hsh := decimal_shift_lt_four e h.2.2
+    have halign := align_all e (by simpa [Finset.mem_Icc] using h.2.2)
+    -- Scaling by `log₁₀ 2 < 1` moves a negative exponent towards zero.
+    have hek : e ≤ decimalExponent e := by
+      unfold decimalExponent at hk ⊢
+      omega
+    have htie2 := trim_tie_pow_two_dvd f e hsh htie
+    rw [trimNum, power10Num, trimDen, power10Den, neg_neg,
+      show (decimalExponent e).toNat = 0 from by omega, pow_zero,
+      one_mul] at hsplit
+    set m := (-decimalExponent e).toNat
+    set a := (128 - power10Exponent (-decimalExponent e)).toNat
+    set b := (power10Exponent (-decimalExponent e) - 128).toNat
+    -- The tie needs `129 - h` factors of two, but `5^m` supplies none.
+    have hpow : 2 ^ (b + (129 - decimalShift e)) ∣ 10 ^ m * 2 ^ a := by
+      rw [pow_add, ← hsplit]
+      exact mul_dvd_mul_left (2 ^ b) htie2
+    rw [show 10 ^ m * 2 ^ a = 5 ^ m * 2 ^ (m + a) by
+      rw [show (10 : ℕ) = 5 * 2 from rfl, mul_pow, pow_add]
+      ring] at hpow
+    have hle := (Nat.pow_dvd_pow_iff_le_right (by norm_num : 1 < 2)).mp
+      (Nat.Coprime.dvd_of_dvd_mul_left (Nat.Coprime.pow _ _ (by decide)) hpow)
+    omega
+  · exact hk
+  · exfalso
+    have h5den : 5 ∣ trimDen e := by
+      rw [trimDen, power10Den, neg_neg]
+      exact Dvd.dvd.mul_right
+        (dvd_pow (by norm_num : (5 : ℕ) ∣ 10) (by omega)) _
+    have h5num : ¬5 ∣ trimNum e := by
+      rw [trimNum, power10Num,
+        show (-decimalExponent e).toNat = 0 from by omega, pow_zero, one_mul]
+      intro hcon
+      have := Nat.prime_five.dvd_of_dvd_pow hcon
+      norm_num at this
+    exact h5num (dvd_trans h5den ⟨trimSig e, hsplit.symm⟩)
+
+-- Strict trim-up soundness for the final `t0 ≤ t1` test. Packed equality is
+-- either made strict by cached-power truncation or is an exact tie, which
+-- forces `k = 0` and belongs to the dedicated `k = 0 ∧ t1 = t0` branch.
 theorem trim_scale_lt (f : ℕ) (e : ℤ) (h : Regular f e)
     (hb : 10 * 2 ^ 60 ≤ trimResidue f e / trimUnit e + trimSig e / trimUnit e)
     (hne : ¬(decimalExponent e = 0 ∧ trimResidue f e / trimUnit e
@@ -947,37 +1000,33 @@ theorem trim_scale_lt (f : ℕ) (e : ℤ) (h : Regular f e)
     trim_modulus_eq e hsh
   have hcmp : trimModulus e ≤ trimResidue f e + trimSig e := by
     rw [hmodeq]; exact trim_pack f e _ hb
-  -- Equality would be an exact tie, and only `k = 0` admits one.
-  have hlt : trimModulus e < trimResidue f e + trimSig e := by
-    rcases lt_or_eq_of_le hcmp with hlt | heq
-    · exact hlt
-    · exfalso
-      have hw : trimResidue f e = 2 * f * trimSig e % trimModulus e := rfl
-      have hdvd : trimModulus e ∣ (2 * f + 1) * trimSig e := by
-        refine ⟨2 * f * trimSig e / trimModulus e + 1, ?_⟩
-        have hq := Nat.div_add_mod (2 * f * trimSig e) (trimModulus e)
-        calc (2 * f + 1) * trimSig e = 2 * f * trimSig e + trimSig e := by ring
-          _ = trimModulus e * (2 * f * trimSig e / trimModulus e)
-              + (trimResidue f e + trimSig e) := by rw [hw]; omega
-          _ = trimModulus e * (2 * f * trimSig e / trimModulus e + 1) := by
-              rw [← heq]; ring
-      refine hne ⟨trim_tie_k_zero f e h.2.2 hsh hdvd, ?_⟩
+  rcases lt_or_eq_of_le hcmp with hlt | heq
+  · -- Clearing the denominator preserves the strict inequality.
+    have hscaled : trimScale e
+        < trimDen e * trimResidue f e + trimDen e * trimSig e := by
+      rw [← trim_scale_split e, ← mul_add]
+      exact mul_lt_mul_of_pos_left hlt (trim_den_pos e)
+    have hnum : trimDen e * trimSig e + trimNum e % trimDen e = trimNum e :=
+      trim_num_split e
+    have hsand : trimDen e * trimResidue f e ≤ trimGap f e :=
+      (trim_gap_sandwich f e h).1
+    omega
+  -- Equality in the packed comparison is a genuine tie only when the cached
+  -- power is exact. Otherwise its truncation remainder is precisely the slack
+  -- that makes the exact bound strict.
+  · by_cases hτ : trimNum e % trimDen e = 0
+    · -- A tie in exact arithmetic, which only `k = 0` admits.
+      exfalso
+      refine hne ⟨trim_exact_tie_k_zero f e h hτ heq, ?_⟩
       -- An exact tie is seen as one by the packed comparison too.
       have h4 : trimUnit e
           * (trimResidue f e / trimUnit e + trimSig e / trimUnit e)
           ≤ trimUnit e * (10 * 2 ^ 60) := by
         rw [← hmodeq, heq]; exact mul_div_add_div_le _ _ _
       exact Nat.le_antisymm (Nat.le_of_mul_le_mul_left h4 hu_pos) hb
-  -- Clearing the denominator preserves the strict inequality.
-  have hscaled : trimScale e
-      < trimDen e * trimResidue f e + trimDen e * trimSig e := by
-    rw [← trim_scale_split e, ← mul_add]
-    exact mul_lt_mul_of_pos_left hlt (trim_den_pos e)
-  have hnum : trimDen e * trimSig e + trimNum e % trimDen e = trimNum e :=
-    trim_num_split e
-  have hsand : trimDen e * trimResidue f e ≤ trimGap f e :=
-    (trim_gap_sandwich f e h).1
-  omega
+    · rw [trim_tie_gap_eq f e heq]
+      exact Nat.lt_add_of_pos_right
+        (Nat.mul_pos (by omega) (Nat.pos_of_ne_zero hτ))
 
 -- The gap can overshoot the modulus, but by less than `num`: the residue is
 -- below the modulus and the truncation error contributes at most `2^68·den`,
