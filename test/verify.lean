@@ -2,7 +2,7 @@ import Mathlib.Algebra.Order.Floor.Semifield
 import Mathlib.Tactic
 
 -- The finite checks below enumerate 2046 exponents in the kernel; each one
--- raises the recursion guard locally, and the ones that evaluate 2^1074 also
+-- raises the recursion guard locally, and the ones that evaluate 10^324 also
 -- raise the elaborator's exponentiation guard.
 set_option maxRecDepth 100000
 
@@ -123,13 +123,6 @@ def toDecimal (f : ℕ) (e : ℤ) : ℕ × ℤ :=
 
 /-! ### The truncated power of ten -/
 
--- The power-of-10 significand is the truncation of the exact scaled value.
-theorem power10_significand_bounds (k : ℤ) :
-    let x := (10 : ℚ) ^ k * 2 ^ (128 - power10Exponent k)
-    (power10Significand k : ℚ) ≤ x ∧ x < power10Significand k + 1 := by
-  dsimp [power10Significand]
-  exact ⟨Nat.floor_le (by positivity), Nat.lt_floor_add_one _⟩
-
 -- The power-of-ten significand is normalized: its top bit is set. This is
 -- what makes power10Exponent an exponent for a 128-bit significand.
 theorem power10_significand_lower (k : ℤ) :
@@ -242,7 +235,7 @@ theorem power10_significand_lt (k : ℤ) :
     simpa using hmul
   exact (Nat.floor_lt (by positivity)).mpr (by push_cast; exact hx)
 
-/-! ### Exponent alignment and the scale margin -/
+/-! ### Exponent alignment -/
 
 -- The shift used by yy's regular path is less than 4.
 theorem decimal_shift_lt_four (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
@@ -252,8 +245,7 @@ theorem decimal_shift_lt_four (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
 
 section
 
--- The finite exponent checks here, and the bounds derived from them, compute
--- powers as large as `10^324` and `2^1074`.
+-- The checks compute powers as large as `10^324`.
 set_option exponentiation.threshold 5000
 
 -- Exponent alignment over the binary64 exponent range.
@@ -262,296 +254,16 @@ theorem align_all :
       (decimalShift e : ℤ) + 1 - power10Exponent (-decimalExponent e) = e := by
   decide
 
--- Finite integer form of 2^e / 10^k ≥ 1 + 2⁻⁶² for e ≠ 0.
-def marginHolds (e : ℤ) : Bool :=
-  let k := decimalExponent e
-  decide (2 ^ 1074 * ((2 ^ 62 + 1) * 10 ^ (k + 324).toNat)
-            ≤ 2 ^ 62 * (2 ^ (e + 1074).toNat * 10 ^ 324))
-
-theorem margin_all :
-    ∀ e ∈ Finset.Icc (-1074 : ℤ) 971, e ≠ 0 → marginHolds e = true := by decide
-
--- Exponent alignment gives 2^(h+1)·2^(128-pe) = 2^(e+128).
-theorem aligned_pow (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
-    (2 : ℚ) ^ (decimalShift e + 1) *
-        2 ^ (128 - power10Exponent (-decimalExponent e)) =
-      2 ^ (e + 128) := by
-  have halign :
-      (decimalShift e : ℤ) + 1 -
-          power10Exponent (-decimalExponent e) = e :=
-    align_all e (by simpa [Finset.mem_Icc] using he)
-  have hnp :
-      (2 : ℚ) ^ (decimalShift e + 1) =
-        (2 : ℚ) ^ ((decimalShift e : ℤ) + 1) := by
-    rw [← zpow_natCast]
-    congr 1
-  rw [hnp, ← zpow_add₀ (by norm_num : (2 : ℚ) ≠ 0)]
-  congr 1
-  omega
-
--- For `e ≠ 0`, `2^e / 10^k` is at least `1 + 2⁻⁶²`.
-theorem margin_lower (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) (he0 : e ≠ 0) :
-    (1 : ℚ) + 1 / 2 ^ 62 ≤ 2 ^ e * (10 ^ decimalExponent e)⁻¹ := by
-  have hb : 0 ≤ e + 1074 := by omega
-  have hmz := margin_all e (by simpa [Finset.mem_Icc] using he) he0
-  simp only [marginHolds, decide_eq_true_eq] at hmz
-  set k := decimalExponent e
-  have hk : 0 ≤ k + 324 := by
-    show 0 ≤ decimalExponent e + 324
-    unfold decimalExponent
-    omega
-  -- Cast the finite certificate to ℚ and expose the common factor.
-  have hcert :
-      (2 : ℚ) ^ (1074 : ℕ) * ((2 ^ 62 + 1) * 10 ^ (k + 324).toNat)
-        ≤ 2 ^ (62 : ℕ) * (2 ^ (e + 1074).toNat * 10 ^ (324 : ℕ)) := by
-    exact_mod_cast hmz
-  simp only [← zpow_natCast, Int.toNat_of_nonneg hk, Int.toNat_of_nonneg hb,
-    Nat.cast_ofNat] at hcert
-  rw [zpow_add₀ (by norm_num : (10 : ℚ) ≠ 0) k 324,
-    zpow_add₀ (by norm_num : (2 : ℚ) ≠ 0) e 1074] at hcert
-  have hpos : (0 : ℚ) < 2 ^ (1074 : ℤ) * 10 ^ (324 : ℤ) := by positivity
-  have hbound : ((2 : ℚ) ^ 62 + 1) * 10 ^ k ≤ 2 ^ 62 * 2 ^ e := by
-    have hscaled :
-        (2 ^ (1074 : ℤ) * 10 ^ (324 : ℤ)) * (((2 : ℚ) ^ (62 : ℤ) + 1) * 10 ^ k)
-          ≤ (2 ^ (1074 : ℤ) * 10 ^ (324 : ℤ)) *
-              ((2 : ℚ) ^ (62 : ℤ) * 2 ^ e) := by
-      simpa only [mul_assoc, mul_comm, mul_left_comm] using hcert
-    exact le_of_mul_le_mul_left hscaled hpos
-  -- Normalize the bound by `2^62·10^k`.
-  have hp : (0 : ℚ) < 10 ^ k := by positivity
-  rw [← div_eq_mul_inv, le_div_iff₀ hp]
-  calc
-    (1 + 1 / 2 ^ 62 : ℚ) * 10 ^ k
-        = ((2 ^ 62 + 1) * 10 ^ k) / 2 ^ 62 := by field_simp
-    _ ≤ (2 ^ 62 * 2 ^ e) / 2 ^ 62 := by gcongr
-    _ = 2 ^ e := by field_simp
+-- Away from `k = 0`, the normalized exact power of ten clears `2^127` by a wide
+-- margin: `10^k` is never within `2^-62` of a power of two, only within about
+-- `2^-10` of one. How close it comes is not a magnitude property, so it is
+-- checked per decimal exponent.
+theorem power10_margin_all :
+    ∀ k ∈ Finset.Icc (-324 : ℤ) 292,
+      k = 0 ∨ (2 ^ 127 + 2 ^ 65) * power10Den (-k) ≤ power10Num (-k) := by
+  decide
 
 end
-
-/-! ### The longer candidate -/
-
--- decOne rounds the fixed-point significand sig / 2^64 to the nearest integer,
--- so its error is at most 1/2.
-theorem round_bound (f : ℕ) (e : ℤ) :
-    |((toDecimalCandidates f e).decOne : ℚ)
-        - (scaledSignificand f e : ℚ) / 2 ^ 64| ≤ 1 / 2 := by
-  let c := toDecimalCandidates f e
-  let hi := sigHi f e
-  let lo := sigLo f e
-  have hsplit :
-      (scaledSignificand f e : ℚ) / 2 ^ 64 =
-        (hi : ℚ) + lo / 2 ^ 64 := by
-    have h := Nat.div_add_mod (scaledSignificand f e) (2 ^ 64)
-    change 2 ^ 64 * hi + lo = scaledSignificand f e at h
-    rw [← h]
-    push_cast
-    ring
-  have hlo : lo < 2 ^ 64 := Nat.mod_lt _ (by norm_num)
-  have hround :
-      c.roundU1 =
-        if lo = 2 ^ 63 then
-          decide (hi % 2 = 1)
-        else
-          decide (2 ^ 63 < lo) := rfl
-  have htrue : c.roundU1 = true → 2 ^ 63 ≤ lo := by
-    intro h
-    rw [hround] at h
-    split at h
-    · omega
-    · rw [decide_eq_true_eq] at h; omega
-  have hfalse : c.roundU1 = false → lo ≤ 2 ^ 63 := by
-    intro h
-    rw [hround] at h
-    split at h
-    · omega
-    · simp only [decide_eq_false_iff_not, not_lt] at h; omega
-  have hdec :
-      c.decOne = hi + if c.roundU1 then 1 else 0 := rfl
-  rw [hsplit, hdec]
-  push_cast
-  have hpos : (0 : ℚ) < 2 ^ 64 := by positivity
-  have hpow : (2 : ℚ) ^ 64 = 2 * 2 ^ 63 := by norm_num
-  have hle1 : (lo : ℚ) / 2 ^ 64 ≤ 1 :=
-    (div_le_one hpos).2 (by exact_mod_cast hlo.le)
-  have hge0 : (0 : ℚ) ≤ (lo : ℚ) / 2 ^ 64 := by positivity
-  rw [abs_le]
-  split_ifs with hround
-  · -- Round up: 2^63 ≤ lo, so lo / 2^64 ≥ 1/2.
-    have : (1 : ℚ) / 2 ≤ lo / 2 ^ 64 := by
-      rw [le_div_iff₀ hpos]
-      have : (2 : ℚ) ^ 63 ≤ lo := by exact_mod_cast htrue hround
-      linarith [hpow]
-    constructor <;> linarith
-  · -- Round down: lo ≤ 2^63, so lo / 2^64 ≤ 1/2.
-    simp only [Bool.not_eq_true] at hround
-    have : (lo : ℚ) / 2 ^ 64 ≤ 1 / 2 := by
-      rw [div_le_iff₀ hpos]
-      have : (lo : ℚ) ≤ 2 ^ 63 := by exact_mod_cast hfalse hround
-      linarith [hpow]
-    constructor <;> linarith
-
--- The scaled error is the sum of power-of-ten truncation and the discarded
--- low word of the product.
-theorem scaled_value_error_eq (f : ℕ) (e : ℤ) (hr : Regular f e) :
-    let k := decimalExponent e
-    let h := decimalShift e
-    let p10 := power10Significand (-k)
-    let exactP10 := (10 : ℚ) ^ (-k) * 2 ^ (128 - power10Exponent (-k))
-    let fullProduct := f * 2 ^ (h + 1) * p10
-    let x := value f e * (10 ^ k)⁻¹
-    let q := (scaledSignificand f e : ℚ) / 2 ^ 64
-    2 ^ 128 * (x - q) =
-      (f : ℚ) * 2 ^ (h + 1) * (exactP10 - p10) +
-        (fullProduct % 2 ^ 64 : ℕ) := by
-  let k := decimalExponent e
-  let h := decimalShift e
-  let p10 := power10Significand (-k)
-  let exactP10 : ℚ :=
-    10 ^ (-k) * 2 ^ (128 - power10Exponent (-k))
-  let fullProduct : ℕ := f * 2 ^ (h + 1) * p10
-  let x := value f e * (10 ^ k)⁻¹
-  let q := (scaledSignificand f e : ℚ) / 2 ^ 64
-  change
-    2 ^ 128 * (x - q) =
-      ↑f * 2 ^ (h + 1) * (exactP10 - ↑p10) +
-        (fullProduct % 2 ^ 64 : ℕ)
-  have hsig : scaledSignificand f e = fullProduct / 2 ^ 64 := rfl
-  have hdivmod :
-      (fullProduct : ℚ) =
-        2 ^ 64 * ((fullProduct / 2 ^ 64 : ℕ) : ℚ) +
-          (fullProduct % 2 ^ 64 : ℕ) := by
-    exact_mod_cast (Nat.div_add_mod fullProduct (2 ^ 64)).symm
-  have hpow :
-      (2 : ℚ) ^ 128 * 2 ^ e = 2 ^ (e + 128) := by
-    rw [← zpow_natCast, ← zpow_add₀ (by norm_num)]
-    congr 1
-    push_cast
-    ring
-  have halign := aligned_pow e hr.2.2
-  change
-    (2 : ℚ) ^ (h + 1) *
-      2 ^ (128 - power10Exponent (-k)) =
-        2 ^ (e + 128)
-    at halign
-  have hx :
-      (2 : ℚ) ^ 128 * x =
-        ↑f * 2 ^ (h + 1) * exactP10 := by
-    rw [show x = ↑f * 2 ^ e * 10 ^ (-k) by
-      simp [x, value, ← zpow_neg]]
-    simp only [exactP10]
-    linear_combination
-      (↑f * (10 : ℚ) ^ (-k)) * hpow - (↑f * (10 : ℚ) ^ (-k)) * halign
-  have hq :
-      (2 : ℚ) ^ 128 * q =
-        fullProduct - (fullProduct % 2 ^ 64 : ℕ) := by
-    have hqval : (2 : ℚ) ^ 128 * q =
-        2 ^ 64 * ((fullProduct / 2 ^ 64 : ℕ) : ℚ) := by
-      simp only [q, hsig]; ring
-    rw [hqval]; linarith [hdivmod]
-  have hproduct :
-      (fullProduct : ℚ) = ↑f * 2 ^ (h + 1) * ↑p10 := by
-    simp [fullProduct]
-  rw [mul_sub, hx, hq, hproduct]
-  ring
-
--- The exact scaled value x = f·2^e / 10^k lies just above
--- q = sig / 2^64. The gap x - q is nonnegative and below 2⁻⁶³,
--- accounting for power-of-ten truncation and the low-word floor; both errors
--- are dominated by the guard bits (f < 2^53 and shift + 1 ≤ 4).
-theorem scaled_value_error_bound (f : ℕ) (e : ℤ) (hr : Regular f e) :
-    let c := toDecimalCandidates f e
-    let x := value f e * (10 ^ c.k)⁻¹
-    let q := (scaledSignificand f e : ℚ) / 2 ^ 64
-    0 ≤ x - q ∧ x - q < 1 / 2 ^ 63 := by
-  let k := decimalExponent e
-  let h := decimalShift e
-  let p10 := power10Significand (-k)
-  let exactP10 : ℚ := 10 ^ (-k) * 2 ^ (128 - power10Exponent (-k))
-  let fullProduct : ℕ := f * 2 ^ (h + 1) * p10
-  let x := value f e * (10 ^ k)⁻¹
-  let q := (scaledSignificand f e : ℚ) / 2 ^ 64
-  change 0 ≤ x - q ∧ x - q < 1 / 2 ^ 63
-  -- The residual identity and power-of-ten truncation give the two error terms.
-  have hresidual_eq := scaled_value_error_eq f e hr
-  change
-    2 ^ 128 * (x - q) =
-      ↑f * 2 ^ (h + 1) * (exactP10 - ↑p10) + (fullProduct % 2 ^ 64 : ℕ)
-    at hresidual_eq
-  have hp10_bounds := power10_significand_bounds (-k)
-  change (p10 : ℚ) ≤ exactP10 ∧ exactP10 < p10 + 1 at hp10_bounds
-  obtain ⟨hp10_lo, hp10_hi⟩ := hp10_bounds
-  -- 0 ≤ f·2^(h+1) ≤ 2^57 and 0 ≤ fullProduct mod 2^64 < 2^64.
-  have hlt : h < 4 := by
-    simpa [h] using decimal_shift_lt_four e hr.2.2
-  have h2h : (2 : ℚ) ^ (h + 1) ≤ 2 ^ 4 :=
-    pow_le_pow_right₀ (by norm_num) (by omega)
-  have hfp_nn : (0 : ℚ) ≤ ↑f * 2 ^ (h + 1) := by positivity
-  have hfp_ub : (↑f : ℚ) * 2 ^ (h + 1) ≤ 2 ^ 57 := by
-    calc
-      (↑f : ℚ) * 2 ^ (h + 1) ≤ 2 ^ 53 * 2 ^ (h + 1) := by
-        gcongr
-        exact_mod_cast hr.2.1.le
-      _ ≤ 2 ^ 53 * 2 ^ 4 := by gcongr
-      _ = 2 ^ 57 := by norm_num
-  have hr64 : ((fullProduct % 2 ^ 64 : ℕ) : ℚ) < 2 ^ 64 := by
-    exact_mod_cast Nat.mod_lt fullProduct (by norm_num)
-  have hr_nn : (0 : ℚ) ≤ ((fullProduct % 2 ^ 64 : ℕ) : ℚ) := by positivity
-  have h2pos : (0 : ℚ) < 2 ^ 128 := by positivity
-  constructor
-  · nlinarith [hresidual_eq, hfp_nn, hp10_lo, hr_nn, h2pos]
-  · nlinarith [hresidual_eq, hfp_nn, hfp_ub, hp10_lo, hp10_hi, hr64, h2pos]
-
--- The longer decimal candidate is strictly within half a scaled ULP of the
--- exact value. For e ≠ 0, combine round_bound and scaled_value_error_bound to
--- get a distance below 1/2 + 2⁻⁶³, then use margin_lower. For e = 0, we have
--- decOne = f = x exactly.
-theorem dec_one_error_bound
-    (f : ℕ) (e : ℤ)
-    (h : Regular f e) :
-    let c := toDecimalCandidates f e
-    let x := value f e * (10 ^ c.k)⁻¹
-    let u := ulp e * (10 ^ c.k)⁻¹
-    |(c.decOne : ℚ) - x| < u / 2 := by
-  have hr := round_bound f e
-  obtain ⟨hn, hl⟩ := scaled_value_error_bound f e h
-  set c := toDecimalCandidates f e
-  set d : ℚ := (c.decOne : ℚ) with hd
-  set x : ℚ := value f e * (10 ^ c.k)⁻¹ with hx
-  set u : ℚ := ulp e * (10 ^ c.k)⁻¹ with hu
-  show |d - x| < u / 2
-  have key : |d - x| < 1 / 2 + 1 / 2 ^ 63 := by
-    rw [abs_lt]
-    have hr_bounds := abs_le.mp hr
-    constructor <;> linarith
-  by_cases he0 : e = 0
-  · subst he0
-    have hk0 : c.k = 0 := rfl
-    have hx0 : x = (f : ℚ) := by
-      rw [hx]
-      simp only [value, hk0]
-      norm_num
-    have hnat : c.decOne = f := by
-      rw [hx0, hd] at key
-      obtain ⟨hbl, hbr⟩ := abs_lt.mp key
-      have d1 : c.decOne < f + 1 := by
-        exact_mod_cast (by linarith : (c.decOne : ℚ) < (f : ℚ) + 1)
-      have d2 : f < c.decOne + 1 := by
-        exact_mod_cast (by linarith : (f : ℚ) < (c.decOne : ℚ) + 1)
-      omega
-    have hupos : (0 : ℚ) < u := by
-      rw [hu]
-      simp only [ulp]
-      positivity
-    have hdx : d = x := by
-      rw [hd, hx0, hnat]
-    rw [hdx, sub_self, abs_zero]
-    linarith [hupos]
-  · have huge : (1 : ℚ) + 1 / 2 ^ 62 ≤ u := by
-      rcases h with ⟨hlo, hhi, elo, ehi⟩
-      rw [hu]
-      simp only [ulp]
-      exact margin_lower e ⟨elo, ehi⟩ he0
-    linarith [key, huge]
 
 /-! ### The packed trim window
 
@@ -618,15 +330,17 @@ theorem sig_lo_eq (f : ℕ) (e : ℤ) :
   show scaledSignificand f e % 2 ^ 64 = _
   rw [scaled_significand_eq, ← Nat.mod_mul_right_div_self, ← pow_add]
 
--- 2^128 splits into the shift and the window modulus.
+-- A power of two splits into the shift and what is left of the window.
+theorem pow_shift_split (e : ℤ) (n : ℕ) (hn : decimalShift e ≤ n) :
+    (2 : ℕ) ^ n = 2 ^ decimalShift e * 2 ^ (n - decimalShift e) := by
+  rw [← pow_add]
+  congr 1
+  omega
+
+-- The same split with the extra factor of ten of the window modulus.
 theorem pow_split (e : ℤ) (hsh : decimalShift e < 4) :
     (2 : ℕ) ^ 128 * 10 = 2 ^ decimalShift e * trimModulus e := by
-  have h128 :
-      (2 : ℕ) ^ 128 = 2 ^ decimalShift e * 2 ^ (128 - decimalShift e) := by
-    rw [← pow_add]
-    congr 1
-    omega
-  rw [trimModulus, h128]
+  rw [trimModulus, pow_shift_split e 128 (by omega)]
   ring
 
 -- Splitting a value at bit 128 and then discarding the low 68 bits is the same
@@ -1389,10 +1103,16 @@ theorem trim_mul_half_ulp (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
           inv_mul_cancel₀ (by positivity)]
         ring
 
+-- The scale sends the scaled value to `2·f·num`.
+theorem trim_mul_value (f : ℕ) (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
+    value f e * (10 ^ decimalExponent e)⁻¹ * (trimMul e : ℚ)
+      = 2 * f * (trimNum e : ℚ) := by
+  rw [← trim_mul_half_ulp e he, value, ulp]
+  ring
+
 -- The trim-down candidate sits exactly `trimGap` below the scaled value. In
 -- naturals it is `2·f·num - gap`: `trim_residue_add_ten` supplies the main term
--- and `trim_num_split` the low bits of the power of ten, while
--- `trim_mul_half_ulp` scales the value itself to `2·f·num`.
+-- and `trim_num_split` the low bits of the power of ten.
 theorem dec_ten_down_scaled_error (f : ℕ) (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
     (((sigHi f e - sigHi f e % 10 : ℕ) : ℚ)
         - value f e * (10 ^ decimalExponent e)⁻¹) * (trimMul e : ℚ)
@@ -1407,12 +1127,9 @@ theorem dec_ten_down_scaled_error (f : ℕ) (e : ℤ) (he : -1074 ≤ e ∧ e �
       _ = 2 * f * (trimDen e * trimSig e + trimNum e % trimDen e) := by
           rw [trim_residue_add_ten f e (decimal_shift_lt_four e he)]; ring
       _ = 2 * f * trimNum e := by rw [trim_num_split]
-  have hvalue : value f e * (10 ^ decimalExponent e)⁻¹ * (trimMul e : ℚ)
-      = 2 * f * (trimNum e : ℚ) := by
-    rw [← trim_mul_half_ulp e he, value, ulp]; ring
   have hcast := congrArg (fun n : ℕ => (n : ℚ)) hnat
   push_cast at hcast
-  linear_combination hcast - hvalue
+  linear_combination hcast - trim_mul_value f e he
 
 -- The trim-up candidate sits `trimScale - trimGap` above the scaled value,
 -- since the scale sends a decimal step of `10` to the window modulus.
@@ -1444,6 +1161,251 @@ theorem half_ulp_iff_scaled_error {cand dist : ℚ} (f : ℕ) (e : ℤ)
   exact ⟨by rw [← mul_le_mul_iff_of_pos_right hpos, hdist,
       trim_mul_half_ulp e he],
     by rw [← mul_lt_mul_iff_of_pos_right hpos, hdist, trim_mul_half_ulp e he]⟩
+
+/-! ### The unit-step candidate
+
+`decOne` is `sigHi` rounded to nearest using the discarded word `sigLo`. In
+the scale `trimMul = 2^(128-h)·den`, `sigHi` sits `oneGap` below the scaled
+value and rounding up adds one whole `trimMul`. The `roundU1` test bounds the
+remainder relative to half the window `2^(128-h)`, with only the bits below
+`sigLo` unseen. The remaining margin follows from `power10_margin_all`; at
+`k = 0` the candidate is exact instead.
+-/
+
+-- The exact remainder above `sigHi`, in units of `2^(h-128)` of the scaled
+-- value: `sigHi·2^(128-h) + oneResidue = 2·f·p10`.
+def oneResidue (f : ℕ) (e : ℤ) : ℕ :=
+  2 * f * trimSig e % 2 ^ (128 - decimalShift e)
+
+-- The exact distance from `sigHi` to the scaled value, with the denominator of
+-- the exact power of ten cleared: `den·oneResidue + 2·f·τ`.
+def oneGap (f : ℕ) (e : ℤ) : ℕ :=
+  trimDen e * oneResidue f e + 2 * f * (trimNum e % trimDen e)
+
+-- The unit-step candidate together with the window residue recovers the full
+-- product: `sigHi·2^(128-h) + oneResidue = 2·f·p10`.
+theorem one_residue_add_hi (f : ℕ) (e : ℤ) (hsh : decimalShift e < 4) :
+    sigHi f e * 2 ^ (128 - decimalShift e) + oneResidue f e
+      = 2 * f * trimSig e := by
+  rw [sig_hi_eq, pow_shift_split e 128 (by omega),
+    Nat.mul_div_mul_left _ _ (by positivity), oneResidue]
+  exact Nat.div_add_mod' _ _
+
+-- The unit-step analogue of `dec_ten_down_scaled_error`, in naturals: `sigHi`
+-- scaled up, plus the gap, is the scaled value `2·f·num`.
+theorem sig_hi_add_one_gap (f : ℕ) (e : ℤ) (hsh : decimalShift e < 4) :
+    sigHi f e * trimMul e + oneGap f e = 2 * f * trimNum e := by
+  calc sigHi f e * trimMul e + oneGap f e
+      = (sigHi f e * 2 ^ (128 - decimalShift e) + oneResidue f e) * trimDen e
+          + 2 * f * (trimNum e % trimDen e) := by
+        rw [trimMul, oneGap]; ring
+    _ = 2 * f * (trimDen e * trimSig e + trimNum e % trimDen e) := by
+        rw [one_residue_add_hi f e hsh]; ring
+    _ = 2 * f * trimNum e := by rw [trim_num_split]
+
+-- What `roundU1` says about the remainder: yy compares the discarded word with
+-- half its range, so the test is on the remainder against half the window
+-- `2^(128-h)`, blind only to the `2^(64-h)` bits below `sigLo`.
+theorem one_round_half (f : ℕ) (e : ℤ) (hsh : decimalShift e < 4) :
+    ((toDecimalCandidates f e).roundU1 = true →
+        2 ^ (127 - decimalShift e) ≤ oneResidue f e) ∧
+      ((toDecimalCandidates f e).roundU1 = false →
+        oneResidue f e
+          < 2 ^ (127 - decimalShift e) + 2 ^ (64 - decimalShift e)) := by
+  have hpos : (0 : ℕ) < 2 ^ (64 - decimalShift e) := by positivity
+  -- `sigLo` is the remainder with the bits below the last kept one dropped.
+  have hlo : sigLo f e = oneResidue f e / 2 ^ (64 - decimalShift e) := by
+    rw [sig_lo_eq, oneResidue, pow_shift_split e 128 (by omega),
+      Nat.mul_mod_mul_left, pow_shift_split e 64 (by omega),
+      Nat.mul_div_mul_left _ _ (by positivity)]
+  have hpow : (2 : ℕ) ^ 63 * 2 ^ (64 - decimalShift e)
+      = 2 ^ (127 - decimalShift e) := by
+    rw [← pow_add]
+    congr 1
+    omega
+  have hround : (toDecimalCandidates f e).roundU1
+      = if sigLo f e = 2 ^ 63 then decide (sigHi f e % 2 = 1)
+        else decide (2 ^ 63 < sigLo f e) := rfl
+  constructor
+  · intro hu1
+    have h63 : 2 ^ 63 ≤ sigLo f e := by
+      rw [hround] at hu1
+      split at hu1
+      · rename_i heq; exact heq.ge
+      · exact (of_decide_eq_true hu1).le
+    rwa [hlo, Nat.le_div_iff_mul_le hpos, hpow] at h63
+  · intro hu1
+    have h63 : sigLo f e ≤ 2 ^ 63 := by
+      rw [hround] at hu1
+      split at hu1
+      · rename_i heq; exact heq.le
+      · exact not_lt.mp (of_decide_eq_false hu1)
+    rw [hlo] at h63
+    calc oneResidue f e
+        < (2 ^ 63 + 1) * 2 ^ (64 - decimalShift e) :=
+          (Nat.div_lt_iff_lt_mul hpos).mp (Nat.lt_succ_of_le h63)
+      _ = 2 ^ (127 - decimalShift e) + 2 ^ (64 - decimalShift e) := by
+          rw [add_mul, one_mul, hpow]
+
+-- At `k = 0` the power of ten is exactly `2^127`, so `2·f·p10` fills whole
+-- windows and `sigHi` is already the scaled value.
+theorem one_exact_of_k_zero (f : ℕ) (e : ℤ) (hsh : decimalShift e < 4)
+    (hk : decimalExponent e = 0) :
+    oneResidue f e = 0 ∧ oneGap f e = 0 := by
+  have heq : trimNum e = 2 ^ 127 * trimDen e := by
+    rw [trimNum, trimDen, hk]
+    decide
+  have hsig : trimSig e = 2 ^ 127 := by
+    rw [trim_sig_nat, heq, Nat.mul_div_cancel _ (trim_den_pos e)]
+  have hres : oneResidue f e = 0 := by
+    rw [oneResidue, hsig,
+      show 2 * f * 2 ^ 127
+          = f * 2 ^ decimalShift e * 2 ^ (128 - decimalShift e) from by
+        calc 2 * f * 2 ^ 127 = f * 2 ^ 128 := by ring
+          _ = f * (2 ^ decimalShift e * 2 ^ (128 - decimalShift e)) := by
+            rw [pow_shift_split e 128 (by omega)]
+          _ = f * 2 ^ decimalShift e * 2 ^ (128 - decimalShift e) := by ring]
+    exact Nat.mul_mod_left _ _
+  refine ⟨hres, ?_⟩
+  rw [oneGap, hres, heq, Nat.mul_mod_left]
+  simp
+
+-- The certificate in the quantities the trim layer uses.
+theorem one_margin (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971)
+    (hk : decimalExponent e ≠ 0) :
+    (2 ^ 127 + 2 ^ 65) * trimDen e ≤ trimNum e := by
+  have hrange : decimalExponent e ∈ Finset.Icc (-324 : ℤ) 292 := by
+    simp only [Finset.mem_Icc]
+    unfold decimalExponent
+    omega
+  rw [trimNum, trimDen]
+  exact (power10_margin_all _ hrange).resolve_left hk
+
+-- Half a window, plus the bits `sigLo` cannot see and the truncation error of
+-- the power of ten, still fits inside `num`. The half window is at most
+-- `2^127·den` whatever the shift, so this is the certificate with room to
+-- spare.
+theorem one_half_window_lt (f : ℕ) (e : ℤ) (h : Regular f e)
+    (hk : decimalExponent e ≠ 0) :
+    trimDen e * (2 ^ (127 - decimalShift e) + 2 ^ (64 - decimalShift e))
+        + 2 * f * (trimNum e % trimDen e) < trimNum e := by
+  have hden := trim_den_pos e
+  have hlow : 2 * f * (trimNum e % trimDen e) < 2 ^ 54 * trimDen e :=
+    lt_of_le_of_lt (Nat.mul_le_mul_right _ (by have := h.2.1; omega))
+      (mul_lt_mul_of_pos_left (Nat.mod_lt _ hden) (by positivity))
+  calc trimDen e * (2 ^ (127 - decimalShift e) + 2 ^ (64 - decimalShift e))
+          + 2 * f * (trimNum e % trimDen e)
+      < trimDen e * (2 ^ 127 + 2 ^ 64) + 2 ^ 54 * trimDen e :=
+        Nat.add_lt_add_of_le_of_lt
+          (Nat.mul_le_mul_left _ (Nat.add_le_add
+            (Nat.pow_le_pow_right (by norm_num) (by omega))
+            (Nat.pow_le_pow_right (by norm_num) (by omega)))) hlow
+    _ = (2 ^ 127 + 2 ^ 64 + 2 ^ 54) * trimDen e := by ring
+    _ < (2 ^ 127 + 2 ^ 65) * trimDen e :=
+        mul_lt_mul_of_pos_right (by norm_num) hden
+    _ ≤ trimNum e := one_margin e h.2.2 hk
+
+-- Rounding down leaves the whole gap inside `num`.
+theorem one_gap_lt (f : ℕ) (e : ℤ) (h : Regular f e)
+    (hu1 : (toDecimalCandidates f e).roundU1 = false) :
+    oneGap f e < trimNum e := by
+  have hsh := decimal_shift_lt_four e h.2.2
+  by_cases hk : decimalExponent e = 0
+  · rw [(one_exact_of_k_zero f e hsh hk).2]
+    exact lt_of_lt_of_le (Nat.mul_pos (by positivity) (trim_den_pos e))
+      (trim_num_lower e)
+  · calc oneGap f e
+        ≤ trimDen e * (2 ^ (127 - decimalShift e) + 2 ^ (64 - decimalShift e))
+            + 2 * f * (trimNum e % trimDen e) :=
+          Nat.add_le_add_right
+            (Nat.mul_le_mul_left _ ((one_round_half f e hsh).2 hu1).le) _
+      _ < trimNum e := one_half_window_lt f e h hk
+
+-- Rounding up overshoots by less than `num`, and the gap it jumped is itself
+-- less than `trimMul` past `num`.
+theorem one_scale_bounds (f : ℕ) (e : ℤ) (h : Regular f e)
+    (hu1 : (toDecimalCandidates f e).roundU1 = true) :
+    trimMul e < oneGap f e + trimNum e ∧ oneGap f e < trimMul e + trimNum e := by
+  have hsh := decimal_shift_lt_four e h.2.2
+  have hden := trim_den_pos e
+  have hres := (one_round_half f e hsh).1 hu1
+  -- `k` is not zero, or the remainder would be zero and `roundU1` could not
+  -- have fired.
+  have hk : decimalExponent e ≠ 0 := by
+    intro hk0
+    rw [(one_exact_of_k_zero f e hsh hk0).1] at hres
+    exact absurd hres (Nat.not_le.mpr (by positivity))
+  have hmargin := one_half_window_lt f e h hk
+  have hhalf : trimDen e * 2 ^ (127 - decimalShift e) < trimNum e :=
+    lt_of_le_of_lt (le_trans (Nat.mul_le_mul_left _ (Nat.le_add_right _ _))
+      (Nat.le_add_right _ _)) hmargin
+  constructor
+  · calc trimMul e
+        = trimDen e * 2 ^ (127 - decimalShift e)
+            + trimDen e * 2 ^ (127 - decimalShift e) := by
+          rw [trimMul,
+            show (2 : ℕ) ^ (128 - decimalShift e)
+                = 2 * 2 ^ (127 - decimalShift e) from by
+              rw [← pow_succ']; congr 1; omega]
+          ring
+      _ < trimNum e + oneGap f e :=
+          Nat.add_lt_add_of_lt_of_le hhalf
+            (le_trans (Nat.mul_le_mul_left _ hres) (Nat.le_add_right _ _))
+      _ = oneGap f e + trimNum e := Nat.add_comm _ _
+  · have hwindow : oneResidue f e < 2 ^ (128 - decimalShift e) :=
+      Nat.mod_lt _ (by positivity)
+    exact Nat.add_lt_add
+      (by rw [trimMul, Nat.mul_comm (2 ^ (128 - decimalShift e))]
+          exact mul_lt_mul_of_pos_left hwindow hden)
+      (lt_of_le_of_lt (Nat.le_add_left _ _) hmargin)
+
+-- `sigHi` sits exactly `oneGap` below the scaled value.
+theorem sig_hi_scaled_error (f : ℕ) (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
+    ((sigHi f e : ℚ) - value f e * (10 ^ decimalExponent e)⁻¹)
+        * (trimMul e : ℚ)
+      = -(oneGap f e : ℚ) := by
+  have hcast := congrArg (fun n : ℕ => (n : ℚ))
+    (sig_hi_add_one_gap f e (decimal_shift_lt_four e he))
+  push_cast at hcast
+  linear_combination hcast - trim_mul_value f e he
+
+-- The unit-step candidate is strictly within half a scaled ULP of the exact
+-- value.
+theorem dec_one_error_bound (f : ℕ) (e : ℤ) (h : Regular f e) :
+    let c := toDecimalCandidates f e
+    let x := value f e * (10 ^ c.k)⁻¹
+    let u := ulp e * (10 ^ c.k)⁻¹
+    |(c.decOne : ℚ) - x| < u / 2 := by
+  intro c x u
+  by_cases hu1 : c.roundU1 = true
+  -- Rounding up: the candidate is `trimMul - oneGap` above the value.
+  · have hdec : ((c.decOne : ℕ) : ℚ) = (sigHi f e : ℚ) + 1 := by
+      show ((sigHi f e + if c.roundU1 then 1 else 0 : ℕ) : ℚ) = _
+      simp [hu1]
+    obtain ⟨hbelow, habove⟩ := one_scale_bounds f e h hu1
+    obtain ⟨_, hlt⟩ := half_ulp_iff_scaled_error f e h.2.2
+      (cand := (sigHi f e : ℚ) + 1)
+      (dist := (trimMul e : ℚ) - (oneGap f e : ℚ))
+      (by linear_combination sig_hi_scaled_error f e h.2.2)
+    rw [hdec]
+    refine hlt.mpr (abs_lt.mpr ⟨?_, ?_⟩)
+    · have : (oneGap f e : ℚ) < (trimMul e : ℚ) + (trimNum e : ℚ) := by
+        exact_mod_cast habove
+      linarith
+    · have : (trimMul e : ℚ) < (oneGap f e : ℚ) + (trimNum e : ℚ) := by
+        exact_mod_cast hbelow
+      linarith
+  -- Rounding down: the candidate is `oneGap` below it.
+  · rw [Bool.not_eq_true] at hu1
+    have hdec : ((c.decOne : ℕ) : ℚ) = (sigHi f e : ℚ) := by
+      show ((sigHi f e + if c.roundU1 then 1 else 0 : ℕ) : ℚ) = _
+      simp [hu1]
+    obtain ⟨_, hlt⟩ :=
+      half_ulp_iff_scaled_error f e h.2.2 (sig_hi_scaled_error f e h.2.2)
+    rw [hdec]
+    refine hlt.mpr ?_
+    rw [abs_neg, abs_of_nonneg (Nat.cast_nonneg _)]
+    exact_mod_cast one_gap_lt f e h hu1
 
 /-! ### The multiple-of-ten candidates -/
 
