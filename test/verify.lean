@@ -1,10 +1,10 @@
 import Mathlib.Algebra.Order.Floor.Semifield
 import Mathlib.Tactic
 
--- The finite checks below enumerate 2046 exponents in the kernel; each one
--- raises the recursion guard locally, and the ones that evaluate 10^324 also
--- raise the elaborator's exponentiation guard.
-set_option maxRecDepth 100000
+-- The finite checks below enumerate up to 2046 exponents in the kernel. The
+-- three that `decide` over the whole range raise the recursion guard where they
+-- appear, and those evaluating 10^324 also raise the elaborator's
+-- exponentiation guard.
 
 /-! ### The specification -/
 
@@ -123,41 +123,68 @@ def toDecimal (f : ℕ) (e : ℤ) : ℕ × ℤ :=
 
 /-! ### The truncated power of ten -/
 
+-- `power10Exponent` is characterized by this interval: it is the binary
+-- exponent that normalizes `10^k`. Both bounds are the defining bounds of
+-- `Nat.log`; for `k < 0` inversion exchanges them, so there the log's lower
+-- bound has to be strict, which it is because a power of two carries no five.
+theorem power10_exponent_bounds (k : ℤ) :
+    (2 : ℚ) ^ (power10Exponent k - 1) ≤ 10 ^ k ∧
+      (10 : ℚ) ^ k < 2 ^ power10Exponent k := by
+  unfold power10Exponent
+  split_ifs with hk
+  · set n := k.toNat with hn
+    set l := Nat.log 2 (10 ^ n)
+    have h10 : (10 : ℚ) ^ k = (10 : ℚ) ^ n := by
+      rw [← zpow_natCast (10 : ℚ) n, hn, Int.toNat_of_nonneg hk]
+    refine ⟨?_, ?_⟩
+    · rw [h10, show (l : ℤ) + 1 - 1 = ((l : ℕ) : ℤ) from by ring, zpow_natCast]
+      exact_mod_cast Nat.pow_log_le_self 2 (by positivity : 10 ^ n ≠ 0)
+    · rw [h10, show (l : ℤ) + 1 = ((l + 1 : ℕ) : ℤ) from by omega,
+        zpow_natCast]
+      exact_mod_cast Nat.lt_pow_succ_log_self (by norm_num) (10 ^ n)
+  · set m := (-k).toNat with hm
+    set l := Nat.log 2 (10 ^ m)
+    have hk' : k = -(m : ℤ) := by omega
+    refine ⟨?_, ?_⟩
+    · rw [hk', zpow_neg, zpow_natCast,
+        show (-(l : ℤ) - 1) = -((l + 1 : ℕ) : ℤ) from by omega,
+        zpow_neg, zpow_natCast, inv_le_inv₀ (by positivity) (by positivity)]
+      exact_mod_cast (Nat.lt_pow_succ_log_self (by norm_num) (10 ^ m)).le
+    · have hne : (2 : ℕ) ^ l ≠ 10 ^ m := by
+        intro hcon
+        have h5 : (5 : ℕ) ∣ 2 ^ l := by
+          rw [hcon]
+          exact dvd_pow (⟨2, rfl⟩ : (5 : ℕ) ∣ 10) (by omega)
+        have := Nat.prime_five.dvd_of_dvd_pow h5
+        omega
+      rw [hk', zpow_neg, zpow_natCast, zpow_neg, zpow_natCast,
+        inv_lt_inv₀ (by positivity) (by positivity)]
+      exact_mod_cast lt_of_le_of_ne (Nat.pow_log_le_self 2 (by positivity)) hne
+
 -- The power-of-ten significand is normalized: its top bit is set. This is
 -- what makes power10Exponent an exponent for a 128-bit significand.
 theorem power10_significand_lower (k : ℤ) :
     2 ^ 127 ≤ power10Significand k := by
-  -- 2^(pe-1) ≤ 10^k by the defining property of Nat.log.
-  have hlog : (2 : ℚ) ^ (power10Exponent k - 1) ≤ 10 ^ k := by
-    unfold power10Exponent
-    split_ifs with hk
-    · have hpos : 10 ^ k.toNat ≠ 0 := by positivity
-      have hnat : 2 ^ Nat.log 2 (10 ^ k.toNat) ≤ 10 ^ k.toNat :=
-        Nat.pow_log_le_self 2 hpos
-      have : ((2 : ℚ) ^ Nat.log 2 (10 ^ k.toNat)) ≤ ((10 : ℚ) ^ k.toNat) := by
-        exact_mod_cast hnat
-      simpa [add_sub_cancel_right, ← zpow_natCast (10 : ℚ) k.toNat,
-        Int.toNat_of_nonneg hk] using this
-    · set m := (-k).toNat with hm
-      set l := Nat.log 2 (10 ^ m)
-      have hq : ((10 : ℚ) ^ m) ≤ (2 : ℚ) ^ (l + 1) := by
-        exact_mod_cast (Nat.lt_pow_succ_log_self (by norm_num) (10 ^ m)).le
-      have hk' : k = -(m : ℤ) := by omega
-      rw [hk', zpow_neg, zpow_natCast,
-        show (-(l : ℤ) - 1) = -((l + 1 : ℕ) : ℤ) from by push_cast; ring,
-        zpow_neg, zpow_natCast, inv_le_inv₀ (by positivity) (by positivity)]
-      exact hq
-  -- Multiplying by 2^(128-pe) turns it into the claimed bound.
   have hx : (2 : ℚ) ^ (127 : ℕ) ≤ 10 ^ k * 2 ^ (128 - power10Exponent k) := by
-    have hmul :
-        (2 : ℚ) ^ (power10Exponent k - 1) * 2 ^ (128 - power10Exponent k)
-          ≤ 10 ^ k * 2 ^ (128 - power10Exponent k) :=
-      mul_le_mul_of_nonneg_right hlog (by positivity)
+    have hmul := mul_le_mul_of_nonneg_right (power10_exponent_bounds k).1
+      (by positivity : (0 : ℚ) ≤ 2 ^ (128 - power10Exponent k))
     rw [← zpow_add₀ (by norm_num : (2 : ℚ) ≠ 0),
       show power10Exponent k - 1 + (128 - power10Exponent k) = (127 : ℤ) from by
         ring] at hmul
     simpa using hmul
   exact Nat.le_floor (by push_cast; exact hx)
+
+-- And it fits in 128 bits.
+theorem power10_significand_lt (k : ℤ) :
+    power10Significand k < 2 ^ 128 := by
+  have hx : (10 : ℚ) ^ k * 2 ^ (128 - power10Exponent k) < 2 ^ (128 : ℕ) := by
+    have hmul := mul_lt_mul_of_pos_right (power10_exponent_bounds k).2
+      (by positivity : (0 : ℚ) < 2 ^ (128 - power10Exponent k))
+    rw [← zpow_add₀ (by norm_num : (2 : ℚ) ≠ 0),
+      show power10Exponent k + (128 - power10Exponent k) = (128 : ℤ) from by
+        ring] at hmul
+    simpa using hmul
+  exact (Nat.floor_lt (by positivity)).mpr (by push_cast; exact hx)
 
 -- Numerator and denominator of the exact scaled power of ten `10^k·2^(128-pe)`,
 -- with negative exponents moved to the denominator. Writing it as a ratio of
@@ -192,49 +219,6 @@ theorem power10_exact_ratio (k : ℤ) :
     ← zpow_add₀ (by norm_num : (10 : ℚ) ≠ 0),
     ← zpow_add₀ (by norm_num : (2 : ℚ) ≠ 0), hk, hpe]
 
--- The power-of-ten significand fits in 128 bits: 10^k < 2^pe by construction.
-theorem power10_significand_lt (k : ℤ) :
-    power10Significand k < 2 ^ 128 := by
-  have hlog : (10 : ℚ) ^ k < 2 ^ power10Exponent k := by
-    unfold power10Exponent
-    split_ifs with hk
-    · have hnat : 10 ^ k.toNat < 2 ^ (Nat.log 2 (10 ^ k.toNat) + 1) :=
-        Nat.lt_pow_succ_log_self (by norm_num) _
-      have hq : ((10 : ℚ) ^ k.toNat)
-          < (2 : ℚ) ^ (Nat.log 2 (10 ^ k.toNat) + 1) := by
-        exact_mod_cast hnat
-      rw [show ((Nat.log 2 (10 ^ k.toNat) : ℤ) + 1)
-            = ((Nat.log 2 (10 ^ k.toNat) + 1 : ℕ) : ℤ) from by push_cast; ring,
-        zpow_natCast]
-      simpa [← zpow_natCast (10 : ℚ) k.toNat, Int.toNat_of_nonneg hk] using hq
-    · set m := (-k).toNat with hm
-      set l := Nat.log 2 (10 ^ m)
-      -- 2^l ≤ 10^m is the defining bound; equality would put a five in 2^l.
-      have hne : 2 ^ l ≠ 10 ^ m := by
-        intro hcon
-        have h5 : (5 : ℕ) ∣ 2 ^ l := by
-          rw [hcon]
-          exact dvd_pow (⟨2, rfl⟩ : (5 : ℕ) ∣ 10) (by omega)
-        have := (Nat.prime_five.dvd_of_dvd_pow h5)
-        omega
-      have hlt : (2 : ℕ) ^ l < 10 ^ m :=
-        lt_of_le_of_ne (Nat.pow_log_le_self 2 (by positivity)) hne
-      have hq : ((2 : ℚ) ^ l) < (10 : ℚ) ^ m := by exact_mod_cast hlt
-      have hk' : k = -(m : ℤ) := by omega
-      rw [hk', zpow_neg, zpow_natCast, zpow_neg, zpow_natCast,
-        inv_lt_inv₀ (by positivity) (by positivity)]
-      exact hq
-  have hx : (10 : ℚ) ^ k * 2 ^ (128 - power10Exponent k) < 2 ^ (128 : ℕ) := by
-    have hmul :
-        (10 : ℚ) ^ k * 2 ^ (128 - power10Exponent k)
-          < 2 ^ power10Exponent k * 2 ^ (128 - power10Exponent k) :=
-      mul_lt_mul_of_pos_right hlog (by positivity)
-    rw [← zpow_add₀ (by norm_num : (2 : ℚ) ≠ 0),
-      show power10Exponent k + (128 - power10Exponent k) = (128 : ℤ) from by
-        ring] at hmul
-    simpa using hmul
-  exact (Nat.floor_lt (by positivity)).mpr (by push_cast; exact hx)
-
 /-! ### Exponent alignment -/
 
 -- The shift used by yy's regular path is less than 4.
@@ -246,6 +230,7 @@ section
 
 -- The checks compute powers as large as `10^324`.
 set_option exponentiation.threshold 5000
+set_option maxRecDepth 100000
 
 -- Exponent alignment over the binary64 exponent range.
 theorem align_all :
@@ -400,9 +385,11 @@ theorem sig_hi_quotient (f : ℕ) (e : ℤ) (hsh : decimalShift e < 4) :
 theorem sig_hi_ten_quotient (f : ℕ) (e : ℤ) (hsh : decimalShift e < 4) :
     sigHi f e - sigHi f e % 10
       = 10 * (2 * f * trimSig e / trimModulus e) := by
+  -- Dividing the unit-step quotient by ten is dividing by the window step.
   have hdiv : sigHi f e / 10 = 2 * f * trimSig e / trimModulus e := by
-    rw [sig_hi_eq, Nat.div_div_eq_div_mul, pow_split e hsh,
-      Nat.mul_div_mul_left _ _ (by positivity)]
+    rw [sig_hi_quotient f e hsh, Nat.div_div_eq_div_mul,
+      show 2 ^ (128 - decimalShift e) * 10 = trimModulus e from by
+        rw [trimModulus]; ring]
   have hmod := Nat.div_add_mod (sigHi f e) 10
   rw [← hdiv]
   omega
@@ -474,17 +461,15 @@ small check per window.
 
 -- The exact distance from a candidate to the scaled value, with the
 -- denominator of the exact power of ten cleared: the residue contributes
--- `den·W` and the truncation `p10Exact - p10 = τ/den` costs `2·f·τ`. The step
--- itself is cleared the same way.
+-- `den·W` and the truncation `p10Exact - p10 = τ/den` costs `2·f·τ`.
 def stepGap (m f : ℕ) (e : ℤ) : ℕ :=
   trimDen e * stepResidue m f e + 2 * f * (trimNum e % trimDen e)
 
-def stepScale (m : ℕ) (e : ℤ) : ℕ := m * trimDen e
-
--- The distance to the multiple-of-ten candidate, and the window modulus.
+-- The distance to the multiple-of-ten candidate, and the window modulus with
+-- the same denominator cleared.
 def trimGap (f : ℕ) (e : ℤ) : ℕ := stepGap (trimModulus e) f e
 
-def trimScale (e : ℤ) : ℕ := stepScale (trimModulus e) e
+def trimScale (e : ℤ) : ℕ := trimModulus e * trimDen e
 
 -- How far a gap can be from the multiple-of-ten candidate and still be accepted
 -- by a packed comparison: `den·(p10 + U)`. Written as `num / den` rather than
@@ -499,6 +484,7 @@ def trimLowBitsHolds (e : ℤ) : Bool :=
   decide (2 ^ 54 * (num % den) ≤ num / den % trimUnit e * den)
 
 set_option exponentiation.threshold 5000 in
+set_option maxRecDepth 100000 in
 theorem trim_low_bits_all :
     ∀ e ∈ Finset.Icc (-1074 : ℤ) 971, trimLowBitsHolds e = true := by decide
 
@@ -702,8 +688,7 @@ theorem trim_mod_shift (p den τ n f : ℕ)
 
 theorem trim_gap_mod (f : ℕ) (e : ℤ) (hlt : trimGap f e < trimScale e) :
     2 * trimNum e * f % trimScale e = trimGap f e := by
-  rw [trimGap, stepGap, stepResidue, trim_sig_nat, trimScale, stepScale]
-    at hlt ⊢
+  rw [trimGap, stepGap, stepResidue, trim_sig_nat, trimScale] at hlt ⊢
   rw [show 2 * trimNum e * f
       = 2 * (trimNum e / trimDen e * trimDen e + trimNum e % trimDen e) * f
       from by rw [Nat.div_add_mod']]
@@ -721,7 +706,7 @@ theorem trim_no_window_hit {lo hi q : ℤ} (f : ℕ) (e : ℤ)
   obtain ⟨hf_lo, hf_hi, _, _⟩ := h
   have hscale_pos : (0 : ℤ) < (trimScale e : ℤ) :=
     Int.natCast_pos.mpr (by
-      rw [trimScale, stepScale, trimModulus]
+      rw [trimScale, trimModulus]
       exact Nat.mul_pos (by positivity) (trim_den_pos e))
   refine not_window_hit (f := (f : ℤ))
     (j := ((2 * trimNum e * f / trimScale e : ℕ) : ℤ))
@@ -748,7 +733,7 @@ theorem trim_bnd_le_scale (e : ℤ) (hsh : decimalShift e < 4) :
   have hp_lt : trimSig e < 2 ^ 128 := power10_significand_lt _
   have hgap : (2 : ℕ) ^ 128 + 2 ^ 68 ≤ 10 * 2 ^ 125 := by norm_num
   have hwindow : trimSig e + trimUnit e ≤ trimModulus e := by omega
-  rw [trimScale, stepScale, Nat.mul_comm (trimModulus e)]
+  rw [trimScale, Nat.mul_comm (trimModulus e)]
   exact Nat.mul_le_mul_left _ hwindow
 
 -- `p10Exact ≥ 2^127`, with the denominator cleared.
@@ -802,15 +787,15 @@ theorem trim_num_split (e : ℤ) :
 
 theorem trim_scale_split (e : ℤ) :
     trimDen e * trimModulus e = trimScale e := by
-  rw [trimScale, stepScale]; ring
+  rw [trimScale]; ring
 
 -- Whatever the step, the candidate scaled back up plus the gap is the scaled
 -- value `2·f·num`: `Nat.div_add_mod` recovers the product from the quotient
 -- and `trim_num_split` the power of ten from its truncation.
 theorem step_quotient_add_gap (m f : ℕ) (e : ℤ) :
-    2 * f * trimSig e / m * stepScale m e + stepGap m f e
+    2 * f * trimSig e / m * (m * trimDen e) + stepGap m f e
       = 2 * f * trimNum e := by
-  rw [stepScale, stepGap, stepResidue]
+  rw [stepGap, stepResidue]
   calc 2 * f * trimSig e / m * (m * trimDen e)
         + (trimDen e * (2 * f * trimSig e % m)
           + 2 * f * (trimNum e % trimDen e))
@@ -831,9 +816,9 @@ theorem trim_trunc_lt (f : ℕ) (e : ℤ) (h : Regular f e) :
 -- residue stays below the step, and `num ≥ 2^127·den` absorbs the truncation
 -- error.
 theorem step_gap_lt_scale_add (m f : ℕ) (e : ℤ) (h : Regular f e)
-    (hm : 0 < m) : stepGap m f e < stepScale m e + trimNum e := by
-  have hres : trimDen e * stepResidue m f e < stepScale m e := by
-    rw [stepScale, stepResidue, Nat.mul_comm m]
+    (hm : 0 < m) : stepGap m f e < m * trimDen e + trimNum e := by
+  have hres : trimDen e * stepResidue m f e < m * trimDen e := by
+    rw [stepResidue, Nat.mul_comm m]
     exact mul_lt_mul_of_pos_left (Nat.mod_lt _ hm) (trim_den_pos e)
   have hlow := trim_trunc_lt f e h
   have htrunc : 2 ^ 54 * trimDen e ≤ trimNum e :=
@@ -1093,10 +1078,10 @@ bound `|cand - x| ≤ u/2` is a comparison of `trimGap` with `trimNum`.
 -/
 
 -- The unit step, cleared. The window step is ten of them.
-def trimMul (e : ℤ) : ℕ := stepScale (2 ^ (128 - decimalShift e)) e
+def trimMul (e : ℤ) : ℕ := 2 ^ (128 - decimalShift e) * trimDen e
 
 theorem trim_scale_eq_ten_mul (e : ℤ) : trimScale e = 10 * trimMul e := by
-  simp only [trimScale, trimMul, stepScale, trimModulus]
+  simp only [trimScale, trimMul, trimModulus]
   ring
 
 -- Exponent alignment: the inverse scale `s = 2^(1-e)·10^k` turns the
@@ -1135,7 +1120,7 @@ theorem trim_mul_eq (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
         = trimNum e := by
     rw [power10_exact_ratio, ← trimNum, ← trimDen,
       div_mul_cancel₀ _ (ne_of_gt hd)]
-  rw [trimMul, stepScale]
+  rw [trimMul]
   push_cast
   rw [← exact_scale e he, ← hnum]
   ring
@@ -1170,8 +1155,8 @@ theorem scaled_error_of_nat {cand gap : ℕ} (f : ℕ) (e : ℤ)
     (hnat : cand * trimMul e + gap = 2 * f * trimNum e) :
     ((cand : ℚ) - value f e * (10 ^ decimalExponent e)⁻¹) * (trimMul e : ℚ)
       = -(gap : ℚ) := by
-  have hcast := congrArg (fun n : ℕ => (n : ℚ)) hnat
-  push_cast at hcast
+  have hcast : (cand : ℚ) * trimMul e + gap = 2 * f * trimNum e := by
+    exact_mod_cast hnat
   linear_combination hcast - trim_mul_value f e he
 
 -- The trim-down candidate sits exactly `trimGap` below the scaled value: it is
@@ -1195,7 +1180,7 @@ theorem dec_ten_up_scaled_error (f : ℕ) (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 
         - value f e * (10 ^ decimalExponent e)⁻¹) * (trimMul e : ℚ)
       = (trimScale e : ℚ) - (trimGap f e : ℚ) := by
   have hten : (10 : ℚ) * (trimMul e : ℚ) = (trimScale e : ℚ) := by
-    rw [trim_scale_eq_ten_mul]; push_cast; ring
+    exact_mod_cast (trim_scale_eq_ten_mul e).symm
   linear_combination dec_ten_down_scaled_error f e he + hten
 
 -- Scaling by `trimMul` loses nothing: a candidate with scaled error `dist` is
@@ -1212,8 +1197,7 @@ theorem half_ulp_iff_scaled_error {cand dist : ℚ} (f : ℕ) (e : ℤ)
   intro k x u
   have hpos : (0 : ℚ) < (trimMul e : ℚ) :=
     Nat.cast_pos.mpr
-      (by rw [trimMul, stepScale]
-          exact Nat.mul_pos (by positivity) (trim_den_pos e))
+      (by rw [trimMul]; exact Nat.mul_pos (by positivity) (trim_den_pos e))
   have hdist : |cand - x| * (trimMul e : ℚ) = |dist| := by
     rw [← hscale, abs_mul, abs_of_pos hpos]
   exact ⟨by rw [← mul_le_mul_iff_of_pos_right hpos, hdist,
@@ -1381,7 +1365,7 @@ theorem one_scale_bounds (f : ℕ) (e : ℤ) (h : Regular f e)
   calc trimMul e
       = trimDen e * 2 ^ (127 - decimalShift e)
           + trimDen e * 2 ^ (127 - decimalShift e) := by
-        rw [trimMul, stepScale,
+        rw [trimMul,
           show (2 : ℕ) ^ (128 - decimalShift e)
               = 2 * 2 ^ (127 - decimalShift e) from by
             rw [← pow_succ']; congr 1; omega]
@@ -1407,16 +1391,17 @@ theorem dec_one_error_bound (f : ℕ) (e : ℤ) (h : Regular f e) :
     let u := ulp e * (10 ^ c.k)⁻¹
     |(c.decOne : ℚ) - x| < u / 2 := by
   intro c x u
+  have he := h.2.2
   by_cases hu1 : c.roundU1 = true
   -- Rounding up: the candidate is `trimMul - oneGap` above the value.
   · have hdec : ((c.decOne : ℕ) : ℚ) = (sigHi f e : ℚ) + 1 := by
       show ((sigHi f e + if c.roundU1 then 1 else 0 : ℕ) : ℚ) = _
       simp [hu1]
     obtain ⟨hbelow, habove⟩ := one_scale_bounds f e h hu1
-    obtain ⟨_, hlt⟩ := half_ulp_iff_scaled_error f e h.2.2
+    obtain ⟨_, hlt⟩ := half_ulp_iff_scaled_error f e he
       (cand := (sigHi f e : ℚ) + 1)
       (dist := (trimMul e : ℚ) - (oneGap f e : ℚ))
-      (by linear_combination sig_hi_scaled_error f e h.2.2)
+      (by linear_combination sig_hi_scaled_error f e he)
     rw [hdec]
     refine hlt.mpr (abs_lt.mpr ⟨?_, ?_⟩)
     · have : (oneGap f e : ℚ) < (trimMul e : ℚ) + (trimNum e : ℚ) := by
@@ -1431,7 +1416,7 @@ theorem dec_one_error_bound (f : ℕ) (e : ℤ) (h : Regular f e) :
       show ((sigHi f e + if c.roundU1 then 1 else 0 : ℕ) : ℚ) = _
       simp [hu1]
     obtain ⟨_, hlt⟩ :=
-      half_ulp_iff_scaled_error f e h.2.2 (sig_hi_scaled_error f e h.2.2)
+      half_ulp_iff_scaled_error f e he (sig_hi_scaled_error f e he)
     rw [hdec]
     refine hlt.mpr ?_
     rw [abs_neg, abs_of_nonneg (Nat.cast_nonneg _)]
@@ -1451,9 +1436,10 @@ theorem dec_ten_down (f : ℕ) (e : ℤ) (h : Regular f e)
     else
       |(ten : ℚ) - x| < u / 2 := by
   intro k ten x u
-  have hsh : decimalShift e < 4 := decimal_shift_lt_four e h.2.2
+  have he := h.2.2
+  have hsh : decimalShift e < 4 := decimal_shift_lt_four e he
   obtain ⟨hle, hlt⟩ :=
-    half_ulp_iff_scaled_error f e h.2.2 (dec_ten_down_scaled_error f e h.2.2)
+    half_ulp_iff_scaled_error f e he (dec_ten_down_scaled_error f e he)
   have habs : |(-(trimGap f e : ℚ))| = (trimGap f e : ℚ) := by
     rw [abs_neg]; exact abs_of_nonneg (Nat.cast_nonneg _)
   -- yy's packed operands corresponding to `c` and `halfUlp`.
@@ -1493,9 +1479,10 @@ theorem dec_ten_up (f : ℕ) (e : ℤ) (h : Regular f e)
     else
       |(ten : ℚ) + 10 - x| < u / 2 := by
   intro k ten x u
-  have hsh : decimalShift e < 4 := decimal_shift_lt_four e h.2.2
+  have he := h.2.2
+  have hsh : decimalShift e < 4 := decimal_shift_lt_four e he
   obtain ⟨hle, hlt⟩ :=
-    half_ulp_iff_scaled_error f e h.2.2 (dec_ten_up_scaled_error f e h.2.2)
+    half_ulp_iff_scaled_error f e he (dec_ten_up_scaled_error f e he)
   -- The free side, shared by all branches.
   have hfree : -(trimNum e : ℚ) < (trimScale e : ℚ) - (trimGap f e : ℚ) := by
     have hz : (trimGap f e : ℚ) < (trimScale e : ℚ) + (trimNum e : ℚ) := by
