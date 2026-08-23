@@ -2453,5 +2453,5 @@ theorem yy_correct (f : ℕ) (e : ℤ) (h : Regular f e) :
   obtain ⟨hfine, hcoarse⟩ := ulp_scaled_bounds e h.2.2
   rw [show toDecimal f e = ((toDecimal f e).1, decimalExponent e) from rfl]
   exact exact_candidate_correct f e (decimalExponent e)
-    (lt_of_lt_of_le (by norm_num) h.1.le) hfine hcoarse _
+    (lt_of_lt_of_le (by norm_num) h.1.le) hfine hcoarse
     (yy_exact_candidate f e h)

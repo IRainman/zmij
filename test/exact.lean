@@ -328,9 +328,9 @@ theorem coarse_roundtrip_unique (f : ℕ) (e k : ℤ)
 -- to strip, since one would itself be a coarse candidate, so nothing on any
 -- coarser grid round-trips, and correct rounding is the half-step bound read
 -- through `correctly_rounded_of_le_half`.
-theorem exact_candidate_correct (f : ℕ) (e k : ℤ) (hf0 : 0 < f)
+theorem exact_candidate_correct (f : ℕ) (e k : ℤ) {d : ℕ} (hf0 : 0 < f)
     (hfine : 1 ≤ ulp e * 10 ^ (-k)) (hcoarse : ulp e * 10 ^ (-k) < 10)
-    (d : ℕ) (hd : ExactCandidate f e k d) :
+    (hd : ExactCandidate f e k d) :
     let (d', k') := reduceDecimal (d, k)
     Shortest f e d' k' ∧ CorrectlyRounded f e d' k' := by
   -- Both cases round-trip: the coarse one by assumption, the fine one because
