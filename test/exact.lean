@@ -257,8 +257,8 @@ theorem ten_pow_succ_shift (d : ℕ) (k : ℤ) :
 The method is Schubfach's, stated at a decimal exponent `k` and read in the
 scaled domain: prefer a multiple of ten that round-trips, and settle for a
 nearest integer, ties to even, when there is none. A multiple of ten round-trips
-exactly when a digit can be dropped, so the first case is where the shortest
-representation is coarser than the grid at `k`.
+exactly when a digit can be dropped, `coarse_roundtrip_iff_next_grid`, so the
+first case is where the shortest representation is coarser than the grid at `k`.
 
 Only two properties of `k` are used. The grid must be fine enough that a
 nearest grid point round-trips, `1 ≤ u`, and coarse enough that the round-trip
@@ -268,6 +268,20 @@ interval, one ULP wide, cannot hold two multiples of ten, `u < 10`.
 -- Whether some multiple of ten round-trips on the grid at `k`.
 def CoarseRoundtrip (f : ℕ) (e k : ℤ) : Prop :=
   ∃ c : ℕ, c % 10 = 0 ∧ Roundtrips f e (c * 10 ^ k)
+
+-- The multiples of ten on the grid at `k` are exactly the values on the grid at
+-- `k + 1`, the two descriptions differing only by a factor of ten in the
+-- significand. So the method's case split is the question `Shortest` asks, and
+-- the coarse case is precisely where a shorter representation exists.
+theorem coarse_roundtrip_iff_next_grid (f : ℕ) (e k : ℤ) :
+    CoarseRoundtrip f e k ↔ ∃ d : ℕ, Roundtrips f e (d * 10 ^ (k + 1)) := by
+  constructor
+  · rintro ⟨c, h10, hc⟩
+    refine ⟨c / 10, ?_⟩
+    rw [← ten_pow_succ_shift, Nat.div_mul_cancel (Nat.dvd_of_mod_eq_zero h10)]
+    exact hc
+  · rintro ⟨d, hd⟩
+    exact ⟨d * 10, Nat.mul_mod_left d 10, by rw [ten_pow_succ_shift]; exact hd⟩
 
 -- The exact method: a multiple of ten that round-trips if one exists, and
 -- otherwise a nearest value on the grid at `k`, ties to even. The second case
@@ -359,8 +373,10 @@ theorem exact_candidate_correct (f : ℕ) (e k : ℤ) (hf0 : 0 < f)
       rw [hstrip] at heq
       exact Nat.eq_of_mul_eq_mul_right (by positivity) heq
     refine ⟨⟨hrt', fun c hc => hne ?_⟩, ?_⟩
-    · rw [← hstep (c * 10) (by rw [ten_pow_succ_shift]; exact hc)]
-      exact Nat.mul_mod_left c 10
+    · obtain ⟨c', h10', hc'⟩ :=
+        (coarse_roundtrip_iff_next_grid f e k').mpr ⟨c, hc⟩
+      rw [← hstep c' hc']
+      exact h10'
     · have hclose (c : ℕ)
           (hc : |(c : ℚ) * 10 ^ k' - value f e|
             ≤ |(d' : ℚ) * 10 ^ k' - value f e|) : c = d' :=
@@ -380,6 +396,6 @@ theorem exact_candidate_correct (f : ℕ) (e k : ℤ) (hf0 : 0 < f)
     subst ht
     simp only [pow_zero, Nat.mul_one] at hstrip
     rw [← hstrip, show k' = k from by rw [hkt]; simp]
-    exact ⟨⟨hrt, fun c hc => hnone ⟨c * 10, Nat.mul_mod_left c 10, by
-      rw [ten_pow_succ_shift]; exact hc⟩⟩,
+    exact ⟨⟨hrt, fun c hc =>
+        hnone ((coarse_roundtrip_iff_next_grid f e k).mpr ⟨c, hc⟩)⟩,
       correctly_rounded_of_le_half f e d k hle heven⟩
