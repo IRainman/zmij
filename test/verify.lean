@@ -1,8 +1,10 @@
 import exact
 
--- The finite checks below enumerate up to 2046 exponents. They say `+kernel`
+-- Some finite checks below enumerate up to 2046 exponents. They say `+kernel`
 -- so that only the kernel evaluates them, which is also what keeps them clear
--- of the elaborator's recursion and exponentiation guards.
+-- of the elaborator's recursion and exponentiation guards. The certificate
+-- searches run during elaboration instead, and only the witnesses they return
+-- reach the kernel.
 
 /-! # yy realizes the exact method
 
@@ -2435,7 +2437,8 @@ theorem yy_exact_candidate (f : ℕ) (e : ℤ) (h : Regular f e) :
     rw [trim_of_coarse_roundtrip f e h c h10 hc] at htrim
     exact Bool.noConfusion htrim
 
-/-- yy is correct: after removing trailing zeros its output is a shortest
+/-- yy is correct on regularly spaced positive normal binary64 values, powers
+    of two excluded: after removing trailing zeros its output is a shortest
     decimal representation that round-trips, and it is correctly rounded on its
     own decimal grid. -/
 theorem yy_correct (f : ℕ) (e : ℤ) (h : Regular f e) :
