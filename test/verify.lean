@@ -1504,10 +1504,10 @@ remainder relative to half the window `2^(128-h)`, with only the bits below
 `sigLo` unseen.
 
 `decOne` is never asked to round-trip directly: it is emitted only when nothing
-coarser round-trips, and then the exact method's fine case derives round-tripping
-from correct rounding, the grid at `decimalExponent e` being no coarser than one
-ULP. So the only obligation here is correct rounding, which is a comparison of
-`2·oneGap` with `trimMul`.
+coarser round-trips, and then the exact method's fine case derives the
+round-trip from the half-step bound, the grid at `decimalExponent e` being no
+coarser than one ULP. So the only obligation here is that bound, which is a
+comparison of `2·oneGap` with `trimMul`.
 -/
 
 -- The same residue and gap at the unit step: `sigHi·2^(128-h) + oneResidue`
@@ -1941,8 +1941,8 @@ theorem dec_one_even_of_packed_midpoint (f : ℕ) (e : ℤ)
   by_cases hpar : sigHi f e % 2 = 1 <;> simp [hround, hpar] <;> omega
 
 -- `decOne` is a nearest value on the grid at `decimalExponent e`, ties to even:
--- it lies within half a step, and at an exact midpoint it is even. These are the
--- two facts the exact method asks of a fine candidate.
+-- it lies within half a step, and at an exact midpoint it is even. These are
+-- the two facts the exact method asks of a fine candidate.
 theorem dec_one_nearest (f : ℕ) (e : ℤ) (h : Regular f e) :
     let x := value f e * 10 ^ (-decimalExponent e)
     |((toDecimalCandidates f e).decOne : ℚ) - x| ≤ 1 / 2 ∧
@@ -2144,12 +2144,12 @@ theorem dec_ten_up (f : ℕ) (e : ℤ) (h : Regular f e)
 /-! ## yy's output in the two cases
 
 Trimmed, yy emits a multiple of ten and `dec_ten_down` and `dec_ten_up` bound
-its distance; untrimmed, it emits `decOne`, whose half-step bound already implies
-that it round-trips, the grid at `decimalExponent e` being no coarser than one
-ULP.
+its distance; untrimmed, it emits `decOne`, whose half-step bound already
+implies that it round-trips, the grid at `decimalExponent e` being no coarser
+than one ULP.
 -/
 
--- Trimmed, yy emits a round-tripping multiple of ten. Which of the two
+-- Trimmed, yy emits a multiple of ten that round-trips. Which of the two
 -- multiple-of-ten candidates `decTen` denotes is decided by `roundU0`; whether
 -- both trimming flags fire is irrelevant.
 theorem trimmed_roundtrips (f : ℕ) (e : ℤ) (h : Regular f e)
@@ -2213,7 +2213,7 @@ lies one unit farther out; there the cached power of ten is exact, and
 `trim_gap_num_eq_scale_of_k_zero` settles it directly.
 -/
 
--- Round-tripping in the candidate scale: the scaled candidate is within `num`
+-- A round-trip in the candidate scale: the scaled candidate is within `num`
 -- of the scaled value, with the strict odd case weakened to `≤`.
 theorem roundtrips_bound (f : ℕ) (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) (d : ℕ)
     (hr : Roundtrips f e (d * 10 ^ decimalExponent e)) :
@@ -2234,7 +2234,7 @@ theorem trim_mul_pos (e : ℤ) : (0 : ℚ) < (trimMul e : ℚ) :=
   Nat.cast_pos.mpr
     (by rw [trimMul]; exact Nat.mul_pos (by positivity) (trim_den_pos e))
 
--- A round-tripping multiple of ten is one of the two yy considers. The
+-- A multiple of ten that round-trips is one of the two yy considers. The
 -- round-trip interval is narrower than one coarse step, and its position
 -- relative to the trim-down candidate excludes every other multiple of ten.
 theorem coarse_candidate_cases (f : ℕ) (e : ℤ) (h : Regular f e) (d : ℕ)
@@ -2293,7 +2293,7 @@ theorem round_d0_of_ten_down_roundtrips (f : ℕ) (e : ℤ) (h : Regular f e)
     rfl
   rw [hd0]
   by_cases heven : f % 2 = 0
-  -- Even `f`: round-tripping gives `gap ≤ num`, so `w` cannot have passed `p`,
+  -- Even `f`: the round-trip gives `gap ≤ num`, so `w` cannot have passed `p`,
   -- which would put the gap a whole unit beyond `num`.
   · simp only [heven, reduceIte] at hs
     have hgap : trimGap f e ≤ trimNum e := by
@@ -2307,7 +2307,7 @@ theorem round_d0_of_ten_down_roundtrips (f : ℕ) (e : ℤ) (h : Regular f e)
     · simpa using heven
     · simp only [decide_eq_true_eq]
       omega
-  -- Odd `f`: round-tripping gives `gap < num`, which excludes the tie and
+  -- Odd `f`: the round-trip gives `gap < num`, which excludes the tie and
   -- forces the strict comparison.
   · simp only [heven, reduceIte] at hs
     have hgap : trimGap f e < trimNum e := by
@@ -2348,7 +2348,7 @@ theorem round_u0_of_ten_up_roundtrips (f : ℕ) (e : ℤ) (h : Regular f e)
     rfl
   rw [hu0]
   by_cases heven : f % 2 = 0
-  -- Even `f`: round-tripping gives `scale ≤ gap + num`, so the packed sum
+  -- Even `f`: the round-trip gives `scale ≤ gap + num`, so the packed sum
   -- cannot fall two units short of the modulus.
   · simp only [heven, reduceIte] at hs
     have hbound : trimScale e ≤ trimGap f e + trimNum e := by
@@ -2362,7 +2362,7 @@ theorem round_u0_of_ten_up_roundtrips (f : ℕ) (e : ℤ) (h : Regular f e)
       · simp only [decide_eq_true_eq]
         by_contra hcon
         exact absurd (trim_gap_num_lt_scale f e h (by omega)) (by omega)
-  -- Odd `f`: round-tripping gives `scale < gap + num`, which excludes both tie
+  -- Odd `f`: the round-trip gives `scale < gap + num`, which excludes both tie
   -- cases and forces the plain comparison.
   · simp only [heven, reduceIte] at hs
     have hbound : trimScale e < trimGap f e + trimNum e := by
@@ -2431,8 +2431,8 @@ theorem ulp_scaled_bounds (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
 
 -- yy implements the exact method: it trims exactly when an exact coarse
 -- candidate exists. One direction is completeness, `trim_of_coarse_roundtrip`;
--- the other holds because trimmed output is itself a round-tripping multiple of
--- ten.
+-- the other holds because trimmed output is itself a multiple of ten that
+-- round-trips.
 theorem yy_exact_candidate (f : ℕ) (e : ℤ) (h : Regular f e) :
     ExactCandidate f e (decimalExponent e) (toDecimal f e).1 := by
   by_cases htrim : ((toDecimalCandidates f e).roundD0
@@ -2444,8 +2444,8 @@ theorem yy_exact_candidate (f : ℕ) (e : ℤ) (h : Regular f e) :
     rw [trim_of_coarse_roundtrip f e h c h10 hc] at htrim
     exact Bool.noConfusion htrim
 
--- yy is correct: after removing trailing zeros its output is a shortest
--- round-tripping decimal representation, and it is correctly rounded on its own
+-- yy is correct: after removing trailing zeros its output is a shortest decimal
+-- representation that round-trips, and it is correctly rounded on its own
 -- decimal grid.
 theorem yy_correct (f : ℕ) (e : ℤ) (h : Regular f e) :
     let (d, k) := reduceDecimal (toDecimal f e)
@@ -2453,4 +2453,5 @@ theorem yy_correct (f : ℕ) (e : ℤ) (h : Regular f e) :
   obtain ⟨hfine, hcoarse⟩ := ulp_scaled_bounds e h.2.2
   rw [show toDecimal f e = ((toDecimal f e).1, decimalExponent e) from rfl]
   exact exact_candidate_correct f e (decimalExponent e)
-    (lt_of_lt_of_le (by norm_num) h.1.le) hfine hcoarse _ (yy_exact_candidate f e h)
+    (lt_of_lt_of_le (by norm_num) h.1.le) hfine hcoarse _
+    (yy_exact_candidate f e h)

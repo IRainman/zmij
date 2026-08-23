@@ -1,10 +1,10 @@
 import Mathlib.Algebra.Order.Floor.Semifield
 import Mathlib.Tactic
 
-/-! # Shortest round-tripping decimal conversion
+/-! # Shortest decimal conversion
 
 The specification, and the exact mathematics of the Schubfach-like method:
-prefer a round-tripping multiple of ten, and settle for a nearest grid point
+prefer a multiple of ten that round-trips, and settle for a nearest grid point
 otherwise. `exact_candidate_correct` proves that method shortest and correctly
 rounded for any positive value, given only that the decimal grid is no coarser
 than one ULP and no finer than a tenth of one. Nothing here knows a binary
@@ -121,16 +121,16 @@ theorem correctly_rounded_of_le_half (f : ℕ) (e : ℤ) (d : ℕ) (k : ℤ)
   · exact Or.inl (eq_of_abs_sub_eq_of_lt_half hlt hd')
   · exact Or.inr (heven heq)
 
-/-! ## Round-tripping in the scaled domain
+/-! ## Round-trips in the scaled domain
 
 Scaled by `10^(-k)`, the grid at `k` becomes the integers, the exact value
-becomes `x` and one ULP becomes `u = ulp e · 10^(-k)` grid steps. Round-tripping
+becomes `x` and one ULP becomes `u = ulp e · 10^(-k)` grid steps. A round-trip
 is then a bound on `|d - x|` by `u / 2`, non-strict for even `f` and strict for
 odd `f`.
 -/
 
--- Scaling by the positive factor `10^k` preserves the rounding bounds, so
--- round-tripping on the grid at `k` is the scaled half-ULP bound.
+-- Scaling by the positive factor `10^k` preserves the rounding bounds, so a
+-- round-trip on the grid at `k` is the scaled half-ULP bound.
 theorem roundtrips_iff_scaled (f : ℕ) (e k : ℤ) (d : ℕ) :
     let x := value f e * (10 ^ k)⁻¹
     let u := ulp e * (10 ^ k)⁻¹
@@ -151,8 +151,8 @@ theorem roundtrips_iff_scaled (f : ℕ) (e k : ℤ) (d : ℕ) :
   · rw [← hdist, ← hhalf]; exact mul_le_mul_iff_of_pos_right hp
   · rw [← hdist, ← hhalf]; exact mul_lt_mul_iff_of_pos_right hp
 
--- Round-tripping depends only on the distance to the exact value, so anything
--- no farther away than a round-tripping value round-trips too.
+-- Whether a value round-trips depends only on its distance to the exact value,
+-- so anything no farther away than one that round-trips does too.
 theorem roundtrips_of_abs_le (f : ℕ) (e : ℤ) {r r' : ℚ}
     (hr : Roundtrips f e r) (hle : |r' - value f e| ≤ |r - value f e|) :
     Roundtrips f e r' := by
@@ -255,9 +255,9 @@ theorem ten_pow_succ_shift (d : ℕ) (k : ℤ) :
 /-! ## The exact reference method
 
 The method is Schubfach's, stated at a decimal exponent `k` and read in the
-scaled domain: prefer a round-tripping multiple of ten, and settle for a nearest
-integer, ties to even, when there is none. A multiple of ten round-trips exactly
-when a digit can be dropped, so the first case is where the shortest
+scaled domain: prefer a multiple of ten that round-trips, and settle for a
+nearest integer, ties to even, when there is none. A multiple of ten round-trips
+exactly when a digit can be dropped, so the first case is where the shortest
 representation is coarser than the grid at `k`.
 
 Only two properties of `k` are used. The grid must be fine enough that a
@@ -269,7 +269,7 @@ interval, one ULP wide, cannot hold two multiples of ten, `u < 10`.
 def CoarseRoundtrip (f : ℕ) (e k : ℤ) : Prop :=
   ∃ c : ℕ, c % 10 = 0 ∧ Roundtrips f e (c * 10 ^ k)
 
--- The exact method: a round-tripping multiple of ten if one exists, and
+-- The exact method: a multiple of ten that round-trips if one exists, and
 -- otherwise a nearest value on the grid at `k`, ties to even. The second case
 -- says what the computation establishes, a half-step bound and evenness at an
 -- exact midpoint, rather than the correct rounding those two imply.
@@ -348,7 +348,7 @@ theorem exact_candidate_correct (f : ℕ) (e k : ℤ) (hf0 : 0 < f)
       · simp only [pow_zero, Nat.mul_one] at hstrip
         omega
       · exact ht
-    -- Every round-tripping value on the reduced grid is the candidate itself.
+    -- Every value that round-trips on the reduced grid is the candidate itself.
     have hstep (c : ℕ) (hc : Roundtrips f e ((c : ℚ) * 10 ^ k')) : c = d' := by
       obtain ⟨s, rfl⟩ : ∃ s, t = s + 1 := ⟨t - 1, by omega⟩
       have hck : Roundtrips f e (((c * 10 ^ (s + 1) : ℕ) : ℚ) * 10 ^ k) := by
