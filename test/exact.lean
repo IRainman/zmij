@@ -13,30 +13,31 @@ format, or how the grid is chosen.
 
 /-! ## The specification -/
 
--- Exact rational value represented by binary significand `f` and exponent `e`.
+/-- Exact rational value represented by binary significand `f` and
+exponent `e`. -/
 def value (f : ℕ) (e : ℤ) : ℚ := f * 2 ^ e
 
--- One ULP for a regularly spaced value with exponent `e`.
+/-- One ULP for a regularly spaced value with exponent `e`. -/
 def ulp (e : ℤ) : ℚ := 2 ^ e
 
--- Whether the rational value `r` rounds to the regularly spaced value
--- f·2^e under round-to-nearest, ties-to-even.
+/-- Whether the rational value `r` rounds to the regularly spaced value f·2^e
+under round-to-nearest, ties-to-even. -/
 def Roundtrips (f : ℕ) (e : ℤ) (r : ℚ) : Prop :=
   if f % 2 = 0 then
     |r - value f e| ≤ ulp e / 2
   else
     |r - value f e| < ulp e / 2
 
--- A decimal representation is shortest if it round-trips and no value on the
--- next coarser decimal grid does. The grids are nested, so refuting the next
--- one refutes every coarser one. It also forces `d` to have no trailing zero,
--- since `d / 10` at `k + 1` would denote the same value.
+/-- A decimal representation is shortest if it round-trips and no value on the
+next coarser decimal grid does. The grids are nested, so refuting the next one
+refutes every coarser one. It also forces `d` to have no trailing zero, since
+`d / 10` at `k + 1` would denote the same value. -/
 def Shortest (f : ℕ) (e : ℤ) (d : ℕ) (k : ℤ) : Prop :=
   Roundtrips f e (d * 10 ^ k) ∧
     ∀ d' : ℕ, ¬Roundtrips f e (d' * 10 ^ (k + 1))
 
--- A decimal representation is correctly rounded on its decimal grid if no
--- value on that grid is closer to the exact value, with ties resolved to even.
+/-- A decimal representation is correctly rounded on its decimal grid if no
+value on that grid is closer to the exact value, with ties resolved to even. -/
 def CorrectlyRounded (f : ℕ) (e : ℤ) (d : ℕ) (k : ℤ) : Prop :=
   let r := (d : ℚ) * 10 ^ k
   let v := value f e
@@ -52,8 +53,8 @@ apart, so a candidate within half a step is nearest, and one strictly within
 half a step is uniquely nearest.
 -/
 
--- Distinct integer candidates are at least one step apart, so the sum of
--- their distances to any value is at least one.
+/-- Distinct integer candidates are at least one step apart, so the sum of their
+distances to any value is at least one. -/
 theorem one_le_abs_sub_add_abs_sub {x : ℚ} {d d' : ℕ} (hne : d' ≠ d) :
     1 ≤ |(d' : ℚ) - x| + |(d : ℚ) - x| := by
   have hstep : (1 : ℚ) ≤ |(d' : ℚ) - (d : ℚ)| := by
@@ -62,7 +63,7 @@ theorem one_le_abs_sub_add_abs_sub {x : ℚ} {d d' : ℕ} (hne : d' ≠ d) :
     _ ≤ |(d' : ℚ) - x| + |x - (d : ℚ)| := abs_sub_le _ _ _
     _ = |(d' : ℚ) - x| + |(d : ℚ) - x| := by rw [abs_sub_comm x]
 
--- A candidate within half a step is a nearest grid point.
+/-- A candidate within half a step is a nearest grid point. -/
 theorem abs_sub_le_of_le_half {x : ℚ} {d : ℕ}
     (hd : |(d : ℚ) - x| ≤ 1 / 2) (d' : ℕ) :
     |(d : ℚ) - x| ≤ |(d' : ℚ) - x| := by
@@ -70,15 +71,15 @@ theorem abs_sub_le_of_le_half {x : ℚ} {d : ℕ}
   · exact le_rfl
   · linarith [one_le_abs_sub_add_abs_sub (x := x) hne]
 
--- A candidate strictly within half a step is the unique nearest grid point.
+/-- A candidate strictly within half a step is the unique nearest grid point. -/
 theorem eq_of_abs_sub_eq_of_lt_half {x : ℚ} {d d' : ℕ}
     (hd : |(d : ℚ) - x| < 1 / 2) (heq : |(d : ℚ) - x| = |(d' : ℚ) - x|) :
     d' = d := by
   by_contra hne
   linarith [one_le_abs_sub_add_abs_sub (x := x) hne]
 
--- Correct rounding in the scaled domain: `10^k` is positive, so it cancels from
--- every comparison, leaving comparisons between `d`, `d'` and `x`.
+/-- Correct rounding in the scaled domain: `10^k` is positive, so it cancels
+from every comparison, leaving comparisons between `d`, `d'` and `x`. -/
 theorem correctly_rounded_iff_scaled (f : ℕ) (e : ℤ) (d : ℕ) (k : ℤ) :
     let x := value f e * 10 ^ (-k)
     CorrectlyRounded f e d k
@@ -109,8 +110,8 @@ theorem correctly_rounded_iff_scaled (f : ℕ) (e : ℤ) (d : ℕ) (k : ℤ) :
     · rw [← hdist d, ← hdist d'] at hd'
       exact mul_right_cancel₀ (ne_of_gt hp) hd'
 
--- A candidate within half a grid step is correctly rounded if an exact
--- midpoint is resolved to an even candidate.
+/-- A candidate within half a grid step is correctly rounded if an exact
+midpoint is resolved to an even candidate. -/
 theorem correctly_rounded_of_le_half (f : ℕ) (e : ℤ) (d : ℕ) (k : ℤ)
     (hle : |(d : ℚ) - value f e * 10 ^ (-k)| ≤ 1 / 2)
     (heven : |(d : ℚ) - value f e * 10 ^ (-k)| = 1 / 2 → d % 2 = 0) :
@@ -129,8 +130,8 @@ is then a bound on `|d - x|` by `u / 2`, non-strict for even `f` and strict for
 odd `f`.
 -/
 
--- Scaling by the positive factor `10^k` preserves the rounding bounds, so a
--- round-trip on the grid at `k` is the scaled half-ULP bound.
+/-- Scaling by the positive factor `10^k` preserves the rounding bounds, so a
+round-trip on the grid at `k` is the scaled half-ULP bound. -/
 theorem roundtrips_iff_scaled (f : ℕ) (e k : ℤ) (d : ℕ) :
     let x := value f e * (10 ^ k)⁻¹
     let u := ulp e * (10 ^ k)⁻¹
@@ -151,16 +152,16 @@ theorem roundtrips_iff_scaled (f : ℕ) (e k : ℤ) (d : ℕ) :
   · rw [← hdist, ← hhalf]; exact mul_le_mul_iff_of_pos_right hp
   · rw [← hdist, ← hhalf]; exact mul_lt_mul_iff_of_pos_right hp
 
--- Whether a value round-trips depends only on its distance to the exact value,
--- so anything no farther away than one that round-trips does too.
+/-- Whether a value round-trips depends only on its distance to the exact value,
+so anything no farther away than one that round-trips does too. -/
 theorem roundtrips_of_abs_le (f : ℕ) (e : ℤ) {r r' : ℚ}
     (hr : Roundtrips f e r) (hle : |r' - value f e| ≤ |r - value f e|) :
     Roundtrips f e r' := by
   simp only [Roundtrips] at hr ⊢
   split_ifs at hr ⊢ <;> linarith
 
--- A positive value is at least a whole ULP away from zero, so the zero
--- significand never round-trips.
+/-- A positive value is at least a whole ULP away from zero, so the zero
+significand never round-trips. -/
 theorem not_roundtrips_zero (f : ℕ) (e : ℤ) (hf0 : 0 < f) :
     ¬Roundtrips f e 0 := by
   have hf : (1 : ℚ) ≤ (f : ℚ) := by exact_mod_cast hf0
@@ -173,10 +174,10 @@ theorem not_roundtrips_zero (f : ℕ) (e : ℤ) (hf0 : 0 < f) :
   simp only [Roundtrips, hval]
   split_ifs <;> linarith
 
--- On a grid no coarser than one ULP, a value within half a grid step
--- round-trips. For odd `f` the round-trip bound is strict; half a step can
--- reach half a ULP only when the step is exactly one ULP, and then the scaled
--- value is the integer `f`, which lies at no half-integer distance.
+/-- On a grid no coarser than one ULP, a value within half a grid step
+round-trips. For odd `f` the round-trip bound is strict; half a step can reach
+half a ULP only when the step is exactly one ULP, and then the scaled value is
+the integer `f`, which lies at no half-integer distance. -/
 theorem roundtrips_of_le_half (f : ℕ) (e k : ℤ) (d : ℕ)
     (hfine : 1 ≤ ulp e * 10 ^ (-k))
     (hd : |(d : ℚ) - value f e * 10 ^ (-k)| ≤ 1 / 2) :
@@ -201,23 +202,22 @@ theorem roundtrips_of_le_half (f : ℕ) (e k : ℤ) (d : ℕ)
 
 /-! ## Decimal reduction -/
 
--- Removes trailing zeros from a decimal significand, shifting the exponent to
--- preserve the represented value.
+/-- Removes trailing zeros from a decimal significand, shifting the exponent to
+preserve the represented value. -/
 def reduceDecimal (dec : ℕ × ℤ) : ℕ × ℤ :=
   if 0 < dec.1 ∧ dec.1 % 10 = 0 then reduceDecimal (dec.1 / 10, dec.2 + 1)
   else dec
 termination_by dec.1
 decreasing_by omega
 
--- Reduction leaves either zero or a significand with no trailing zero.
 theorem reduce_reduced (dec : ℕ × ℤ) :
     (reduceDecimal dec).1 = 0 ∨ (reduceDecimal dec).1 % 10 ≠ 0 := by
   fun_induction reduceDecimal dec with
   | case1 dec _ ih => exact ih
   | case2 dec hstop => omega
 
--- Reduction shifts the exponent by the number of zeros stripped and removes
--- the corresponding power of ten from the significand.
+/-- Reduction shifts the exponent by the number of zeros stripped and removes
+the corresponding power of ten from the significand. -/
 theorem reduce_shift (dec : ℕ × ℤ) :
     ∃ t : ℕ, (reduceDecimal dec).2 = dec.2 + t
       ∧ dec.1 = (reduceDecimal dec).1 * 10 ^ t := by
@@ -230,14 +230,13 @@ theorem reduce_shift (dec : ℕ × ℤ) :
     omega
   | case2 dec _ => exact ⟨0, by simp, by simp⟩
 
--- Trailing zeros can move between the significand and the exponent.
+/-- Trailing zeros can move between the significand and the exponent. -/
 theorem ten_pow_shift (d t : ℕ) (k : ℤ) :
     ((d * 10 ^ t : ℕ) : ℚ) * 10 ^ k = (d : ℚ) * 10 ^ (k + (t : ℤ)) := by
   push_cast
   rw [zpow_add₀ (by norm_num : (10 : ℚ) ≠ 0), zpow_natCast]
   ring
 
--- Reduction is value-preserving.
 theorem reduce_value (dec : ℕ × ℤ) :
     let (d, k) := reduceDecimal dec
     (d : ℚ) * 10 ^ k = (dec.1 : ℚ) * 10 ^ dec.2 := by
@@ -246,7 +245,7 @@ theorem reduce_value (dec : ℕ × ℤ) :
   simp only [hred] at hkt hstrip
   rw [hstrip, hkt, ten_pow_shift]
 
--- Moving a value to the next coarser grid multiplies its significand by ten.
+/-- Moving to the next coarser grid multiplies its significand by ten. -/
 theorem ten_pow_succ_shift (d : ℕ) (k : ℤ) :
     ((d * 10 : ℕ) : ℚ) * 10 ^ k = (d : ℚ) * 10 ^ (k + 1) := by
   rw [show d * 10 = d * 10 ^ 1 from by ring, ten_pow_shift d 1]
@@ -265,14 +264,14 @@ nearest grid point round-trips, `1 ≤ u`, and coarse enough that the round-trip
 interval, one ULP wide, cannot hold two multiples of ten, `u < 10`.
 -/
 
--- Whether some multiple of ten round-trips on the grid at `k`.
+/-- Whether some multiple of ten round-trips on the grid at `k`. -/
 def CoarseRoundtrip (f : ℕ) (e k : ℤ) : Prop :=
   ∃ c : ℕ, c % 10 = 0 ∧ Roundtrips f e (c * 10 ^ k)
 
--- The multiples of ten on the grid at `k` are exactly the values on the grid at
--- `k + 1`, the two descriptions differing only by a factor of ten in the
--- significand. So the method's case split is the question `Shortest` asks, and
--- the coarse case is precisely where a shorter representation exists.
+/-- The multiples of ten on the grid at `k` are exactly the values on the grid
+at `k + 1`, the two descriptions differing only by a factor of ten in the
+significand. So the method's case split is the question `Shortest` asks, and the
+coarse case is precisely where a shorter representation exists. -/
 theorem coarse_roundtrip_iff_next_grid (f : ℕ) (e k : ℤ) :
     CoarseRoundtrip f e k ↔ ∃ d : ℕ, Roundtrips f e (d * 10 ^ (k + 1)) := by
   constructor
@@ -283,18 +282,18 @@ theorem coarse_roundtrip_iff_next_grid (f : ℕ) (e k : ℤ) :
   · rintro ⟨d, hd⟩
     exact ⟨d * 10, Nat.mul_mod_left d 10, by rw [ten_pow_succ_shift]; exact hd⟩
 
--- The exact method: a multiple of ten that round-trips if one exists, and
--- otherwise a nearest value on the grid at `k`, ties to even. The second case
--- says what the computation establishes, a half-step bound and evenness at an
--- exact midpoint, rather than the correct rounding those two imply.
+/-- The exact method: a multiple of ten that round-trips if one exists, and
+otherwise a nearest value on the grid at `k`, ties to even. The second case says
+what the computation establishes, a half-step bound and evenness at an exact
+midpoint, rather than the correct rounding those two imply. -/
 def ExactCandidate (f : ℕ) (e k : ℤ) (d : ℕ) : Prop :=
   let x := value f e * 10 ^ (-k)
   (d % 10 = 0 ∧ Roundtrips f e (d * 10 ^ k)) ∨
     (¬CoarseRoundtrip f e k ∧ |(d : ℚ) - x| ≤ 1 / 2 ∧
       (|(d : ℚ) - x| = 1 / 2 → d % 2 = 0))
 
--- At most one multiple of ten round-trips: two distinct ones are ten grid steps
--- apart, while the round-trip interval is `u < 10` steps wide.
+/-- At most one multiple of ten round-trips: two distinct ones are ten grid
+steps apart, while the round-trip interval is `u < 10` steps wide. -/
 theorem coarse_roundtrip_unique (f : ℕ) (e k : ℤ)
     (hcoarse : ulp e * 10 ^ (-k) < 10) {c₁ c₂ : ℕ}
     (h₁ : c₁ % 10 = 0) (h₂ : c₂ % 10 = 0)
@@ -320,14 +319,16 @@ theorem coarse_roundtrip_unique (f : ℕ) (e k : ℤ)
     exact_mod_cast (show (c₂ : ℚ) < (c₁ : ℚ) + 10 by linarith)
   omega
 
--- Correctness of the exact method. In the coarse case the candidate carries
--- trailing zeros, and after stripping them every value on the reduced grid is
--- still a multiple of ten back at `k`, where uniqueness identifies it with the
--- candidate; that single fact gives both shortness and correct rounding, and
--- leaves no tie to resolve. In the fine case the candidate has no trailing zero
--- to strip, since one would itself be a coarse candidate, so nothing on any
--- coarser grid round-trips, and correct rounding is the half-step bound read
--- through `correctly_rounded_of_le_half`.
+/--
+Correctness of the exact method. In the coarse case the candidate carries
+trailing zeros, and after stripping them every value on the reduced grid is
+still a multiple of ten back at `k`, where uniqueness identifies it with the
+candidate; that single fact gives both shortness and correct rounding, and
+leaves no tie to resolve. In the fine case the candidate has no trailing zero to
+strip, since one would itself be a coarse candidate, so nothing on any coarser
+grid round-trips, and correct rounding is the half-step bound read through
+`correctly_rounded_of_le_half`.
+-/
 theorem exact_candidate_correct (f : ℕ) (e k : ℤ) {d : ℕ} (hf0 : 0 < f)
     (hfine : 1 ≤ ulp e * 10 ^ (-k)) (hcoarse : ulp e * 10 ^ (-k) < 10)
     (hd : ExactCandidate f e k d) :
