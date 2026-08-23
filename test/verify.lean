@@ -23,12 +23,12 @@ def Regular (f : ℕ) (e : ℤ) : Prop :=
 
 /-! ## The truncated power of ten -/
 
-/-- Binary exponent of 10^k used to normalize its 128-bit significand. -/
+/-- Binary exponent of 10^k used to normalize its 128-bit significand: the
+    fixed-point form of `⌊k·log₂10⌋ + 1`. Taking a logarithm here instead would
+    make every exponent-wise check below shift a 1077-bit number down to zero
+    one bit at a time. -/
 def power10Exponent (k : ℤ) : ℤ :=
-  if 0 ≤ k then
-    Nat.log 2 (10 ^ k.toNat) + 1
-  else
-    -Nat.log 2 (10 ^ (-k).toNat)
+  k * 217_707 / 2 ^ 16 + 1
 
 /-- Truncated 128-bit normalized binary significand of 10^k. -/
 def power10Significand (k : ℤ) : ℕ :=
@@ -45,75 +45,16 @@ def power10Num (k : ℤ) : ℕ :=
 def power10Den (k : ℤ) : ℕ :=
   10 ^ (-k).toNat * 2 ^ (power10Exponent k - 128).toNat
 
-/-- `power10Exponent` is characterized by this interval: it is the binary
-    exponent that normalizes `10^k`. Both bounds are the defining bounds of
-    `Nat.log`; for `k < 0` inversion exchanges them, so there the log's lower
-    bound has to be strict, which it is because a power of two carries no
-    five. -/
-theorem power10_exponent_bounds (k : ℤ) :
-    (2 : ℚ) ^ (power10Exponent k - 1) ≤ 10 ^ k ∧
-      (10 : ℚ) ^ k < 2 ^ power10Exponent k := by
-  unfold power10Exponent
-  split_ifs with hk
-  · set n := k.toNat with hn
-    set l := Nat.log 2 (10 ^ n)
-    have h10 : (10 : ℚ) ^ k = (10 : ℚ) ^ n := by
-      rw [← zpow_natCast (10 : ℚ) n, hn, Int.toNat_of_nonneg hk]
-    refine ⟨?_, ?_⟩
-    · rw [h10, show (l : ℤ) + 1 - 1 = ((l : ℕ) : ℤ) from by ring, zpow_natCast]
-      exact_mod_cast Nat.pow_log_le_self 2 (by positivity : 10 ^ n ≠ 0)
-    · rw [h10, show (l : ℤ) + 1 = ((l + 1 : ℕ) : ℤ) from by omega,
-        zpow_natCast]
-      exact_mod_cast Nat.lt_pow_succ_log_self (by norm_num) (10 ^ n)
-  · set m := (-k).toNat
-    set l := Nat.log 2 (10 ^ m)
-    have hk' : k = -(m : ℤ) := by omega
-    refine ⟨?_, ?_⟩
-    · rw [hk', zpow_neg, zpow_natCast,
-        show (-(l : ℤ) - 1) = -((l + 1 : ℕ) : ℤ) from by omega,
-        zpow_neg, zpow_natCast, inv_le_inv₀ (by positivity) (by positivity)]
-      exact_mod_cast (Nat.lt_pow_succ_log_self (by norm_num) (10 ^ m)).le
-    · have hne : (2 : ℕ) ^ l ≠ 10 ^ m := by
-        intro hcon
-        have h5 : (5 : ℕ) ∣ 2 ^ l := by
-          rw [hcon]
-          exact dvd_pow (⟨2, rfl⟩ : (5 : ℕ) ∣ 10) (by omega)
-        have := Nat.prime_five.dvd_of_dvd_pow h5
-        omega
-      rw [hk', zpow_neg, zpow_natCast, zpow_neg, zpow_natCast,
-        inv_lt_inv₀ (by positivity) (by positivity)]
-      exact_mod_cast lt_of_le_of_ne (Nat.pow_log_le_self 2 (by positivity)) hne
-
-/-- Scaling that interval by `2^(128-pe)` makes the significand a normalized
-    128-bit number: its top bit is set, which is what makes `power10Exponent` an
-    exponent for a 128-bit significand, and it still fits in 128 bits. -/
-theorem power10_significand_bounds (k : ℤ) :
-    2 ^ 127 ≤ power10Significand k ∧ power10Significand k < 2 ^ 128 := by
-  refine ⟨?_, ?_⟩
-  · have hx : (2 : ℚ) ^ (127 : ℕ) ≤ 10 ^ k * 2 ^ (128 - power10Exponent k) := by
-      have hmul := mul_le_mul_of_nonneg_right (power10_exponent_bounds k).1
-        (by positivity : (0 : ℚ) ≤ 2 ^ (128 - power10Exponent k))
-      rw [← zpow_add₀ (by norm_num : (2 : ℚ) ≠ 0),
-        show power10Exponent k - 1 + (128 - power10Exponent k) = (127 : ℤ) from
-          by ring] at hmul
-      simpa using hmul
-    exact Nat.le_floor (by push_cast; exact hx)
-  · have hx : (10 : ℚ) ^ k * 2 ^ (128 - power10Exponent k) < 2 ^ (128 : ℕ) := by
-      have hmul := mul_lt_mul_of_pos_right (power10_exponent_bounds k).2
-        (by positivity : (0 : ℚ) < 2 ^ (128 - power10Exponent k))
-      rw [← zpow_add₀ (by norm_num : (2 : ℚ) ≠ 0),
-        show power10Exponent k + (128 - power10Exponent k) = (128 : ℤ) from by
-          ring] at hmul
-      simpa using hmul
-    exact (Nat.floor_lt (by positivity)).mpr (by push_cast; exact hx)
+theorem power10_den_pos (k : ℤ) : 0 < power10Den k := by
+  rw [power10Den]; positivity
 
 /-- The scaled exact power of ten is exactly the rational `num / den`. -/
 theorem power10_exact_ratio (k : ℤ) :
     (10 : ℚ) ^ k * 2 ^ (128 - power10Exponent k)
       = (power10Num k : ℚ) / (power10Den k : ℚ) := by
   set pe := power10Exponent k
-  have hden : (power10Den k : ℚ) ≠ 0 := by
-    rw [power10Den]; positivity
+  have hden : (power10Den k : ℚ) ≠ 0 :=
+    Nat.cast_ne_zero.mpr (power10_den_pos k).ne'
   -- Each pair of exponents in the ratio adds up to the truncated one.
   have hk : k + ((-k).toNat : ℤ) = (k.toNat : ℤ) := by omega
   have hpe : 128 - pe + ((pe - 128).toNat : ℤ) = ((128 - pe).toNat : ℤ) := by
@@ -129,6 +70,36 @@ theorem power10_exact_ratio (k : ℤ) :
         (2 ^ (128 - pe) * 2 ^ ((pe - 128).toNat : ℤ)) from by ring,
     ← zpow_add₀ (by norm_num : (10 : ℚ) ≠ 0),
     ← zpow_add₀ (by norm_num : (2 : ℚ) ≠ 0), hk, hpe]
+
+/-- The truncation is the natural quotient `num / den`, which is what lets the
+    normalization check and the whole trim layer stay in `Nat`. -/
+theorem power10_significand_nat (k : ℤ) :
+    power10Significand k = power10Num k / power10Den k := by
+  rw [power10Significand, power10_exact_ratio]
+  exact Nat.floor_div_eq_div _ _
+
+set_option exponentiation.threshold 5000 in
+set_option maxRecDepth 100000 in
+/-- The fixed-point exponent does normalize `10^k`, over the range yy's decimal
+    exponents reach. Beyond it the approximation eventually drifts from
+    `⌊k·log₂10⌋ + 1`, so this is where the range is pinned down. In ratio form
+    the check is two comparisons of naturals per exponent. -/
+theorem power10_ratio_normalized :
+    ∀ k ∈ Finset.Icc (-292 : ℤ) 324,
+      2 ^ 127 * power10Den k ≤ power10Num k ∧
+        power10Num k < 2 ^ 128 * power10Den k := by
+  decide
+
+/-- Hence the significand is a normalized 128-bit number: its top bit is set,
+    which is what makes `power10Exponent` an exponent for a 128-bit significand,
+    and it still fits in 128 bits. -/
+theorem power10_significand_bounds (k : ℤ) (hk : -292 ≤ k ∧ k ≤ 324) :
+    2 ^ 127 ≤ power10Significand k ∧ power10Significand k < 2 ^ 128 := by
+  obtain ⟨hlo, hhi⟩ :=
+    power10_ratio_normalized k (by simpa [Finset.mem_Icc] using hk)
+  rw [power10_significand_nat]
+  exact ⟨(Nat.le_div_iff_mul_le (power10_den_pos k)).mpr hlo,
+    (Nat.div_lt_iff_lt_mul (power10_den_pos k)).mpr hhi⟩
 
 /-! ## yy's conversion -/
 
@@ -222,18 +193,32 @@ theorem decimal_shift_lt_four (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
   unfold decimalShift decimalExponent
   omega
 
-section
-
--- The checks compute powers as large as `10^324`.
-set_option exponentiation.threshold 5000
-set_option maxRecDepth 100000
-
-theorem align_all :
+set_option maxRecDepth 100000 in
+/-- The shift is nonnegative, so `Int.toNat` does not clamp it. The two
+    fixed-point constants multiply to just over one, by a part in 2^17.4, and
+    that is exactly enough for `omega`'s rational relaxation to still admit a
+    shift of `-1`. Ruling it out is a Diophantine fact about the constants
+    rather than a magnitude bound, so it is checked; all the arithmetic here is
+    small. -/
+theorem decimal_shift_nonneg :
     ∀ e ∈ Finset.Icc (-1074 : ℤ) 971,
-      (decimalShift e : ℤ) + 1 - power10Exponent (-decimalExponent e) = e := by
+      0 ≤ e + (-decimalExponent e * 217_707) / 2 ^ 16 := by
   decide
 
-end
+/-- The shift undoes the cached power's exponent: `h + 1 - pe = e`. Both sides
+    scale the same fixed-point quotient, so once the shift is known not to have
+    been clamped this is arithmetic, whatever the decimal exponent is. -/
+theorem decimal_shift_align (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
+    (decimalShift e : ℤ) + 1 - power10Exponent (-decimalExponent e) = e := by
+  have h := decimal_shift_nonneg e (by simpa [Finset.mem_Icc] using he)
+  unfold decimalShift power10Exponent
+  omega
+
+/-- The decimal exponents yy asks the cached table for. -/
+theorem decimal_exponent_range (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
+    -292 ≤ -decimalExponent e ∧ -decimalExponent e ≤ 324 := by
+  unfold decimalExponent
+  omega
 
 /-! ## The packed trim window
 
@@ -261,14 +246,18 @@ def trimDen (e : ℤ) : ℕ := power10Den (-decimalExponent e)
 /-- Its 128-bit truncation, the `p10` of the comparisons. -/
 def trimSig (e : ℤ) : ℕ := power10Significand (-decimalExponent e)
 
-theorem trim_den_pos (e : ℤ) : 0 < trimDen e := by
-  rw [trimDen, power10Den]; positivity
+theorem trim_den_pos (e : ℤ) : 0 < trimDen e := power10_den_pos _
 
 /-- The truncation is the floor of the fraction: `p10 = num / den`, so the whole
     trim layer is natural-number division. -/
-theorem trim_sig_nat (e : ℤ) : trimSig e = trimNum e / trimDen e := by
-  rw [trimSig, trimNum, trimDen, power10Significand, power10_exact_ratio]
-  exact Nat.floor_div_eq_div _ _
+theorem trim_sig_nat (e : ℤ) : trimSig e = trimNum e / trimDen e :=
+  power10_significand_nat _
+
+/-- yy's truncated power of ten is normalized, which is where the range of
+    `power10_ratio_normalized` meets the binary64 exponent range. -/
+theorem trim_sig_bounds (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
+    2 ^ 127 ≤ trimSig e ∧ trimSig e < 2 ^ 128 :=
+  power10_significand_bounds _ (decimal_exponent_range e he)
 
 /-- Modulus of the packed comparison: the window wraps every 10·2^(128-h). -/
 def trimModulus (e : ℤ) : ℕ := 10 * 2 ^ (128 - decimalShift e)
@@ -767,34 +756,37 @@ theorem trim_no_window_hit {lo hi q : ℤ} (f : ℕ) (e : ℤ)
 
 /-- `p10 + U` is far below the window modulus, so a gap bounded by
     `den·(p10 + U)` has not wrapped. -/
-theorem trim_bnd_le_scale (e : ℤ) (hsh : decimalShift e < 4) :
+theorem trim_bnd_le_scale (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
     trimBnd e ≤ trimScale e := by
+  have hsh : decimalShift e < 4 := decimal_shift_lt_four e he
   rw [trimBnd, ← trim_sig_nat]
   have hu_le : trimUnit e ≤ 2 ^ 68 := by
     rw [trimUnit]; exact Nat.pow_le_pow_right (by norm_num) (by omega)
   have hn_ge : 10 * 2 ^ 125 ≤ trimModulus e := by
     rw [trimModulus]
     exact Nat.mul_le_mul_left _ (Nat.pow_le_pow_right (by norm_num) (by omega))
-  have hp_lt : trimSig e < 2 ^ 128 := (power10_significand_bounds _).2
+  have hp_lt : trimSig e < 2 ^ 128 := (trim_sig_bounds e he).2
   have hgap : (2 : ℕ) ^ 128 + 2 ^ 68 ≤ 10 * 2 ^ 125 := by norm_num
   have hwindow : trimSig e + trimUnit e ≤ trimModulus e := by omega
   rw [trimScale, Nat.mul_comm (trimModulus e)]
   exact Nat.mul_le_mul_left _ hwindow
 
 /-- `p10Exact ≥ 2^127`, with the denominator cleared. -/
-theorem trim_num_lower (e : ℤ) : 2 ^ 127 * trimDen e ≤ trimNum e := by
+theorem trim_num_lower (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
+    2 ^ 127 * trimDen e ≤ trimNum e := by
   have h : 2 ^ 127 ≤ trimNum e / trimDen e := by
-    rw [← trim_sig_nat]; exact (power10_significand_bounds _).1
+    rw [← trim_sig_nat]; exact (trim_sig_bounds e he).1
   exact (Nat.le_div_iff_mul_le (trim_den_pos e)).mp h
 
 /-- The resolution of the packed comparison is negligible against the power of
     ten: `U ≤ 2^68` while `p10Exact ≥ 2^127`. -/
-theorem trim_two_edge_lt_num (e : ℤ) : 2 * trimEdge e < trimNum e := by
+theorem trim_two_edge_lt_num (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
+    2 * trimEdge e < trimNum e := by
   have hu : trimUnit e ≤ 2 ^ 68 := by
     rw [trimUnit]; exact Nat.pow_le_pow_right (by norm_num) (by omega)
   have hedge : trimEdge e ≤ 2 ^ 68 * trimDen e := by
     rw [trimEdge]; exact Nat.mul_le_mul_right _ hu
-  have hnum := trim_num_lower e
+  have hnum := trim_num_lower e he
   have hden := trim_den_pos e
   omega
 
@@ -898,7 +890,7 @@ theorem step_gap_lt_scale_add (m f : ℕ) (e : ℤ) (h : Regular f e)
     le_trans
       (Nat.mul_le_mul_right _
         (Nat.pow_le_pow_right (by norm_num) (by norm_num)))
-      (trim_num_lower e)
+      (trim_num_lower e h.2.2)
   rw [stepGap]
   omega
 
@@ -965,8 +957,8 @@ theorem trim_gap_separated (f : ℕ) (e : ℤ) (h : Regular f e) :
   simp only [trimCertificateValid, trimWindows, modWindowsRefuted,
     List.all_cons, List.all_nil, Bool.and_eq_true, and_true] at hcert
   obtain ⟨hc1, hc2, hc3, hc4⟩ := hcert
-  have hbnd := trim_bnd_le_scale e (decimal_shift_lt_four e h.2.2)
-  have hedge := trim_two_edge_lt_num e
+  have hbnd := trim_bnd_le_scale e h.2.2
+  have hedge := trim_two_edge_lt_num e h.2.2
   have hnarrow := trim_two_num_lt_scale e h.2.2
   refine ⟨?_, ?_, ?_, ?_⟩
   · rintro ⟨hlo, hhi⟩
@@ -1115,7 +1107,7 @@ theorem trim_exact_tie_k_zero (f : ℕ) (e : ℤ) (h : Regular f e)
   rcases lt_trichotomy (decimalExponent e) 0 with hk | hk | hk
   · exfalso
     have hsh := decimal_shift_lt_four e h.2.2
-    have halign := align_all e (by simpa [Finset.mem_Icc] using h.2.2)
+    have halign := decimal_shift_align e h.2.2
     -- Scaling by `log₁₀ 2 < 1` moves a negative exponent towards zero.
     have hek : e ≤ decimalExponent e := by
       unfold decimalExponent at hk ⊢
@@ -1375,8 +1367,7 @@ theorem exact_scale (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
   intro k pe
   have h10 : (10 : ℚ) ^ (-k) * 10 ^ k = 1 := by
     rw [← zpow_add₀ (by norm_num : (10 : ℚ) ≠ 0)]; simp
-  have halign : (decimalShift e : ℤ) + 1 - pe = e :=
-    align_all e (by simpa [Finset.mem_Icc] using he)
+  have halign : (decimalShift e : ℤ) + 1 - pe = e := decimal_shift_align e he
   have hsh : decimalShift e < 4 := decimal_shift_lt_four e he
   calc (10 : ℚ) ^ (-k) * 2 ^ (128 - pe) * (2 ^ (1 - e) * 10 ^ k)
       = (10 ^ (-k) * 10 ^ k) * (2 ^ (128 - pe) * 2 ^ (1 - e)) := by
@@ -2424,7 +2415,7 @@ theorem ulp_scaled_bounds (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
       rw [trimMul]
       exact Nat.mul_le_mul_right _
         (Nat.pow_le_pow_right (by norm_num) (by omega))
-    have h2 := trim_num_lower e
+    have h2 := trim_num_lower e he
     exact_mod_cast (show trimMul e ≤ 2 * trimNum e by omega)
   have hhigh : 2 * (trimNum e : ℚ) < 10 * (trimMul e : ℚ) := by
     have hn : 2 * trimNum e < trimScale e := trim_two_num_lt_scale e he
