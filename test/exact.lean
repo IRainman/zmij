@@ -1,20 +1,28 @@
 import Mathlib.Algebra.Order.Floor.Semifield
 import Mathlib.Tactic
 
-/-! # Shortest decimal conversion
+/-! # Exact decimal conversion and certified comparisons
 
-The specification, and the exact mathematics of the Schubfach-like method:
-prefer a multiple of ten that round-trips, and settle for a nearest grid point
-otherwise. `exact_candidate_correct` proves that method is shortest and
-correctly rounded for any positive value, given only that the decimal grid is no
-coarser than one ULP and strictly coarser than one tenth of an ULP. Nothing here
-knows a binary format, or how the grid is chosen.
+The implementation-independent foundations of verifying shortest decimal
+conversion.
 
-The last section is unrelated to decimal conversion. An implementation of any
-such method observes exact quantities through lossy comparisons, and where the
-observation is ambiguous the ambiguity is a Diophantine question about a modular
-progression. `ModWindows` answers those questions by certificate, knowing
-nothing about what the residues mean.
+The first part specifies the problem and states the exact Schubfach-like
+selection rule: prefer a multiple of ten that round-trips, and settle for a
+nearest grid point otherwise. `exact_candidate_correct` proves that method is
+shortest and correctly rounded for any positive value, given only that the
+decimal grid is no coarser than one ULP and strictly coarser than one tenth of
+an ULP.
+
+The second part relates lossy comparisons to exact arithmetic. An implementation
+of any such method observes its exact quantities through comparisons it can only
+afford to make approximately, and where an observation is ambiguous the
+ambiguity is a Diophantine question about a modular progression. `ModWindows`
+answers those questions by kernel-checked certificate.
+
+Neither part knows an implementation. The conversion results ask only for bounds
+on the decimal grid, never for a binary format or for the rule that chose the
+grid; the certificate machinery knows only modular arithmetic, and never what a
+residue means.
 
 Throughout:
 
@@ -438,13 +446,13 @@ theorem exact_candidate_correct (f : ℕ) (e k : ℤ) {d : ℕ} (hf0 : 0 < f)
         hnone ((coarse_roundtrip_iff_next_grid f e k).mpr ⟨c, hc⟩)⟩,
       correctly_rounded_of_le_half f e d k hle heven⟩
 
-/-! ## Certified modular windows
+/-! ## Certified exact comparisons
 
-An implementation reads its exact quantities through lossy comparisons, and
-where a comparison is ambiguous the ambiguity is a narrow window of residues.
-Closing such a window is a Diophantine question: can `g·f mod modulus` land in
-`[lo, hi]` for some significand `f` in `[f0, f1]`? Nothing in this section knows
-what the residue means.
+An implementation reads its exact quantities through lossy comparisons, and only
+the ambiguous ones need an argument. The ambiguity is a narrow window of
+residues, and closing such a window is a Diophantine question: can
+`g·f mod modulus` land in `[lo, hi]` for some significand `f` in `[f0, f1]`?
+`ModWindows` poses that question, knowing nothing about what the residue means.
 
 One multiplier `q` answers the question. Write `y = g·f - modulus·j` for the
 residue and `r = g·q - modulus·p` for the error of an approximation
