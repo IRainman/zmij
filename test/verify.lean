@@ -2458,10 +2458,10 @@ theorem yy_exact_candidate (f : ℕ) (e : ℤ) (h : Regular f e) :
     decimal representation that round-trips, and it is correctly rounded on its
     own decimal grid. -/
 theorem yy_correct (f : ℕ) (e : ℤ) (h : Regular f e) :
-    let (d, k) := reduceDecimal (toDecimal f e)
-    Shortest f e d k ∧ CorrectlyRounded f e d k := by
+    let (d, k) := toDecimal f e
+    let (d', k') := reduceDecimal d k
+    Shortest f e d' k' ∧ CorrectlyRounded f e d' k' := by
   obtain ⟨hfine, hcoarse⟩ := ulp_scaled_bounds e h.2.2
-  rw [show toDecimal f e = ((toDecimal f e).1, decimalExponent e) from rfl]
   exact exact_candidate_correct f e (decimalExponent e)
     (lt_of_lt_of_le (by norm_num) h.1.le) hfine hcoarse
     (yy_exact_candidate f e h)

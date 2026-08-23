@@ -205,31 +205,30 @@ theorem roundtrips_of_le_half (f : ℕ) (e k : ℤ) (d : ℕ)
 
 /-- Removes trailing zeros from a decimal significand, shifting the exponent to
     preserve the represented value. -/
-def reduceDecimal (dec : ℕ × ℤ) : ℕ × ℤ :=
-  if 0 < dec.1 ∧ dec.1 % 10 = 0 then reduceDecimal (dec.1 / 10, dec.2 + 1)
-  else dec
-termination_by dec.1
+def reduceDecimal (d : ℕ) (k : ℤ) : ℕ × ℤ :=
+  if 0 < d ∧ d % 10 = 0 then reduceDecimal (d / 10) (k + 1)
+  else (d, k)
+termination_by d
 decreasing_by omega
 
-theorem reduce_reduced (dec : ℕ × ℤ) :
-    (reduceDecimal dec).1 = 0 ∨ (reduceDecimal dec).1 % 10 ≠ 0 := by
-  fun_induction reduceDecimal dec with
-  | case1 dec _ ih => exact ih
-  | case2 dec hstop => omega
+theorem reduce_reduced (d : ℕ) (k : ℤ) :
+    (reduceDecimal d k).1 = 0 ∨ (reduceDecimal d k).1 % 10 ≠ 0 := by
+  fun_induction reduceDecimal d k with
+  | case1 d k _ ih => exact ih
+  | case2 d k hstop => omega
 
 /-- Reduction shifts the exponent by the number of zeros stripped and removes
     the corresponding power of ten from the significand. -/
-theorem reduce_shift (dec : ℕ × ℤ) :
-    ∃ t : ℕ, (reduceDecimal dec).2 = dec.2 + t
-      ∧ dec.1 = (reduceDecimal dec).1 * 10 ^ t := by
-  fun_induction reduceDecimal dec with
-  | case1 dec hgo ih =>
+theorem reduce_shift (d : ℕ) (k : ℤ) :
+    ∃ t : ℕ, (reduceDecimal d k).2 = k + t
+      ∧ d = (reduceDecimal d k).1 * 10 ^ t := by
+  fun_induction reduceDecimal d k with
+  | case1 d k hgo ih =>
     obtain ⟨t, hk, hd⟩ := ih
-    dsimp only at hk hd
     refine ⟨t + 1, by push_cast; omega, ?_⟩
     rw [pow_succ, ← Nat.mul_assoc, ← hd]
     omega
-  | case2 dec _ => exact ⟨0, by simp, by simp⟩
+  | case2 d k _ => exact ⟨0, by simp, by simp⟩
 
 /-- Trailing zeros can move between the significand and the exponent. -/
 theorem ten_pow_shift (d t : ℕ) (k : ℤ) :
@@ -238,11 +237,11 @@ theorem ten_pow_shift (d t : ℕ) (k : ℤ) :
   rw [zpow_add₀ (by norm_num : (10 : ℚ) ≠ 0), zpow_natCast]
   ring
 
-theorem reduce_value (dec : ℕ × ℤ) :
-    let (d, k) := reduceDecimal dec
-    (d : ℚ) * 10 ^ k = (dec.1 : ℚ) * 10 ^ dec.2 := by
-  obtain ⟨t, hkt, hstrip⟩ := reduce_shift dec
-  rcases hred : reduceDecimal dec with ⟨d, k⟩
+theorem reduce_value (d : ℕ) (k : ℤ) :
+    let (d', k') := reduceDecimal d k
+    (d' : ℚ) * 10 ^ k' = (d : ℚ) * 10 ^ k := by
+  obtain ⟨t, hkt, hstrip⟩ := reduce_shift d k
+  rcases hred : reduceDecimal d k with ⟨d', k'⟩
   simp only [hred] at hkt hstrip
   rw [hstrip, hkt, ten_pow_shift]
 
@@ -333,7 +332,7 @@ grid round-trips, and correct rounding is the half-step bound read through
 theorem exact_candidate_correct (f : ℕ) (e k : ℤ) {d : ℕ} (hf0 : 0 < f)
     (hfine : 1 ≤ ulp e * 10 ^ (-k)) (hcoarse : ulp e * 10 ^ (-k) < 10)
     (hd : ExactCandidate f e k d) :
-    let (d', k') := reduceDecimal (d, k)
+    let (d', k') := reduceDecimal d k
     Shortest f e d' k' ∧ CorrectlyRounded f e d' k' := by
   -- Both cases round-trip: the coarse one by assumption, the fine one because
   -- the grid at `k` is no coarser than one ULP.
@@ -341,10 +340,10 @@ theorem exact_candidate_correct (f : ℕ) (e k : ℤ) {d : ℕ} (hf0 : 0 < f)
     rcases hd with ⟨-, hrt⟩ | ⟨-, hle, -⟩
     · exact hrt
     · exact roundtrips_of_le_half f e k d hfine hle
-  obtain ⟨t, hkt, hstrip⟩ := reduce_shift (d, k)
-  have hstop := reduce_reduced (d, k)
-  have hval := reduce_value (d, k)
-  rcases hred : reduceDecimal (d, k) with ⟨d', k'⟩
+  obtain ⟨t, hkt, hstrip⟩ := reduce_shift d k
+  have hstop := reduce_reduced d k
+  have hval := reduce_value d k
+  rcases hred : reduceDecimal d k with ⟨d', k'⟩
   simp only [hred] at hkt hstrip hstop hval ⊢
   have hrt' : Roundtrips f e ((d' : ℚ) * 10 ^ k') := by rw [hval]; exact hrt
   -- Reduction never reaches zero, which does not round-trip, so it stopped at a
