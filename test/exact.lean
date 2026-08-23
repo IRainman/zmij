@@ -9,6 +9,11 @@ otherwise. `exact_candidate_correct` proves that method shortest and correctly
 rounded for any positive value, given only that the decimal grid is no coarser
 than one ULP and no finer than a tenth of one. Nothing here knows a binary
 format, or how the grid is chosen.
+
+Throughout:
+
+* `f`, `e`: binary significand and exponent, representing `f·2^e`;
+* `d`, `k`: decimal significand and exponent, representing `d·10^k`.
 -/
 
 /-! ## The specification -/
