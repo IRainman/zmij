@@ -121,24 +121,6 @@ theorem correctly_rounded_of_le_half (f : ℕ) (e : ℤ) (d : ℕ) (k : ℤ)
   · exact Or.inl (eq_of_abs_sub_eq_of_lt_half hlt hd')
   · exact Or.inr (heven heq)
 
--- A correctly rounded candidate is within half a grid step: the integer part of
--- the scaled value or its successor is, and none is closer.
-theorem abs_sub_le_half_of_correctly_rounded (f : ℕ) (e k : ℤ) (d : ℕ)
-    (hcr : CorrectlyRounded f e d k) :
-    |(d : ℚ) - value f e * 10 ^ (-k)| ≤ 1 / 2 := by
-  obtain ⟨hnear, -⟩ := (correctly_rounded_iff_scaled f e d k).mp hcr
-  have hx0 : (0 : ℚ) ≤ value f e * 10 ^ (-k) := by rw [value]; positivity
-  set x := value f e * 10 ^ (-k) with hx
-  have hfl : ((⌊x⌋₊ : ℕ) : ℚ) ≤ x := Nat.floor_le hx0
-  have hup : x < (⌊x⌋₊ : ℕ) + 1 := Nat.lt_floor_add_one x
-  rcases le_or_gt (x - ⌊x⌋₊) (1 / 2) with hlow | hlow
-  · refine le_trans (hnear ⌊x⌋₊) (le_of_eq_of_le ?_ hlow)
-    rw [abs_of_nonpos (by linarith), neg_sub]
-  · refine le_trans (hnear (⌊x⌋₊ + 1)) ?_
-    push_cast
-    rw [abs_of_nonneg (by linarith)]
-    linarith
-
 /-! ## Round-tripping in the scaled domain
 
 Scaled by `10^(-k)`, the grid at `k` becomes the integers, the exact value
@@ -288,10 +270,14 @@ def CoarseRoundtrip (f : ℕ) (e k : ℤ) : Prop :=
   ∃ c : ℕ, c % 10 = 0 ∧ Roundtrips f e (c * 10 ^ k)
 
 -- The exact method: a round-tripping multiple of ten if one exists, and
--- otherwise a nearest value on the grid at `k`, ties to even.
+-- otherwise a nearest value on the grid at `k`, ties to even. The second case
+-- says what the computation establishes, a half-step bound and evenness at an
+-- exact midpoint, rather than the correct rounding those two imply.
 def ExactCandidate (f : ℕ) (e k : ℤ) (d : ℕ) : Prop :=
+  let x := value f e * 10 ^ (-k)
   (d % 10 = 0 ∧ Roundtrips f e (d * 10 ^ k)) ∨
-    (¬CoarseRoundtrip f e k ∧ CorrectlyRounded f e d k)
+    (¬CoarseRoundtrip f e k ∧ |(d : ℚ) - x| ≤ 1 / 2 ∧
+      (|(d : ℚ) - x| = 1 / 2 → d % 2 = 0))
 
 -- At most one multiple of ten round-trips: two distinct ones are ten grid steps
 -- apart, while the round-trip interval is `u < 10` steps wide.
@@ -325,8 +311,9 @@ theorem coarse_roundtrip_unique (f : ℕ) (e k : ℤ)
 -- still a multiple of ten back at `k`, where uniqueness identifies it with the
 -- candidate; that single fact gives both shortness and correct rounding, and
 -- leaves no tie to resolve. In the fine case the candidate has no trailing zero
--- to strip, since one would itself be a coarse candidate, and nothing on any
--- coarser grid round-trips.
+-- to strip, since one would itself be a coarse candidate, so nothing on any
+-- coarser grid round-trips, and correct rounding is the half-step bound read
+-- through `correctly_rounded_of_le_half`.
 theorem exact_candidate_correct (f : ℕ) (e k : ℤ) (hf0 : 0 < f)
     (hfine : 1 ≤ ulp e * 10 ^ (-k)) (hcoarse : ulp e * 10 ^ (-k) < 10)
     (d : ℕ) (hd : ExactCandidate f e k d) :
@@ -335,10 +322,9 @@ theorem exact_candidate_correct (f : ℕ) (e k : ℤ) (hf0 : 0 < f)
   -- Both cases round-trip: the coarse one by assumption, the fine one because
   -- the grid at `k` is no coarser than one ULP.
   have hrt : Roundtrips f e (d * 10 ^ k) := by
-    rcases hd with ⟨-, hrt⟩ | ⟨-, hcr⟩
+    rcases hd with ⟨-, hrt⟩ | ⟨-, hle, -⟩
     · exact hrt
-    · exact roundtrips_of_le_half f e k d hfine
-        (abs_sub_le_half_of_correctly_rounded f e k d hcr)
+    · exact roundtrips_of_le_half f e k d hfine hle
   obtain ⟨t, hkt, hstrip⟩ := reduce_shift (d, k)
   have hstop := reduce_reduced (d, k)
   have hval := reduce_value (d, k)
@@ -355,7 +341,7 @@ theorem exact_candidate_correct (f : ℕ) (e k : ℤ) (hf0 : 0 < f)
   have hmul10 (c s : ℕ) : (c * 10 ^ (s + 1)) % 10 = 0 := by
     rw [pow_succ, ← Nat.mul_assoc]
     exact Nat.mul_mod_left _ _
-  rcases hd with ⟨h10, -⟩ | ⟨hnone, hcr⟩
+  rcases hd with ⟨h10, -⟩ | ⟨hnone, hle, heven⟩
   · -- The coarse case.
     have ht : 1 ≤ t := by
       rcases Nat.eq_zero_or_pos t with rfl | ht
@@ -395,4 +381,5 @@ theorem exact_candidate_correct (f : ℕ) (e k : ℤ) (hf0 : 0 < f)
     simp only [pow_zero, Nat.mul_one] at hstrip
     rw [← hstrip, show k' = k from by rw [hkt]; simp]
     exact ⟨⟨hrt, fun c hc => hnone ⟨c * 10, Nat.mul_mod_left c 10, by
-      rw [ten_pow_succ_shift]; exact hc⟩⟩, hcr⟩
+      rw [ten_pow_succ_shift]; exact hc⟩⟩,
+      correctly_rounded_of_le_half f e d k hle heven⟩

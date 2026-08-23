@@ -1940,10 +1940,14 @@ theorem dec_one_even_of_packed_midpoint (f : ℕ) (e : ℤ)
   show (sigHi f e + if c.roundU1 then 1 else 0) % 2 = 0
   by_cases hpar : sigHi f e % 2 = 1 <;> simp [hround, hpar] <;> omega
 
--- `decOne` is a nearest value on the grid at `decimalExponent e`, ties to even.
-theorem dec_one_correctly_rounded (f : ℕ) (e : ℤ) (h : Regular f e) :
-    CorrectlyRounded f e (toDecimalCandidates f e).decOne
-      (decimalExponent e) := by
+-- `decOne` is a nearest value on the grid at `decimalExponent e`, ties to even:
+-- it lies within half a step, and at an exact midpoint it is even. These are the
+-- two facts the exact method asks of a fine candidate.
+theorem dec_one_nearest (f : ℕ) (e : ℤ) (h : Regular f e) :
+    let x := value f e * 10 ^ (-decimalExponent e)
+    |((toDecimalCandidates f e).decOne : ℚ) - x| ≤ 1 / 2 ∧
+      (|((toDecimalCandidates f e).decOne : ℚ) - x| = 1 / 2 →
+        (toDecimalCandidates f e).decOne % 2 = 0) := by
   have he := h.2.2
   have hsh := decimal_shift_lt_four e he
   have hsep := one_midpoint_separated f e h
@@ -1969,7 +1973,7 @@ theorem dec_one_correctly_rounded (f : ℕ) (e : ℤ) (h : Regular f e) :
           (oneGap f e : ℚ) < (trimMul e : ℚ) + 2 ^ 54 * (trimDen e : ℚ) := by
         exact_mod_cast one_gap_lt_mul_add f e h
       linarith
-    refine correctly_rounded_of_le_half f e _ _ ?_ ?_
+    refine ⟨?_, ?_⟩
     · rw [zpow_neg, hdec]
       refine hle.mpr ?_
       have habs :
@@ -2007,7 +2011,7 @@ theorem dec_one_correctly_rounded (f : ℕ) (e : ℤ) (h : Regular f e) :
       (sig_hi_scaled_error f e he)
     have habs : |(-(oneGap f e : ℚ))| = (oneGap f e : ℚ) := by
       rw [abs_neg, Nat.abs_cast]
-    refine correctly_rounded_of_le_half f e _ _ ?_ ?_
+    refine ⟨?_, ?_⟩
     · rw [zpow_neg, hdec]
       refine hle.mpr ?_
       rw [habs]
@@ -2140,9 +2144,9 @@ theorem dec_ten_up (f : ℕ) (e : ℤ) (h : Regular f e)
 /-! ## yy's output in the two cases
 
 Trimmed, yy emits a multiple of ten and `dec_ten_down` and `dec_ten_up` bound
-its distance; untrimmed, it emits `decOne`, whose correct rounding already
-implies that it round-trips, the grid at `decimalExponent e` being no coarser
-than one ULP.
+its distance; untrimmed, it emits `decOne`, whose half-step bound already implies
+that it round-trips, the grid at `decimalExponent e` being no coarser than one
+ULP.
 -/
 
 -- Trimmed, yy emits a round-tripping multiple of ten. Which of the two
@@ -2172,17 +2176,19 @@ theorem trimmed_roundtrips (f : ℕ) (e : ℤ) (h : Regular f e)
   · rw [hten, hu0]
     simpa using dec_ten_up f e h hu0
 
--- Untrimmed, yy emits `decOne`, which is correctly rounded on its own grid.
-theorem untrimmed_correctly_rounded (f : ℕ) (e : ℤ) (h : Regular f e)
+-- Untrimmed, yy emits `decOne`, a nearest value on its own grid.
+theorem untrimmed_nearest (f : ℕ) (e : ℤ) (h : Regular f e)
     (htrim : ((toDecimalCandidates f e).roundD0
       || (toDecimalCandidates f e).roundU0) = false) :
-    CorrectlyRounded f e (toDecimal f e).1 (decimalExponent e) := by
+    let x := value f e * 10 ^ (-decimalExponent e)
+    |((toDecimal f e).1 : ℚ) - x| ≤ 1 / 2 ∧
+      (|((toDecimal f e).1 : ℚ) - x| = 1 / 2 → (toDecimal f e).1 % 2 = 0) := by
   rw [show (toDecimal f e).1 = (toDecimalCandidates f e).decOne from by
     show (if (toDecimalCandidates f e).roundD0
       || (toDecimalCandidates f e).roundU0 then _ else _) = _
     rw [htrim]
     rfl]
-  exact dec_one_correctly_rounded f e h
+  exact dec_one_nearest f e h
 
 /-! ## Completeness of the trim flags
 
@@ -2433,8 +2439,8 @@ theorem yy_exact_candidate (f : ℕ) (e : ℤ) (h : Regular f e) :
       || (toDecimalCandidates f e).roundU0) = true
   · exact Or.inl (trimmed_roundtrips f e h htrim)
   · rw [Bool.not_eq_true] at htrim
-    refine Or.inr ⟨fun ⟨c, h10, hc⟩ => ?_,
-      untrimmed_correctly_rounded f e h htrim⟩
+    obtain ⟨hle, heven⟩ := untrimmed_nearest f e h htrim
+    refine Or.inr ⟨fun ⟨c, h10, hc⟩ => ?_, hle, heven⟩
     rw [trim_of_coarse_roundtrip f e h c h10 hc] at htrim
     exact Bool.noConfusion htrim
 
