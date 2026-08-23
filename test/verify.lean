@@ -16,7 +16,7 @@ that yy's packed decisions agree with the exact ones; only that its output does.
 -/
 
 /-- Whether f·2^e is a regularly spaced positive normal binary64 value,
-excluding powers of 2. -/
+    excluding powers of 2. -/
 def Regular (f : ℕ) (e : ℤ) : Prop :=
   2 ^ 52 < f ∧ f < 2 ^ 53 ∧
    -1074 ≤ e ∧ e ≤ 971
@@ -35,9 +35,9 @@ def power10Significand (k : ℤ) : ℕ :=
   ⌊(10 : ℚ) ^ k * 2 ^ (128 - power10Exponent k)⌋₊
 
 /-- Numerator of the exact scaled power of ten `10^k·2^(128-pe)`, with negative
-exponents moved to the denominator. Writing the power as a ratio of naturals
-turns the truncation into a single `Nat` division, so the exponent-wise checks
-below can run in the kernel. -/
+    exponents moved to the denominator. Writing the power as a ratio of naturals
+    turns the truncation into a single `Nat` division, so the exponent-wise
+    checks below can run in the kernel. -/
 def power10Num (k : ℤ) : ℕ :=
   10 ^ k.toNat * 2 ^ (128 - power10Exponent k).toNat
 
@@ -46,9 +46,10 @@ def power10Den (k : ℤ) : ℕ :=
   10 ^ (-k).toNat * 2 ^ (power10Exponent k - 128).toNat
 
 /-- `power10Exponent` is characterized by this interval: it is the binary
-exponent that normalizes `10^k`. Both bounds are the defining bounds of
-`Nat.log`; for `k < 0` inversion exchanges them, so there the log's lower bound
-has to be strict, which it is because a power of two carries no five. -/
+    exponent that normalizes `10^k`. Both bounds are the defining bounds of
+    `Nat.log`; for `k < 0` inversion exchanges them, so there the log's lower
+    bound has to be strict, which it is because a power of two carries no
+    five. -/
 theorem power10_exponent_bounds (k : ℤ) :
     (2 : ℚ) ^ (power10Exponent k - 1) ≤ 10 ^ k ∧
       (10 : ℚ) ^ k < 2 ^ power10Exponent k := by
@@ -84,8 +85,8 @@ theorem power10_exponent_bounds (k : ℤ) :
       exact_mod_cast lt_of_le_of_ne (Nat.pow_log_le_self 2 (by positivity)) hne
 
 /-- Scaling that interval by `2^(128-pe)` makes the significand a normalized
-128-bit number: its top bit is set, which is what makes `power10Exponent` an
-exponent for a 128-bit significand, and it still fits in 128 bits. -/
+    128-bit number: its top bit is set, which is what makes `power10Exponent` an
+    exponent for a 128-bit significand, and it still fits in 128 bits. -/
 theorem power10_significand_bounds (k : ℤ) :
     2 ^ 127 ≤ power10Significand k ∧ power10Significand k < 2 ^ 128 := by
   refine ⟨?_, ?_⟩
@@ -208,7 +209,7 @@ def toDecimalCandidates (f : ℕ) (e : ℤ) : DecimalCandidates :=
   }
 
 /-- Converts a regularly spaced binary floating-point value f·2^e to a decimal
-significand and exponent using yy's full path. -/
+    significand and exponent using yy's full path. -/
 def toDecimal (f : ℕ) (e : ℤ) : ℕ × ℤ :=
   let c := toDecimalCandidates f e
   (if c.roundD0 || c.roundU0 then c.decTen else c.decOne, c.k)
@@ -250,8 +251,8 @@ integer arithmetic rather than an error estimate.
 -/
 
 /-- Numerator of the exact power of ten `10^(-k)·2^(128-pe)` for the decimal
-exponent associated with `e`. The trim layer works entirely with the three
-naturals `trimNum`, `trimDen` and `trimSig`. -/
+    exponent associated with `e`. The trim layer works entirely with the three
+    naturals `trimNum`, `trimDen` and `trimSig`. -/
 def trimNum (e : ℤ) : ℕ := power10Num (-decimalExponent e)
 
 /-- Denominator of that power of ten. -/
@@ -264,7 +265,7 @@ theorem trim_den_pos (e : ℤ) : 0 < trimDen e := by
   rw [trimDen, power10Den]; positivity
 
 /-- The truncation is the floor of the fraction: `p10 = num / den`, so the whole
-trim layer is natural-number division. -/
+    trim layer is natural-number division. -/
 theorem trim_sig_nat (e : ℤ) : trimSig e = trimNum e / trimDen e := by
   rw [trimSig, trimNum, trimDen, power10Significand, power10_exact_ratio]
   exact Nat.floor_div_eq_div _ _
@@ -285,7 +286,7 @@ that for its multiple of ten. In both, the candidate is the quotient
 def stepResidue (m f : ℕ) (e : ℤ) : ℕ := 2 * f * trimSig e % m
 
 /-- The remainder above the multiple-of-ten candidate:
-`ten·2^(128-h) + trimResidue = 2·f·p10`. -/
+    `ten·2^(128-h) + trimResidue = 2·f·p10`. -/
 def trimResidue (f : ℕ) (e : ℤ) : ℕ := stepResidue (trimModulus e) f e
 
 /-- `scaledSignificand` is the shifted product with the low 64 bits dropped. -/
@@ -324,7 +325,7 @@ theorem pow_split (e : ℤ) (hsh : decimalShift e < 4) :
   ring
 
 /-- Splitting a value at bit 128 and then discarding the low 68 bits is the same
-as discarding them directly; this is what packs the last digit into `c`. -/
+    as discarding them directly; this is what packs the last digit into `c`. -/
 theorem div_window (r : ℕ) :
     r / 2 ^ 128 * 2 ^ 60 + r % 2 ^ 128 / 2 ^ 68 = r / 2 ^ 68 := by
   conv_rhs => rw [← Nat.div_add_mod r (2 ^ 128)]
@@ -365,7 +366,7 @@ theorem trim_c_eq (f : ℕ) (e : ℤ) (hsh : decimalShift e < 4) :
   rw [hhi, hlo, hscaled, div_window]
 
 /-- `sigHi` is the quotient at the unit step. The multiple-of-ten candidate is
-ten times the quotient at the window step. -/
+    ten times the quotient at the window step. -/
 theorem sig_hi_quotient (f : ℕ) (e : ℤ) (hsh : decimalShift e < 4) :
     sigHi f e = 2 * f * trimSig e / 2 ^ (128 - decimalShift e) := by
   rw [sig_hi_eq, pow_shift_split e 128 (by omega),
@@ -461,29 +462,30 @@ window.
 -/
 
 /-- The exact distance from a candidate to the scaled value, with the
-denominator of the exact power of ten cleared: the residue contributes `den·W`
-and the truncation `p10Exact - p10 = τ/den` costs `2·f·τ`. -/
+    denominator of the exact power of ten cleared: the residue contributes
+    `den·W` and the truncation `p10Exact - p10 = τ/den` costs `2·f·τ`. -/
 def stepGap (m f : ℕ) (e : ℤ) : ℕ :=
   trimDen e * stepResidue m f e + 2 * f * (trimNum e % trimDen e)
 
 /-- The distance to the multiple-of-ten candidate, and the window modulus with
-the same denominator cleared. -/
+    the same denominator cleared. -/
 def trimGap (f : ℕ) (e : ℤ) : ℕ := stepGap (trimModulus e) f e
 
 def trimScale (e : ℤ) : ℕ := trimModulus e * trimDen e
 
 /-- How far a gap can be from the multiple-of-ten candidate and still be
-accepted by a packed comparison: `den·(p10 + U)`. Written as `num / den` rather
-than `trimSig` so the certificate remains purely natural-number computation. -/
+    accepted by a packed comparison: `den·(p10 + U)`. Written as `num / den`
+    rather than `trimSig` so the certificate remains purely natural-number
+    computation. -/
 def trimBnd (e : ℤ) : ℕ := trimDen e * (trimNum e / trimDen e + trimUnit e)
 
 /-- One window unit with the denominator cleared: the resolution of the packed
-comparison and the scale of the narrow windows refuted below. -/
+    comparison and the scale of the narrow windows refuted below. -/
 def trimEdge (e : ℤ) : ℕ := trimUnit e * trimDen e
 
 /-- Integer form of `2·p10 + 2 ≤ N`, where `N = trimModulus`. The truncation is
-expressed as natural division so the finite check reduces directly in the
-kernel. -/
+    expressed as natural division so the finite check reduces directly in the
+    kernel. -/
 def trimNarrowHolds (e : ℤ) : Bool :=
   decide (2 * (trimNum e / trimDen e) + 2 ≤ trimModulus e)
 
@@ -493,9 +495,9 @@ theorem trim_narrow_all :
     ∀ e ∈ Finset.Icc (-1074 : ℤ) 971, trimNarrowHolds e = true := by decide
 
 /-- Integer form of `2^54·(p10Exact - p10) ≤ p10 % U` and of its complement
-`2^54·(p10Exact - p10) ≤ U - p10 % U`, with the denominator cleared. The
-truncation error fits in the bits the packed comparison discards, measured from
-either end of the window unit. -/
+    `2^54·(p10Exact - p10) ≤ U - p10 % U`, with the denominator cleared. The
+    truncation error fits in the bits the packed comparison discards, measured
+    from either end of the window unit. -/
 def trimLowBitsHolds (e : ℤ) : Bool :=
   let num := trimNum e
   let den := trimDen e
@@ -509,9 +511,9 @@ theorem trim_low_bits_all :
     ∀ e ∈ Finset.Icc (-1074 : ℤ) 971, trimLowBitsHolds e = true := by decide
 
 /-- The discarded low bits `p10 % U` dominate the cached-power truncation error
-`p10Exact - p10 = τ/den`: the margin used when a packed comparison is strict on
-the low side. Which bits of the power of ten survive truncation is not a
-magnitude property, so this is checked per exponent. -/
+    `p10Exact - p10 = τ/den`: the margin used when a packed comparison is strict
+    on the low side. Which bits of the power of ten survive truncation is not a
+    magnitude property, so this is checked per exponent. -/
 theorem trim_low_bits (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
     2 ^ 54 * (trimNum e % trimDen e)
       ≤ trimSig e % trimUnit e * trimDen e := by
@@ -521,8 +523,8 @@ theorem trim_low_bits (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
   exact hcert.1
 
 /-- The complementary distance to the next window unit dominates the same
-truncation error: the margin used when a packed comparison falls short of its
-boundary, which is what the completeness directions need. -/
+    truncation error: the margin used when a packed comparison falls short of
+    its boundary, which is what the completeness directions need. -/
 theorem trim_high_bits (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
     2 ^ 54 * (trimNum e % trimDen e) + trimSig e % trimUnit e * trimDen e
       ≤ trimUnit e * trimDen e := by
@@ -667,7 +669,7 @@ private def modCertSearch (g modulus : ℤ) (windows : List (ℤ × ℤ)) :
       modCertSearch g modulus windows n v (u % v) qc (u / v * qc + qp)
 
 /-- All windows of one exponent, refuted by a given multiplier: a handful of
-big-integer operations, with the search for the multiplier left outside. -/
+    big-integer operations, with the search for the multiplier left outside. -/
 def trimCertificateValid (e q : ℤ) : Bool :=
   modWindowsRefuted (2 * trimNum e) (trimScale e) q (trimWindows e)
 
@@ -692,7 +694,7 @@ private def findTrimCertificate (e : ℤ) : ℤ :=
 
 open Lean Elab Tactic Meta in
 /-- Close a goal `∃ q, trimCertificateValid e q = true` for a literal exponent
-`e` by searching for a multiplier and quoting it into the proof term. -/
+    `e` by searching for a multiplier and quoting it into the proof term. -/
 elab "trim_cert" : tactic => do
   let target ← whnfR (← (← getMainGoal).getType)
   let_expr Exists _ pred := target
@@ -712,8 +714,8 @@ theorem trim_windows_refuted (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
   interval_cases e <;> trim_cert
 
 /-- Scaling the window residue by `den` and adding back the truncation error
-`2·f·τ` preserves the residue modulo `n·den`, provided the sum has not
-wrapped. -/
+    `2·f·τ` preserves the residue modulo `n·den`, provided the sum has not
+    wrapped. -/
 theorem trim_mod_shift (p den τ n f : ℕ)
     (hlt : den * (2 * f * p % n) + 2 * f * τ < n * den) :
     2 * (p * den + τ) * f % (n * den)
@@ -764,7 +766,7 @@ theorem trim_no_window_hit {lo hi q : ℤ} (f : ℕ) (e : ℤ)
   linarith
 
 /-- `p10 + U` is far below the window modulus, so a gap bounded by
-`den·(p10 + U)` has not wrapped. -/
+    `den·(p10 + U)` has not wrapped. -/
 theorem trim_bnd_le_scale (e : ℤ) (hsh : decimalShift e < 4) :
     trimBnd e ≤ trimScale e := by
   rw [trimBnd, ← trim_sig_nat]
@@ -786,7 +788,7 @@ theorem trim_num_lower (e : ℤ) : 2 ^ 127 * trimDen e ≤ trimNum e := by
   exact (Nat.le_div_iff_mul_le (trim_den_pos e)).mp h
 
 /-- The resolution of the packed comparison is negligible against the power of
-ten: `U ≤ 2^68` while `p10Exact ≥ 2^127`. -/
+    ten: `U ≤ 2^68` while `p10Exact ≥ 2^127`. -/
 theorem trim_two_edge_lt_num (e : ℤ) : 2 * trimEdge e < trimNum e := by
   have hu : trimUnit e ≤ 2 ^ 68 := by
     rw [trimUnit]; exact Nat.pow_le_pow_right (by norm_num) (by omega)
@@ -844,8 +846,8 @@ theorem trim_scale_split (e : ℤ) :
   rw [trimScale]; ring
 
 /-- One ULP of the value is narrower than one step of the coarse decimal grid:
-`2·num < scale`. This depends on the low bits of the truncated power of ten, not
-just its magnitude, so it is checked separately for each exponent. -/
+    `2·num < scale`. This depends on the low bits of the truncated power of ten,
+    not just its magnitude, so it is checked separately for each exponent. -/
 theorem trim_two_num_lt_scale (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
     2 * trimNum e < trimScale e := by
   have hcert := trim_narrow_all e (by simpa [Finset.mem_Icc] using he)
@@ -861,8 +863,8 @@ theorem trim_two_num_lt_scale (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
   omega
 
 /-- Whatever the step, the candidate scaled back up plus the gap is the scaled
-value `2·f·num`: `Nat.div_add_mod` recovers the product from the quotient and
-`trim_num_split` the power of ten from its truncation. -/
+    value `2·f·num`: `Nat.div_add_mod` recovers the product from the quotient
+    and `trim_num_split` the power of ten from its truncation. -/
 theorem step_quotient_add_gap (m f : ℕ) (e : ℤ) :
     2 * f * trimSig e / m * (m * trimDen e) + stepGap m f e
       = 2 * f * trimNum e := by
@@ -877,15 +879,15 @@ theorem step_quotient_add_gap (m f : ℕ) (e : ℤ) :
     _ = 2 * f * trimNum e := by rw [trim_num_split]
 
 /-- The truncation error of the power of ten, `2·f·τ` with `τ < den`
-and `2·f < 2^54`. -/
+    and `2·f < 2^54`. -/
 theorem trim_trunc_lt (f : ℕ) (e : ℤ) (h : Regular f e) :
     2 * f * (trimNum e % trimDen e) < 2 ^ 54 * trimDen e :=
   lt_of_le_of_lt (Nat.mul_le_mul_right _ (by have := h.2.1; omega))
     (mul_lt_mul_of_pos_left (Nat.mod_lt _ (trim_den_pos e)) (by positivity))
 
 /-- Whatever the step, the gap can overshoot it, but by less than `num`: the
-residue stays below the step, and `num ≥ 2^127·den` absorbs the truncation
-error. -/
+    residue stays below the step, and `num ≥ 2^127·den` absorbs the truncation
+    error. -/
 theorem step_gap_lt_scale_add (m f : ℕ) (e : ℤ) (h : Regular f e)
     (hm : 0 < m) : stepGap m f e < m * trimDen e + trimNum e := by
   have hres : trimDen e * stepResidue m f e < m * trimDen e := by
@@ -901,8 +903,8 @@ theorem step_gap_lt_scale_add (m f : ℕ) (e : ℤ) (h : Regular f e)
   omega
 
 /-- The bridge every trim bound crosses: the gap is `den` times the residue plus
-the truncation error `2·f·τ`, and `trim_low_bits` keeps that error inside the
-low bits of `p10` that the packed comparison discards anyway. -/
+    the truncation error `2·f·τ`, and `trim_low_bits` keeps that error inside
+    the low bits of `p10` that the packed comparison discards anyway. -/
 theorem trim_gap_sandwich (f : ℕ) (e : ℤ) (h : Regular f e) :
     trimDen e * trimResidue f e ≤ trimGap f e ∧
       trimGap f e ≤ trimDen e * trimResidue f e
@@ -918,15 +920,15 @@ theorem trim_gap_sandwich (f : ℕ) (e : ℤ) (h : Regular f e) :
   omega
 
 /-- What the packed comparisons say about the untruncated values: a packed sum
-of at least `m` window units is worth at least `U·m`. -/
+    of at least `m` window units is worth at least `U·m`. -/
 theorem trim_pack (f : ℕ) (e : ℤ) (m : ℕ)
     (hb : m ≤ trimResidue f e / trimUnit e + trimSig e / trimUnit e) :
     trimUnit e * m ≤ trimResidue f e + trimSig e :=
   le_trans (Nat.mul_le_mul_left _ hb) (mul_div_add_div_le _ _ _)
 
 /-- Under the trim-down comparison the gap stays within `den·(p10 + U)`: the low
-bits of `p10` cover the truncation error, and the comparison leaves at most one
-window unit of slack. -/
+    bits of `p10` cover the truncation error, and the comparison leaves at most
+    one window unit of slack. -/
 theorem trim_gap_box (f : ℕ) (e : ℤ) (h : Regular f e)
     (hcmp : trimResidue f e / trimUnit e ≤ trimSig e / trimUnit e) :
     trimGap f e < trimBnd e := by
@@ -943,8 +945,8 @@ theorem trim_gap_box (f : ℕ) (e : ℤ) (h : Regular f e)
   exact lt_of_le_of_lt hsand hscaled
 
 /-- The four windows the certificates refute, named by the boundary they hug and
-the side they hug it from. Soundness uses the outward pair, completeness the
-inward pair. -/
+    the side they hug it from. Soundness uses the outward pair, completeness the
+    inward pair. -/
 structure TrimGapSeparated (f : ℕ) (e : ℤ) : Prop where
   aboveNum : ¬(trimNum e < trimGap f e ∧ trimGap f e < trimBnd e)
   belowNum : ¬(trimNum e < trimGap f e + trimEdge e ∧ trimGap f e < trimNum e)
@@ -954,9 +956,9 @@ structure TrimGapSeparated (f : ℕ) (e : ℤ) : Prop where
     trimGap f e + trimNum e < trimScale e + trimEdge e)
 
 /-- The certificates' semantic content: the gap never lands in those windows,
-each of them narrower than one window edge. Below this theorem is modular
-arithmetic of `2·num·f mod scale`; above it the certificates are hidden behind
-these four separation facts. -/
+    each of them narrower than one window edge. Below this theorem is modular
+    arithmetic of `2·num·f mod scale`; above it the certificates are hidden
+    behind these four separation facts. -/
 theorem trim_gap_separated (f : ℕ) (e : ℤ) (h : Regular f e) :
     TrimGapSeparated f e := by
   obtain ⟨q, hcert⟩ := trim_windows_refuted e h.2.2
@@ -977,7 +979,7 @@ theorem trim_gap_separated (f : ℕ) (e : ℤ) (h : Regular f e) :
     exact trim_no_window_hit f e h hc4 (by omega) (by omega) (by omega)
 
 /-- Trim-down soundness: if the packed comparison reads `c ≤ halfUlp`, then the
-exact gap is at most `num`; otherwise it would lie in a forbidden window. -/
+    exact gap is at most `num`; otherwise it would lie in a forbidden window. -/
 theorem trim_gap_le (f : ℕ) (e : ℤ) (h : Regular f e)
     (hcmp : trimResidue f e / trimUnit e ≤ trimSig e / trimUnit e) :
     trimGap f e ≤ trimNum e := by
@@ -985,7 +987,7 @@ theorem trim_gap_le (f : ℕ) (e : ℤ) (h : Regular f e)
   exact (trim_gap_separated f e h).aboveNum ⟨hcon, trim_gap_box f e h hcmp⟩
 
 /-- The strict version needs no certificate: one full window unit of slack
-already exceeds the truncation error of the power of ten. -/
+    already exceeds the truncation error of the power of ten. -/
 theorem trim_gap_lt (f : ℕ) (e : ℤ) (h : Regular f e)
     (hcmp : trimResidue f e / trimUnit e < trimSig e / trimUnit e) :
     trimGap f e < trimNum e := by
@@ -1003,9 +1005,9 @@ theorem trim_gap_lt (f : ℕ) (e : ℤ) (h : Regular f e)
   omega
 
 /-- Trim-down completeness: if the packed comparison reads `halfUlp < c`, then
-the residue lies strictly above `p10`. After clearing the denominator that
-single unit becomes a whole `den`, which exceeds the truncation remainder, so
-`num < gap` without using a certificate. -/
+    the residue lies strictly above `p10`. After clearing the denominator that
+    single unit becomes a whole `den`, which exceeds the truncation remainder,
+    so `num < gap` without using a certificate. -/
 theorem trim_num_lt_gap (f : ℕ) (e : ℤ) (h : Regular f e)
     (hcmp : trimSig e / trimUnit e < trimResidue f e / trimUnit e) :
     trimNum e < trimGap f e := by
@@ -1021,8 +1023,8 @@ theorem trim_num_lt_gap (f : ℕ) (e : ℤ) (h : Regular f e)
   omega
 
 /-- Trim-down completeness, tie case: if the packed comparison has not read
-`c < halfUlp`, then `num` is less than one window edge above `gap`. Therefore a
-gap below `num` would lie in the forbidden inward window. -/
+    `c < halfUlp`, then `num` is less than one window edge above `gap`.
+    Therefore a gap below `num` would lie in the forbidden inward window. -/
 theorem trim_num_le_gap (f : ℕ) (e : ℤ) (h : Regular f e)
     (hcmp : trimSig e / trimUnit e ≤ trimResidue f e / trimUnit e) :
     trimNum e ≤ trimGap f e := by
@@ -1045,7 +1047,7 @@ theorem trim_num_le_gap (f : ℕ) (e : ℤ) (h : Regular f e)
   exact (trim_gap_separated f e h).belowNum ⟨hnear, hcon⟩
 
 /-- Trim-up soundness: if the packed sum is within one unit of the modulus,
-`gap + num` reaches the modulus after clearing the denominator. -/
+    `gap + num` reaches the modulus after clearing the denominator. -/
 theorem trim_scale_le (f : ℕ) (e : ℤ) (h : Regular f e)
     (hcmp : trimModulus e ≤ trimResidue f e + trimSig e + trimUnit e) :
     trimScale e ≤ trimGap f e + trimNum e := by
@@ -1064,8 +1066,8 @@ theorem trim_scale_le (f : ℕ) (e : ℤ) (h : Regular f e)
   exact (trim_gap_separated f e h).belowScale ⟨hfar, hcon⟩
 
 /-- Equality in the packed comparison scales to `gap + num = scale + (2f+1)·τ`:
-the truncation remainder is exactly the slack in the corresponding exact
-bound. -/
+    the truncation remainder is exactly the slack in the corresponding exact
+    bound. -/
 theorem trim_tie_gap_eq (f : ℕ) (e : ℤ)
     (htie : trimModulus e = trimResidue f e + trimSig e) :
     trimGap f e + trimNum e
@@ -1079,7 +1081,7 @@ theorem trim_tie_gap_eq (f : ℕ) (e : ℤ)
   ring
 
 /-- Packed equality forces `2^(129-h) ∣ p10`: since `trimModulus = 5·2^(129-h)`
-and `2f+1` is odd, all of that power of two must come from `p10`. -/
+    and `2f+1` is odd, all of that power of two must come from `p10`. -/
 theorem trim_tie_pow_two_dvd (f : ℕ) (e : ℤ) (hsh : decimalShift e < 4)
     (htie : trimModulus e = trimResidue f e + trimSig e) :
     2 ^ (129 - decimalShift e) ∣ trimSig e := by
@@ -1102,8 +1104,8 @@ theorem trim_tie_pow_two_dvd (f : ℕ) (e : ℤ) (hsh : decimalShift e < 4)
   ring
 
 /-- An exact cached power admits a tie only at `k = 0`. For `k > 0` its
-denominator retains a factor of five; for `k < 0` it has too few factors of two.
-At `k = 0`, `p10 = 2^127`, the special tie handled by `roundU0`. -/
+    denominator retains a factor of five; for `k < 0` it has too few factors of
+    two. At `k = 0`, `p10 = 2^127`, the special tie handled by `roundU0`. -/
 theorem trim_exact_tie_k_zero (f : ℕ) (e : ℤ) (h : Regular f e)
     (hτ : trimNum e % trimDen e = 0)
     (htie : trimModulus e = trimResidue f e + trimSig e) :
@@ -1150,7 +1152,7 @@ theorem trim_exact_tie_k_zero (f : ℕ) (e : ℤ) (h : Regular f e)
     exact h5num (dvd_trans h5den ⟨trimSig e, hsplit.symm⟩)
 
 /-- At `k = 0` the cached power of ten is exactly `2^127`, so it has no low bits
-for the truncation to drop. -/
+    for the truncation to drop. -/
 theorem trim_power_of_k_zero (e : ℤ) (hk : decimalExponent e = 0) :
     trimNum e = 2 ^ 127 * trimDen e ∧ trimSig e = 2 ^ 127 := by
   have heq : trimNum e = 2 ^ 127 * trimDen e := by
@@ -1159,8 +1161,8 @@ theorem trim_power_of_k_zero (e : ℤ) (hk : decimalExponent e = 0) :
   exact ⟨heq, by rw [trim_sig_nat, heq, Nat.mul_div_cancel _ (trim_den_pos e)]⟩
 
 /-- At `k = 0` the packed comparison is exact: both operands are whole window
-units and the cached-power truncation error vanishes. Thus the packed tie lifts
-to an exact tie, with `gap + num = scale`. -/
+    units and the cached-power truncation error vanishes. Thus the packed tie
+    lifts to an exact tie, with `gap + num = scale`. -/
 theorem trim_gap_num_eq_scale_of_k_zero (f : ℕ) (e : ℤ) (h : Regular f e)
     (hk : decimalExponent e = 0)
     (htie : trimResidue f e / trimUnit e + trimSig e / trimUnit e
@@ -1189,8 +1191,8 @@ theorem trim_gap_num_eq_scale_of_k_zero (f : ℕ) (e : ℤ) (h : Regular f e)
   rw [hgap, ← trim_scale_split e, ← hsum, hscaled_sum]
 
 /-- Strict trim-up soundness for the final `t0 ≤ t1` test. Packed equality is
-either made strict by cached-power truncation or is an exact tie, which forces
-`k = 0` and belongs to the dedicated `k = 0 ∧ t1 = t0` branch. -/
+    either made strict by cached-power truncation or is an exact tie, which
+    forces `k = 0` and belongs to the dedicated `k = 0 ∧ t1 = t0` branch. -/
 theorem trim_scale_lt (f : ℕ) (e : ℤ) (h : Regular f e)
     (hb : 10 * 2 ^ 60 ≤ trimResidue f e / trimUnit e + trimSig e / trimUnit e)
     (hne : ¬(decimalExponent e = 0 ∧ trimResidue f e / trimUnit e
@@ -1231,9 +1233,10 @@ theorem trim_scale_lt (f : ℕ) (e : ℤ) (h : Regular f e)
         (Nat.mul_pos (by omega) (Nat.pos_of_ne_zero hτ))
 
 /-- Each packed unit of room below the modulus becomes one `trimEdge` after
-clearing the denominator. Reconstructing `gap + num` adds `(2f+1)·τ`, where `τ`
-is the cached-power truncation remainder; `trim_high_bits` shows that this error
-together with the discarded low bits of `p10` fits within one `trimEdge`. -/
+    clearing the denominator. Reconstructing `gap + num` adds `(2f+1)·τ`, where
+    `τ` is the cached-power truncation remainder; `trim_high_bits` shows that
+    this error together with the discarded low bits of `p10` fits within one
+    `trimEdge`. -/
 theorem trim_packed_room (f : ℕ) (e : ℤ) (h : Regular f e) (n : ℕ)
     (hcmp : trimResidue f e / trimUnit e + trimSig e / trimUnit e + n
       ≤ 10 * 2 ^ 60) :
@@ -1298,8 +1301,8 @@ theorem trim_residue_low_lt_edge (f : ℕ) (e : ℤ) :
     (trim_den_pos e)
 
 /-- Trim-up completeness: if the packed sum is two window units short of the
-modulus, one unit absorbs the discarded low bits and one remains, so `gap + num`
-is strictly below `scale`. No certificate is needed. -/
+    modulus, one unit absorbs the discarded low bits and one remains, so
+    `gap + num` is strictly below `scale`. No certificate is needed. -/
 theorem trim_gap_num_lt_scale (f : ℕ) (e : ℤ) (h : Regular f e)
     (hcmp : trimResidue f e / trimUnit e + trimSig e / trimUnit e + 2
       ≤ 10 * 2 ^ 60) :
@@ -1309,9 +1312,9 @@ theorem trim_gap_num_lt_scale (f : ℕ) (e : ℤ) (h : Regular f e)
   omega
 
 /-- Trim-up completeness, tie case: if the packed sum is one window unit short
-of the modulus, `gap + num` cannot exceed `scale`. The truncated comparison only
-bounds any excess to less than one window edge, and that inward window is
-excluded by the certificate. -/
+    of the modulus, `gap + num` cannot exceed `scale`. The truncated comparison
+    only bounds any excess to less than one window edge, and that inward window
+    is excluded by the certificate. -/
 theorem trim_gap_num_le_scale (f : ℕ) (e : ℤ) (h : Regular f e)
     (hcmp : trimResidue f e / trimUnit e + trimSig e / trimUnit e + 1
       = 10 * 2 ^ 60) :
@@ -1343,7 +1346,7 @@ theorem trim_scale_eq_ten_mul (e : ℤ) : trimScale e = 10 * trimMul e := by
   ring
 
 /-- Twice the bound on the cached-power truncation error fits inside one grid
-step: `trimMul ≥ 2^125·den`, while the doubled bound is `2^55·den`. -/
+    step: `trimMul ≥ 2^125·den`, while the doubled bound is `2^55·den`. -/
 theorem trim_two_trunc_le_mul (e : ℤ) (hsh : decimalShift e < 4) :
     2 ^ 55 * trimDen e ≤ trimMul e := by
   rw [trimMul]
@@ -1358,7 +1361,7 @@ theorem trim_mul_eq_two_half (e : ℤ) (hsh : decimalShift e < 4) :
   ring
 
 /-- Exponent alignment: the inverse scale `s = 2^(1-e)·10^k` turns the
-power-of-ten factor `10^(-k)·2^(128-pe)` into `2^(128-h)`. -/
+    power-of-ten factor `10^(-k)·2^(128-pe)` into `2^(128-h)`. -/
 theorem exact_scale (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
     let k := decimalExponent e
     let pe := power10Exponent (-k)
@@ -1380,7 +1383,7 @@ theorem exact_scale (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
               from by omega, zpow_natCast]
 
 /-- `trimMul` clears the denominator in `power10_exact_ratio`, leaving `trimNum`
-times the binary-decimal scaling factor. -/
+    times the binary-decimal scaling factor. -/
 theorem trim_mul_eq (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
     (trimMul e : ℚ)
       = (trimNum e : ℚ) * (2 ^ (1 - e) * 10 ^ decimalExponent e) := by
@@ -1421,8 +1424,8 @@ theorem trim_mul_value (f : ℕ) (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
   ring
 
 /-- Both candidates reach ℚ the same way: cleared of the scale, a candidate
-accounting for the whole product except its gap sits exactly that gap below the
-scaled value. -/
+    accounting for the whole product except its gap sits exactly that gap below
+    the scaled value. -/
 theorem scaled_error_of_nat {cand gap : ℕ} (f : ℕ) (e : ℤ)
     (he : -1074 ≤ e ∧ e ≤ 971)
     (hnat : cand * trimMul e + gap = 2 * f * trimNum e) :
@@ -1433,7 +1436,7 @@ theorem scaled_error_of_nat {cand gap : ℕ} (f : ℕ) (e : ℤ)
   linear_combination hcast - trim_mul_value f e he
 
 /-- The trim-down candidate sits exactly `trimGap` below the scaled value: it is
-the quotient at the window step, which is ten unit steps. -/
+    the quotient at the window step, which is ten unit steps. -/
 theorem dec_ten_down_scaled_error (f : ℕ) (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
     (((sigHi f e - sigHi f e % 10 : ℕ) : ℚ)
         - value f e * (10 ^ decimalExponent e)⁻¹) * (trimMul e : ℚ)
@@ -1447,7 +1450,7 @@ theorem dec_ten_down_scaled_error (f : ℕ) (e : ℤ) (he : -1074 ≤ e ∧ e �
       _ = 2 * f * trimNum e := step_quotient_add_gap _ f e
 
 /-- The trim-up candidate sits `trimScale - trimGap` above the scaled value,
-since the scale sends a decimal step of `10` to the window modulus. -/
+    since the scale sends a decimal step of `10` to the window modulus. -/
 theorem dec_ten_up_scaled_error (f : ℕ) (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
     (((sigHi f e - sigHi f e % 10 : ℕ) : ℚ) + 10
         - value f e * (10 ^ decimalExponent e)⁻¹) * (trimMul e : ℚ)
@@ -1457,7 +1460,7 @@ theorem dec_ten_up_scaled_error (f : ℕ) (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 
   linear_combination dec_ten_down_scaled_error f e he + hten
 
 /-- Scaling by `trimMul` loses nothing: a candidate with scaled error `dist` is
-within half a ULP exactly when `|dist|` is at most `trimNum`. -/
+    within half a ULP exactly when `|dist|` is at most `trimNum`. -/
 theorem half_ulp_iff_scaled_error {cand dist : ℚ} (f : ℕ) (e : ℤ)
     (he : -1074 ≤ e ∧ e ≤ 971)
     (hscale : (cand - value f e * (10 ^ decimalExponent e)⁻¹) * (trimMul e : ℚ)
@@ -1478,9 +1481,9 @@ theorem half_ulp_iff_scaled_error {cand dist : ℚ} (f : ℕ) (e : ℤ)
     by rw [← mul_lt_mul_iff_of_pos_right hpos, hdist, trim_mul_half_ulp e he]⟩
 
 /-- The same for half a grid step: the scale sends one step of the grid at `k`
-to one `trimMul`, so a candidate with scaled error `dist` is within half a step
-exactly when `2·|dist|` is at most `trimMul`, and sits at a midpoint exactly
-when they are equal. -/
+    to one `trimMul`, so a candidate with scaled error `dist` is within half a
+    step exactly when `2·|dist|` is at most `trimMul`, and sits at a midpoint
+    exactly when they are equal. -/
 theorem half_step_iff_scaled_error {cand dist : ℚ} (f : ℕ) (e : ℤ)
     (hscale : (cand - value f e * (10 ^ decimalExponent e)⁻¹) * (trimMul e : ℚ)
       = dist) :
@@ -1517,12 +1520,12 @@ comparison of `2·oneGap` with `trimMul`.
 -/
 
 /-- The residue at the unit step: `sigHi·2^(128-h) + oneResidue` is the
-product `2·f·p10`. -/
+    product `2·f·p10`. -/
 def oneResidue (f : ℕ) (e : ℤ) : ℕ :=
   stepResidue (2 ^ (128 - decimalShift e)) f e
 
 /-- The gap at the unit step, the distance from `sigHi` to the scaled value once
-the denominator is cleared. -/
+    the denominator is cleared. -/
 def oneGap (f : ℕ) (e : ℤ) : ℕ := stepGap (2 ^ (128 - decimalShift e)) f e
 
 /-- `sigHi` scaled up, plus the gap, is the scaled value `2·f·num`. -/
@@ -1532,7 +1535,7 @@ theorem sig_hi_add_one_gap (f : ℕ) (e : ℤ) (hsh : decimalShift e < 4) :
   exact step_quotient_add_gap _ f e
 
 /-- `sigLo` is the unit-step remainder with its low `64 - h` bits discarded, so
-the packed test sees the remainder only in units of `2^(64-h)`. -/
+    the packed test sees the remainder only in units of `2^(64-h)`. -/
 theorem sig_lo_eq_residue_div (f : ℕ) (e : ℤ) (hsh : decimalShift e < 4) :
     sigLo f e = oneResidue f e / 2 ^ (64 - decimalShift e) := by
   rw [sig_lo_eq, oneResidue, stepResidue, pow_shift_split e 128 (by omega),
@@ -1540,8 +1543,8 @@ theorem sig_lo_eq_residue_div (f : ℕ) (e : ℤ) (hsh : decimalShift e < 4) :
     Nat.mul_div_mul_left _ _ (by positivity)]
 
 /-- What `roundU1` says about the remainder: yy compares the discarded word with
-half its range, so the test is on the remainder against half the window
-`2^(128-h)`, blind only to the `2^(64-h)` bits below `sigLo`. -/
+    half its range, so the test is on the remainder against half the window
+    `2^(128-h)`, blind only to the `2^(64-h)` bits below `sigLo`. -/
 theorem one_round_half (f : ℕ) (e : ℤ) (hsh : decimalShift e < 4) :
     ((toDecimalCandidates f e).roundU1 = true →
         2 ^ (127 - decimalShift e) ≤ oneResidue f e) ∧
@@ -1607,7 +1610,7 @@ certificates supply them, one window family per exponent.
 -/
 
 /-- The unit-step gap is the denominator-cleared remainder plus the cached-power
-truncation error. -/
+    truncation error. -/
 theorem one_gap_split (f : ℕ) (e : ℤ) :
     oneGap f e
       = trimDen e * oneResidue f e + 2 * f * (trimNum e % trimDen e) := by
@@ -1626,7 +1629,8 @@ theorem one_gap_lt_mul_add (f : ℕ) (e : ℤ) (h : Regular f e) :
   omega
 
 /-- Rounding up means the gap is at least half a step: the packed test saw the
-remainder reach half the window, and the truncation error only increases it. -/
+    remainder reach half the window, and the truncation error only increases
+    it. -/
 theorem one_half_step_le_gap (f : ℕ) (e : ℤ) (h : Regular f e)
     (hu1 : (toDecimalCandidates f e).roundU1 = true) :
     trimMul e ≤ 2 * oneGap f e := by
@@ -1638,9 +1642,9 @@ theorem one_half_step_le_gap (f : ℕ) (e : ℤ) (h : Regular f e)
   omega
 
 /-- What the packed `roundU1` test cannot settle by itself. Both facts concern
-where `2·f·num mod trimMul` lies relative to the midpoint `trimMul / 2`.
-Cached-power truncation and discarded low bits leave a narrow undecided window
-there, refuted below just as `trimWindows` are. -/
+    where `2·f·num mod trimMul` lies relative to the midpoint `trimMul / 2`.
+    Cached-power truncation and discarded low bits leave a narrow undecided
+    window there, refuted below just as `trimWindows` are. -/
 structure OneMidpointSeparated (f : ℕ) (e : ℤ) : Prop where
   -- If `roundU1` does not fire, the exact gap is at most half a step.
   belowHalf :
@@ -1675,7 +1679,7 @@ def oneParityResidue (f : ℕ) (e : ℤ) : ℕ :=
   stepResidue (2 ^ (129 - decimalShift e)) f e
 
 /-- That bit, split off: the doubled residue carries one whole window above the
-remainder exactly when `sigHi` is odd. -/
+    remainder exactly when `sigHi` is odd. -/
 theorem one_parity_residue_split (f : ℕ) (e : ℤ) (hsh : decimalShift e < 4) :
     oneParityResidue f e
       = 2 ^ (128 - decimalShift e) * (sigHi f e % 2) + oneResidue f e := by
@@ -1695,7 +1699,7 @@ theorem one_parity_residue_split (f : ℕ) (e : ℤ) (hsh : decimalShift e < 4) 
   rw [hhi, hlo]
 
 /-- Once the remainder has reached half the window, `roundU1` can be false only
-through yy's tie branch, which declines exactly for an even `sigHi`. -/
+    through yy's tie branch, which declines exactly for an even `sigHi`. -/
 theorem one_even_of_not_round_up (f : ℕ) (e : ℤ) (hsh : decimalShift e < 4)
     (hu1 : (toDecimalCandidates f e).roundU1 = false)
     (hres : 2 ^ (127 - decimalShift e) ≤ oneResidue f e) :
@@ -1716,7 +1720,7 @@ theorem one_even_of_not_round_up (f : ℕ) (e : ℤ) (hsh : decimalShift e < 4)
   split at hu1 <;> (have := of_decide_eq_false hu1; omega)
 
 /-- The undecided bands as windows on the doubled residue. The truncation error
-is below `2^54·den`, so `2^54` bounds its reach in remainder units. -/
+    is below `2^54·den`, so `2^54` bounds its reach in remainder units. -/
 def oneWindows (e : ℤ) : List (ℤ × ℤ) :=
   let half : ℤ := 2 ^ (127 - decimalShift e)
   let band : ℤ := 2 ^ (64 - decimalShift e)
@@ -1741,7 +1745,7 @@ private def findOneCertificate (e : ℤ) : ℤ :=
 
 open Lean Elab Tactic Meta in
 /-- Close a goal `∃ q, oneCertificateValid e q = true` for a literal exponent
-`e` by searching for a multiplier and quoting it into the proof term. -/
+    `e` by searching for a multiplier and quoting it into the proof term. -/
 elab "one_cert" : tactic => do
   let target ← whnfR (← (← getMainGoal).getType)
   let_expr Exists _ pred := target
@@ -1781,7 +1785,7 @@ theorem one_no_window_hit {lo hi q : ℤ} (f : ℕ) (e : ℤ) (h : Regular f e)
   linarith
 
 /-- Below the midpoint the truncation error cannot reach it: a remainder short
-of half the window is short of it by more than `2^54`. -/
+    of half the window is short of it by more than `2^54`. -/
 theorem one_residue_below_half (f : ℕ) (e : ℤ) (h : Regular f e)
     (hτ : trimNum e % trimDen e ≠ 0)
     (hres : oneResidue f e < 2 ^ (127 - decimalShift e)) :
@@ -1817,8 +1821,8 @@ theorem one_residue_below_half (f : ℕ) (e : ℤ) (h : Regular f e)
       (by rw [hp]; linarith)
 
 /-- In the packed tie band an even `sigHi` occurs only at a genuine midpoint:
-the remainder is exactly half the window and the cached power is exact, so the
-exact value is a tie too, and yy resolves it to even. -/
+    the remainder is exactly half the window and the cached power is exact, so
+    the exact value is a tie too, and yy resolves it to even. -/
 theorem one_tie_band_even (f : ℕ) (e : ℤ) (h : Regular f e)
     (hpar : sigHi f e % 2 = 0)
     (hlo : 2 ^ (127 - decimalShift e) ≤ oneResidue f e)
@@ -1869,9 +1873,9 @@ theorem one_tie_band_even (f : ℕ) (e : ℤ) (h : Regular f e)
     · exact one_no_window_hit f e h hband (hdown hgt) hup
 
 /-- The certificates' semantic content at the unit step: the remainder never
-lands where the packed test could round the wrong way. Below this theorem is
-modular arithmetic of `2·f·p10`; above it the rounding argument sees only these
-two implications. -/
+    lands where the packed test could round the wrong way. Below this theorem is
+    modular arithmetic of `2·f·p10`; above it the rounding argument sees only
+    these two implications. -/
 theorem one_midpoint_separated (f : ℕ) (e : ℤ) (h : Regular f e) :
     OneMidpointSeparated f e := by
   have hsh := decimal_shift_lt_four e h.2.2
@@ -1928,7 +1932,7 @@ theorem one_midpoint_separated (f : ℕ) (e : ℤ) (h : Regular f e) :
 /-! ### Nearest at the unit step -/
 
 /-- At a packed midpoint the remainder is exactly half the window, so yy takes
-its tie branch and rounds the significand to even. -/
+    its tie branch and rounds the significand to even. -/
 theorem dec_one_even_of_packed_midpoint (f : ℕ) (e : ℤ)
     (hsh : decimalShift e < 4)
     (hres : oneResidue f e = 2 ^ (127 - decimalShift e)) :
@@ -1947,8 +1951,8 @@ theorem dec_one_even_of_packed_midpoint (f : ℕ) (e : ℤ)
   by_cases hpar : sigHi f e % 2 = 1 <;> simp [hround, hpar] <;> omega
 
 /-- `decOne` is a nearest value on the grid at `decimalExponent e`, ties to
-even: it lies within half a step, and at an exact midpoint it is even. These are
-the two facts the exact method asks of a fine candidate. -/
+    even: it lies within half a step, and at an exact midpoint it is even. These
+    are the two facts the exact method asks of a fine candidate. -/
 theorem dec_one_nearest (f : ℕ) (e : ℤ) (h : Regular f e) :
     let x := value f e * 10 ^ (-decimalExponent e)
     |((toDecimalCandidates f e).decOne : ℚ) - x| ≤ 1 / 2 ∧
@@ -2073,8 +2077,9 @@ theorem dec_ten_down (f : ℕ) (e : ℤ) (h : Regular f e)
     · exact hd
 
 /-- The trim-up candidate is in range whenever `roundU0` fires. All three yy
-branches leave the packed sum within one window unit of the modulus; only the
-final `t0 ≤ t1` branch can fire for odd `f`, and there the bound is strict. -/
+    branches leave the packed sum within one window unit of the modulus; only
+    the final `t0 ≤ t1` branch can fire for odd `f`, and there the bound is
+    strict. -/
 theorem dec_ten_up (f : ℕ) (e : ℤ) (h : Regular f e)
     (hu0 : (toDecimalCandidates f e).roundU0 = true) :
     let k := decimalExponent e
@@ -2156,8 +2161,8 @@ than one ULP.
 -/
 
 /-- Trimmed, yy emits a multiple of ten that round-trips. Which of the two
-multiple-of-ten candidates `decTen` denotes is decided by `roundU0`; whether
-both trimming flags fire is irrelevant. -/
+    multiple-of-ten candidates `decTen` denotes is decided by `roundU0`; whether
+    both trimming flags fire is irrelevant. -/
 theorem trimmed_roundtrips (f : ℕ) (e : ℤ) (h : Regular f e)
     (htrim : ((toDecimalCandidates f e).roundD0
       || (toDecimalCandidates f e).roundU0) = true) :
@@ -2220,7 +2225,7 @@ lies one unit farther out; there the cached power of ten is exact, and
 -/
 
 /-- A round-trip in the candidate scale: the scaled candidate is within `num` of
-the scaled value, with the strict odd case weakened to `≤`. -/
+    the scaled value, with the strict odd case weakened to `≤`. -/
 theorem roundtrips_bound (f : ℕ) (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) (d : ℕ)
     (hr : Roundtrips f e (d * 10 ^ decimalExponent e)) :
     |(d : ℚ) * (trimMul e : ℚ) - 2 * f * (trimNum e : ℚ)| ≤ (trimNum e : ℚ) := by
@@ -2241,8 +2246,8 @@ theorem trim_mul_pos (e : ℤ) : (0 : ℚ) < (trimMul e : ℚ) :=
     (by rw [trimMul]; exact Nat.mul_pos (by positivity) (trim_den_pos e))
 
 /-- A multiple of ten that round-trips is one of the two yy considers. The
-round-trip interval is narrower than one coarse step, and its position relative
-to the trim-down candidate excludes every other multiple of ten. -/
+    round-trip interval is narrower than one coarse step, and its position
+    relative to the trim-down candidate excludes every other multiple of ten. -/
 theorem coarse_candidate_cases (f : ℕ) (e : ℤ) (h : Regular f e) (d : ℕ)
     (h10 : d % 10 = 0)
     (hr : Roundtrips f e (d * 10 ^ decimalExponent e)) :
@@ -2406,9 +2411,9 @@ coarse candidate, not to any exact comparison.
 -/
 
 /-- The grid at yy's exponent lies between one and ten ULPs. One grid step is
-`2^(128-h)·den` while half a ULP is `num ≥ 2^127·den`, which gives the lower
-bound; the upper bound is the narrowness certificate of the packed
-comparison. -/
+    `2^(128-h)·den` while half a ULP is `num ≥ 2^127·den`, which gives the lower
+    bound; the upper bound is the narrowness certificate of the packed
+    comparison. -/
 theorem ulp_scaled_bounds (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
     1 ≤ ulp e * 10 ^ (-decimalExponent e) ∧
       ulp e * 10 ^ (-decimalExponent e) < 10 := by
@@ -2435,9 +2440,9 @@ theorem ulp_scaled_bounds (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
   · rw [hstep]; exact hhigh
 
 /-- yy implements the exact method: it trims exactly when an exact coarse
-candidate exists. One direction is completeness, `trim_of_coarse_roundtrip`; the
-other holds because trimmed output is itself a multiple of ten that
-round-trips. -/
+    candidate exists. One direction is completeness, `trim_of_coarse_roundtrip`;
+    the other holds because trimmed output is itself a multiple of ten that
+    round-trips. -/
 theorem yy_exact_candidate (f : ℕ) (e : ℤ) (h : Regular f e) :
     ExactCandidate f e (decimalExponent e) (toDecimal f e).1 := by
   by_cases htrim : ((toDecimalCandidates f e).roundD0
@@ -2450,8 +2455,8 @@ theorem yy_exact_candidate (f : ℕ) (e : ℤ) (h : Regular f e) :
     exact Bool.noConfusion htrim
 
 /-- yy is correct: after removing trailing zeros its output is a shortest
-decimal representation that round-trips, and it is correctly rounded on its own
-decimal grid. -/
+    decimal representation that round-trips, and it is correctly rounded on its
+    own decimal grid. -/
 theorem yy_correct (f : ℕ) (e : ℤ) (h : Regular f e) :
     let (d, k) := reduceDecimal (toDecimal f e)
     Shortest f e d k ∧ CorrectlyRounded f e d k := by

@@ -13,15 +13,15 @@ format, or how the grid is chosen.
 
 /-! ## The specification -/
 
-/-- Exact rational value represented by binary significand `f` and
-exponent `e`. -/
+/-- Exact rational value represented by binary significand `f`
+    and exponent `e`. -/
 def value (f : ℕ) (e : ℤ) : ℚ := f * 2 ^ e
 
 /-- One ULP for a regularly spaced value with exponent `e`. -/
 def ulp (e : ℤ) : ℚ := 2 ^ e
 
 /-- Whether the rational value `r` rounds to the regularly spaced value f·2^e
-under round-to-nearest, ties-to-even. -/
+    under round-to-nearest, ties-to-even. -/
 def Roundtrips (f : ℕ) (e : ℤ) (r : ℚ) : Prop :=
   if f % 2 = 0 then
     |r - value f e| ≤ ulp e / 2
@@ -29,15 +29,16 @@ def Roundtrips (f : ℕ) (e : ℤ) (r : ℚ) : Prop :=
     |r - value f e| < ulp e / 2
 
 /-- A decimal representation is shortest if it round-trips and no value on the
-next coarser decimal grid does. The grids are nested, so refuting the next one
-refutes every coarser one. It also forces `d` to have no trailing zero, since
-`d / 10` at `k + 1` would denote the same value. -/
+    next coarser decimal grid does. The grids are nested, so refuting the next
+    one refutes every coarser one. It also forces `d` to have no trailing zero,
+    since `d / 10` at `k + 1` would denote the same value. -/
 def Shortest (f : ℕ) (e : ℤ) (d : ℕ) (k : ℤ) : Prop :=
   Roundtrips f e (d * 10 ^ k) ∧
     ∀ d' : ℕ, ¬Roundtrips f e (d' * 10 ^ (k + 1))
 
 /-- A decimal representation is correctly rounded on its decimal grid if no
-value on that grid is closer to the exact value, with ties resolved to even. -/
+    value on that grid is closer to the exact value, with ties resolved to
+    even. -/
 def CorrectlyRounded (f : ℕ) (e : ℤ) (d : ℕ) (k : ℤ) : Prop :=
   let r := (d : ℚ) * 10 ^ k
   let v := value f e
@@ -54,7 +55,7 @@ half a step is uniquely nearest.
 -/
 
 /-- Distinct integer candidates are at least one step apart, so the sum of their
-distances to any value is at least one. -/
+    distances to any value is at least one. -/
 theorem one_le_abs_sub_add_abs_sub {x : ℚ} {d d' : ℕ} (hne : d' ≠ d) :
     1 ≤ |(d' : ℚ) - x| + |(d : ℚ) - x| := by
   have hstep : (1 : ℚ) ≤ |(d' : ℚ) - (d : ℚ)| := by
@@ -79,7 +80,7 @@ theorem eq_of_abs_sub_eq_of_lt_half {x : ℚ} {d d' : ℕ}
   linarith [one_le_abs_sub_add_abs_sub (x := x) hne]
 
 /-- Correct rounding in the scaled domain: `10^k` is positive, so it cancels
-from every comparison, leaving comparisons between `d`, `d'` and `x`. -/
+    from every comparison, leaving comparisons between `d`, `d'` and `x`. -/
 theorem correctly_rounded_iff_scaled (f : ℕ) (e : ℤ) (d : ℕ) (k : ℤ) :
     let x := value f e * 10 ^ (-k)
     CorrectlyRounded f e d k
@@ -111,7 +112,7 @@ theorem correctly_rounded_iff_scaled (f : ℕ) (e : ℤ) (d : ℕ) (k : ℤ) :
       exact mul_right_cancel₀ (ne_of_gt hp) hd'
 
 /-- A candidate within half a grid step is correctly rounded if an exact
-midpoint is resolved to an even candidate. -/
+    midpoint is resolved to an even candidate. -/
 theorem correctly_rounded_of_le_half (f : ℕ) (e : ℤ) (d : ℕ) (k : ℤ)
     (hle : |(d : ℚ) - value f e * 10 ^ (-k)| ≤ 1 / 2)
     (heven : |(d : ℚ) - value f e * 10 ^ (-k)| = 1 / 2 → d % 2 = 0) :
@@ -131,7 +132,7 @@ odd `f`.
 -/
 
 /-- Scaling by the positive factor `10^k` preserves the rounding bounds, so a
-round-trip on the grid at `k` is the scaled half-ULP bound. -/
+    round-trip on the grid at `k` is the scaled half-ULP bound. -/
 theorem roundtrips_iff_scaled (f : ℕ) (e k : ℤ) (d : ℕ) :
     let x := value f e * (10 ^ k)⁻¹
     let u := ulp e * (10 ^ k)⁻¹
@@ -153,7 +154,7 @@ theorem roundtrips_iff_scaled (f : ℕ) (e k : ℤ) (d : ℕ) :
   · rw [← hdist, ← hhalf]; exact mul_lt_mul_iff_of_pos_right hp
 
 /-- Whether a value round-trips depends only on its distance to the exact value,
-so anything no farther away than one that round-trips does too. -/
+    so anything no farther away than one that round-trips does too. -/
 theorem roundtrips_of_abs_le (f : ℕ) (e : ℤ) {r r' : ℚ}
     (hr : Roundtrips f e r) (hle : |r' - value f e| ≤ |r - value f e|) :
     Roundtrips f e r' := by
@@ -161,7 +162,7 @@ theorem roundtrips_of_abs_le (f : ℕ) (e : ℤ) {r r' : ℚ}
   split_ifs at hr ⊢ <;> linarith
 
 /-- A positive value is at least a whole ULP away from zero, so the zero
-significand never round-trips. -/
+    significand never round-trips. -/
 theorem not_roundtrips_zero (f : ℕ) (e : ℤ) (hf0 : 0 < f) :
     ¬Roundtrips f e 0 := by
   have hf : (1 : ℚ) ≤ (f : ℚ) := by exact_mod_cast hf0
@@ -175,9 +176,9 @@ theorem not_roundtrips_zero (f : ℕ) (e : ℤ) (hf0 : 0 < f) :
   split_ifs <;> linarith
 
 /-- On a grid no coarser than one ULP, a value within half a grid step
-round-trips. For odd `f` the round-trip bound is strict; half a step can reach
-half a ULP only when the step is exactly one ULP, and then the scaled value is
-the integer `f`, which lies at no half-integer distance. -/
+    round-trips. For odd `f` the round-trip bound is strict; half a step can
+    reach half a ULP only when the step is exactly one ULP, and then the scaled
+    value is the integer `f`, which lies at no half-integer distance. -/
 theorem roundtrips_of_le_half (f : ℕ) (e k : ℤ) (d : ℕ)
     (hfine : 1 ≤ ulp e * 10 ^ (-k))
     (hd : |(d : ℚ) - value f e * 10 ^ (-k)| ≤ 1 / 2) :
@@ -203,7 +204,7 @@ theorem roundtrips_of_le_half (f : ℕ) (e k : ℤ) (d : ℕ)
 /-! ## Decimal reduction -/
 
 /-- Removes trailing zeros from a decimal significand, shifting the exponent to
-preserve the represented value. -/
+    preserve the represented value. -/
 def reduceDecimal (dec : ℕ × ℤ) : ℕ × ℤ :=
   if 0 < dec.1 ∧ dec.1 % 10 = 0 then reduceDecimal (dec.1 / 10, dec.2 + 1)
   else dec
@@ -217,7 +218,7 @@ theorem reduce_reduced (dec : ℕ × ℤ) :
   | case2 dec hstop => omega
 
 /-- Reduction shifts the exponent by the number of zeros stripped and removes
-the corresponding power of ten from the significand. -/
+    the corresponding power of ten from the significand. -/
 theorem reduce_shift (dec : ℕ × ℤ) :
     ∃ t : ℕ, (reduceDecimal dec).2 = dec.2 + t
       ∧ dec.1 = (reduceDecimal dec).1 * 10 ^ t := by
@@ -269,9 +270,9 @@ def CoarseRoundtrip (f : ℕ) (e k : ℤ) : Prop :=
   ∃ c : ℕ, c % 10 = 0 ∧ Roundtrips f e (c * 10 ^ k)
 
 /-- The multiples of ten on the grid at `k` are exactly the values on the grid
-at `k + 1`, the two descriptions differing only by a factor of ten in the
-significand. So the method's case split is the question `Shortest` asks, and the
-coarse case is precisely where a shorter representation exists. -/
+    at `k + 1`, the two descriptions differing only by a factor of ten in the
+    significand. So the method's case split is the question `Shortest` asks, and
+    the coarse case is precisely where a shorter representation exists. -/
 theorem coarse_roundtrip_iff_next_grid (f : ℕ) (e k : ℤ) :
     CoarseRoundtrip f e k ↔ ∃ d : ℕ, Roundtrips f e (d * 10 ^ (k + 1)) := by
   constructor
@@ -283,9 +284,9 @@ theorem coarse_roundtrip_iff_next_grid (f : ℕ) (e k : ℤ) :
     exact ⟨d * 10, Nat.mul_mod_left d 10, by rw [ten_pow_succ_shift]; exact hd⟩
 
 /-- The exact method: a multiple of ten that round-trips if one exists, and
-otherwise a nearest value on the grid at `k`, ties to even. The second case says
-what the computation establishes, a half-step bound and evenness at an exact
-midpoint, rather than the correct rounding those two imply. -/
+    otherwise a nearest value on the grid at `k`, ties to even. The second case
+    says what the computation establishes, a half-step bound and evenness at an
+    exact midpoint, rather than the correct rounding those two imply. -/
 def ExactCandidate (f : ℕ) (e k : ℤ) (d : ℕ) : Prop :=
   let x := value f e * 10 ^ (-k)
   (d % 10 = 0 ∧ Roundtrips f e (d * 10 ^ k)) ∨
@@ -293,7 +294,7 @@ def ExactCandidate (f : ℕ) (e k : ℤ) (d : ℕ) : Prop :=
       (|(d : ℚ) - x| = 1 / 2 → d % 2 = 0))
 
 /-- At most one multiple of ten round-trips: two distinct ones are ten grid
-steps apart, while the round-trip interval is `u < 10` steps wide. -/
+    steps apart, while the round-trip interval is `u < 10` steps wide. -/
 theorem coarse_roundtrip_unique (f : ℕ) (e k : ℤ)
     (hcoarse : ulp e * 10 ^ (-k) < 10) {c₁ c₂ : ℕ}
     (h₁ : c₁ % 10 = 0) (h₂ : c₂ % 10 = 0)
