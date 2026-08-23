@@ -56,7 +56,7 @@ half a step is uniquely nearest.
 
 /-- Distinct integer candidates are at least one step apart, so the sum of their
     distances to any value is at least one. -/
-theorem one_le_abs_sub_add_abs_sub {x : ℚ} {d d' : ℕ} (hne : d' ≠ d) :
+private theorem one_le_abs_sub_add_abs_sub {x : ℚ} {d d' : ℕ} (hne : d' ≠ d) :
     1 ≤ |(d' : ℚ) - x| + |(d : ℚ) - x| := by
   have hstep : (1 : ℚ) ≤ |(d' : ℚ) - (d : ℚ)| := by
     exact_mod_cast Int.one_le_abs (show (d' : ℤ) - d ≠ 0 by omega)
@@ -65,7 +65,7 @@ theorem one_le_abs_sub_add_abs_sub {x : ℚ} {d d' : ℕ} (hne : d' ≠ d) :
     _ = |(d' : ℚ) - x| + |(d : ℚ) - x| := by rw [abs_sub_comm x]
 
 /-- A candidate within half a step is a nearest grid point. -/
-theorem abs_sub_le_of_le_half {x : ℚ} {d : ℕ}
+private theorem abs_sub_le_of_le_half {x : ℚ} {d : ℕ}
     (hd : |(d : ℚ) - x| ≤ 1 / 2) (d' : ℕ) :
     |(d : ℚ) - x| ≤ |(d' : ℚ) - x| := by
   rcases eq_or_ne d' d with rfl | hne
@@ -73,7 +73,7 @@ theorem abs_sub_le_of_le_half {x : ℚ} {d : ℕ}
   · linarith [one_le_abs_sub_add_abs_sub (x := x) hne]
 
 /-- A candidate strictly within half a step is the unique nearest grid point. -/
-theorem eq_of_abs_sub_eq_of_lt_half {x : ℚ} {d d' : ℕ}
+private theorem eq_of_abs_sub_eq_of_lt_half {x : ℚ} {d d' : ℕ}
     (hd : |(d : ℚ) - x| < 1 / 2) (heq : |(d : ℚ) - x| = |(d' : ℚ) - x|) :
     d' = d := by
   by_contra hne
@@ -113,7 +113,7 @@ theorem correctly_rounded_iff_scaled (f : ℕ) (e : ℤ) (d : ℕ) (k : ℤ) :
 
 /-- A candidate within half a grid step is correctly rounded if an exact
     midpoint is resolved to an even candidate. -/
-theorem correctly_rounded_of_le_half (f : ℕ) (e : ℤ) (d : ℕ) (k : ℤ)
+private theorem correctly_rounded_of_le_half (f : ℕ) (e : ℤ) (d : ℕ) (k : ℤ)
     (hle : |(d : ℚ) - value f e * 10 ^ (-k)| ≤ 1 / 2)
     (heven : |(d : ℚ) - value f e * 10 ^ (-k)| = 1 / 2 → d % 2 = 0) :
     CorrectlyRounded f e d k := by
@@ -155,7 +155,7 @@ theorem roundtrips_iff_scaled (f : ℕ) (e k : ℤ) (d : ℕ) :
 
 /-- Whether a value round-trips depends only on its distance to the exact value,
     so anything no farther away than one that round-trips does too. -/
-theorem roundtrips_of_abs_le (f : ℕ) (e : ℤ) {r r' : ℚ}
+private theorem roundtrips_of_abs_le (f : ℕ) (e : ℤ) {r r' : ℚ}
     (hr : Roundtrips f e r) (hle : |r' - value f e| ≤ |r - value f e|) :
     Roundtrips f e r' := by
   simp only [Roundtrips] at hr ⊢
@@ -163,7 +163,7 @@ theorem roundtrips_of_abs_le (f : ℕ) (e : ℤ) {r r' : ℚ}
 
 /-- A positive value is at least a whole ULP away from zero, so the zero
     significand never round-trips. -/
-theorem not_roundtrips_zero (f : ℕ) (e : ℤ) (hf0 : 0 < f) :
+private theorem not_roundtrips_zero (f : ℕ) (e : ℤ) (hf0 : 0 < f) :
     ¬Roundtrips f e 0 := by
   have hf : (1 : ℚ) ≤ (f : ℚ) := by exact_mod_cast hf0
   have hpos : (0 : ℚ) < 2 ^ e := by positivity
@@ -179,7 +179,7 @@ theorem not_roundtrips_zero (f : ℕ) (e : ℤ) (hf0 : 0 < f) :
     round-trips. For odd `f` the round-trip bound is strict; half a step can
     reach half a ULP only when the step is exactly one ULP, and then the scaled
     value is the integer `f`, which lies at no half-integer distance. -/
-theorem roundtrips_of_le_half (f : ℕ) (e k : ℤ) (d : ℕ)
+private theorem roundtrips_of_le_half (f : ℕ) (e k : ℤ) (d : ℕ)
     (hfine : 1 ≤ ulp e * 10 ^ (-k))
     (hd : |(d : ℚ) - value f e * 10 ^ (-k)| ≤ 1 / 2) :
     Roundtrips f e (d * 10 ^ k) := by
@@ -210,7 +210,7 @@ def reduceDecimal (d : ℕ) (k : ℤ) : ℕ × ℤ :=
 termination_by d
 decreasing_by omega
 
-theorem reduce_reduced (d : ℕ) (k : ℤ) :
+private theorem reduce_reduced (d : ℕ) (k : ℤ) :
     (reduceDecimal d k).1 = 0 ∨ (reduceDecimal d k).1 % 10 ≠ 0 := by
   fun_induction reduceDecimal d k with
   | case1 d k _ ih => exact ih
@@ -218,7 +218,7 @@ theorem reduce_reduced (d : ℕ) (k : ℤ) :
 
 /-- Reduction shifts the exponent by the number of zeros stripped and removes
     the corresponding power of ten from the significand. -/
-theorem reduce_shift (d : ℕ) (k : ℤ) :
+private theorem reduce_shift (d : ℕ) (k : ℤ) :
     ∃ t : ℕ, (reduceDecimal d k).2 = k + t
       ∧ d = (reduceDecimal d k).1 * 10 ^ t := by
   fun_induction reduceDecimal d k with
@@ -230,13 +230,13 @@ theorem reduce_shift (d : ℕ) (k : ℤ) :
   | case2 d k _ => exact ⟨0, by simp, by simp⟩
 
 /-- Trailing zeros can move between the significand and the exponent. -/
-theorem ten_pow_shift (d t : ℕ) (k : ℤ) :
+private theorem ten_pow_shift (d t : ℕ) (k : ℤ) :
     ((d * 10 ^ t : ℕ) : ℚ) * 10 ^ k = (d : ℚ) * 10 ^ (k + (t : ℤ)) := by
   push_cast
   rw [zpow_add₀ (by norm_num : (10 : ℚ) ≠ 0), zpow_natCast]
   ring
 
-theorem reduce_value (d : ℕ) (k : ℤ) :
+private theorem reduce_value (d : ℕ) (k : ℤ) :
     let (d', k') := reduceDecimal d k
     (d' : ℚ) * 10 ^ k' = (d : ℚ) * 10 ^ k := by
   obtain ⟨t, hkt, hstrip⟩ := reduce_shift d k
@@ -245,7 +245,7 @@ theorem reduce_value (d : ℕ) (k : ℤ) :
   rw [hstrip, hkt, ten_pow_shift]
 
 /-- Moving to the next coarser grid multiplies its significand by ten. -/
-theorem ten_pow_succ_shift (d : ℕ) (k : ℤ) :
+private theorem ten_pow_succ_shift (d : ℕ) (k : ℤ) :
     ((d * 10 : ℕ) : ℚ) * 10 ^ k = (d : ℚ) * 10 ^ (k + 1) := by
   rw [show d * 10 = d * 10 ^ 1 from by ring, ten_pow_shift d 1]
   norm_num
@@ -271,7 +271,7 @@ def CoarseRoundtrip (f : ℕ) (e k : ℤ) : Prop :=
     at `k + 1`, the two descriptions differing only by a factor of ten in the
     significand. So the method's case split is the question `Shortest` asks, and
     the coarse case is precisely where a shorter representation exists. -/
-theorem coarse_roundtrip_iff_next_grid (f : ℕ) (e k : ℤ) :
+private theorem coarse_roundtrip_iff_next_grid (f : ℕ) (e k : ℤ) :
     CoarseRoundtrip f e k ↔ ∃ d : ℕ, Roundtrips f e (d * 10 ^ (k + 1)) := by
   constructor
   · rintro ⟨c, h10, hc⟩
@@ -293,7 +293,7 @@ def ExactCandidate (f : ℕ) (e k : ℤ) (d : ℕ) : Prop :=
 
 /-- At most one multiple of ten round-trips: two distinct ones are ten grid
     steps apart, while the round-trip interval is `u < 10` steps wide. -/
-theorem coarse_roundtrip_unique (f : ℕ) (e k : ℤ)
+private theorem coarse_roundtrip_unique (f : ℕ) (e k : ℤ)
     (hcoarse : ulp e * 10 ^ (-k) < 10) {c₁ c₂ : ℕ}
     (h₁ : c₁ % 10 = 0) (h₂ : c₂ % 10 = 0)
     (hr₁ : Roundtrips f e (c₁ * 10 ^ k)) (hr₂ : Roundtrips f e (c₂ * 10 ^ k)) :
