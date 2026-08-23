@@ -257,11 +257,12 @@ private theorem ten_pow_succ_shift (d : ℕ) (k : ℤ) :
 
 /-! ## The exact reference method
 
-The method is Schubfach's, stated at a decimal exponent `k` and read in the
-scaled domain: prefer a multiple of ten that round-trips, and settle for a
-nearest integer, ties to even, when there is none. A multiple of ten round-trips
-exactly when a digit can be dropped, `coarse_roundtrip_iff_next_grid`, so the
-first case is where the shortest representation is coarser than the grid at `k`.
+This is the exact selection rule underlying Schubfach, stated at a decimal
+exponent `k` and read in the scaled domain: prefer a multiple of ten that
+round-trips, and settle for a nearest integer, ties to even, when there is none.
+A multiple of ten round-trips exactly when a digit can be dropped,
+`coarse_roundtrip_iff_next_grid`, so the first case is where the shortest
+representation is coarser than the grid at `k`.
 
 Only two properties of `k` are used. The grid must be fine enough that a
 nearest grid point round-trips, `1 ≤ u`, and coarse enough that the round-trip
