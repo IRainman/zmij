@@ -1341,6 +1341,11 @@ bound `|cand - x| ≤ u/2` is a comparison of `trimGap` with `trimNum`.
 /-- The unit step, cleared. The window step is ten of them. -/
 def trimMul (e : ℤ) : ℕ := 2 ^ (128 - decimalShift e) * trimDen e
 
+/-- The candidate scale factor is positive. -/
+theorem trim_mul_pos (e : ℤ) : (0 : ℚ) < (trimMul e : ℚ) :=
+  Nat.cast_pos.mpr
+    (by rw [trimMul]; exact Nat.mul_pos (by positivity) (trim_den_pos e))
+
 theorem trim_scale_eq_ten_mul (e : ℤ) : trimScale e = 10 * trimMul e := by
   simp only [trimScale, trimMul, trimModulus]
   ring
@@ -1472,9 +1477,7 @@ theorem half_ulp_iff_scaled_error {cand dist : ℚ} (f : ℕ) (e : ℤ)
     (|cand - x| ≤ u / 2 ↔ |dist| ≤ (trimNum e : ℚ)) ∧
       (|cand - x| < u / 2 ↔ |dist| < (trimNum e : ℚ)) := by
   intro k x u
-  have hpos : (0 : ℚ) < (trimMul e : ℚ) :=
-    Nat.cast_pos.mpr
-      (by rw [trimMul]; exact Nat.mul_pos (by positivity) (trim_den_pos e))
+  have hpos := trim_mul_pos e
   have hdist : |cand - x| * (trimMul e : ℚ) = |dist| := by
     rw [← hscale, abs_mul, abs_of_pos hpos]
   exact ⟨by rw [← mul_le_mul_iff_of_pos_right hpos, hdist,
@@ -1492,9 +1495,7 @@ theorem half_step_iff_scaled_error {cand dist : ℚ} (f : ℕ) (e : ℤ)
     (|cand - x| ≤ 1 / 2 ↔ 2 * |dist| ≤ (trimMul e : ℚ)) ∧
       (|cand - x| = 1 / 2 ↔ 2 * |dist| = (trimMul e : ℚ)) := by
   intro x
-  have hpos : (0 : ℚ) < (trimMul e : ℚ) :=
-    Nat.cast_pos.mpr
-      (by rw [trimMul]; exact Nat.mul_pos (by positivity) (trim_den_pos e))
+  have hpos := trim_mul_pos e
   have hval : |cand - x| = |dist| / (trimMul e : ℚ) := by
     rw [← hscale, abs_mul, abs_of_pos hpos, mul_div_assoc,
       div_self (ne_of_gt hpos), mul_one]
@@ -2240,11 +2241,6 @@ theorem roundtrips_bound (f : ℕ) (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) (d
   by_cases hev : f % 2 = 0
   · simpa [hev] using hs
   · exact le_of_lt (by simpa [hev] using hs)
-
-/-- The candidate scale factor is positive. -/
-theorem trim_mul_pos (e : ℤ) : (0 : ℚ) < (trimMul e : ℚ) :=
-  Nat.cast_pos.mpr
-    (by rw [trimMul]; exact Nat.mul_pos (by positivity) (trim_den_pos e))
 
 /-- A multiple of ten that round-trips is one of the two yy considers. The
     round-trip interval is narrower than one coarse step, and its position
