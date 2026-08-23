@@ -545,7 +545,7 @@ untrusted, and the kernel proves correctness by checking the certificate it
 returns.
 -/
 
-def modWindowRefuted (g modulus f0 f1 lo hi q : ℤ) : Bool :=
+private def modWindowRefuted (g modulus f0 f1 lo hi q : ℤ) : Bool :=
   let p := (2 * (g * q) + modulus) / (2 * modulus)
   let r := g * q - modulus * p
   -- `f·r` runs between the two endpoint values, in whichever order the sign
@@ -556,7 +556,8 @@ def modWindowRefuted (g modulus f0 f1 lo hi q : ℤ) : Bool :=
     ∧ hi' < modulus * (lo' / modulus) + modulus)
 
 /-- A value strictly between consecutive multiples of `modulus` is absurd. -/
-theorem window_gap_absurd {modulus lo' hi' v : ℤ} (hmodulus : 0 < modulus)
+private theorem window_gap_absurd {modulus lo' hi' v : ℤ}
+    (hmodulus : 0 < modulus)
     (hlo : lo' ≤ modulus * v) (hhi : modulus * v ≤ hi')
     (hgap_lo : modulus * (lo' / modulus) < lo')
     (hgap_hi : hi' < modulus * (lo' / modulus) + modulus) :
@@ -572,7 +573,7 @@ theorem window_gap_absurd {modulus lo' hi' v : ℤ} (hmodulus : 0 < modulus)
   omega
 
 /-- The certificate identity and the resulting bounds on the significand box. -/
-theorem window_bounds {g modulus f0 f1 lo hi q p r f j y : ℤ}
+private theorem window_bounds {g modulus f0 f1 lo hi q p r f j y : ℤ}
     (hq : 0 < q) (hr : r = g * q - modulus * p)
     (hf0 : f0 ≤ f) (hf1 : f ≤ f1)
     (hy : y = g * f - modulus * j) (hlo : lo ≤ y) (hhi : y ≤ hi) :
@@ -591,7 +592,7 @@ theorem window_bounds {g modulus f0 f1 lo hi q p r f j y : ℤ}
         le_trans (mul_le_mul_of_nonpos_right hf0 hr0) (le_max_left _ _)⟩
   exact ⟨by linarith [hfr.2], by linarith [hfr.1]⟩
 
-theorem not_window_hit {g modulus f0 f1 lo hi q f j y : ℤ}
+private theorem not_window_hit {g modulus f0 f1 lo hi q f j y : ℤ}
     (hmodulus : 0 < modulus)
     (hcert : modWindowRefuted g modulus f0 f1 lo hi q = true)
     (hf0 : f0 ≤ f) (hf1 : f ≤ f1)
@@ -609,7 +610,8 @@ theorem not_window_hit {g modulus f0 f1 lo hi q f j y : ℤ}
   exact window_gap_absurd hmodulus hb0 hb1 hgap0 hgap1
 
 /-- A list of windows refuted by one multiplier, over the significand range. -/
-def modWindowsRefuted (g modulus q : ℤ) (windows : List (ℤ × ℤ)) : Bool :=
+private def modWindowsRefuted (g modulus q : ℤ)
+    (windows : List (ℤ × ℤ)) : Bool :=
   windows.all fun w =>
     modWindowRefuted g modulus (2 ^ 52 + 1) (2 ^ 53 - 1) w.1 w.2 q
 
@@ -620,7 +622,7 @@ The outward windows extend to `bnd`, while the inward windows extend by one
 trim quantities are computed once here so the search below can retry a window
 without recomputing the power of ten.
 -/
-def trimWindows (e : ℤ) : List (ℤ × ℤ) :=
+private def trimWindows (e : ℤ) : List (ℤ × ℤ) :=
   let num : ℤ := trimNum e
   let bnd : ℤ := trimBnd e
   let edge : ℤ := trimEdge e
@@ -654,7 +656,7 @@ private def modCertSearch (g modulus : ℤ) (windows : List (ℤ × ℤ)) :
 
 /-- All windows of one exponent, refuted by a given multiplier: a handful of
     big-integer operations, with the search for the multiplier left outside. -/
-def trimCertificateValid (e q : ℤ) : Bool :=
+private def trimCertificateValid (e q : ℤ) : Bool :=
   modWindowsRefuted (2 * trimNum e) (trimScale e) q (trimWindows e)
 
 /-! ### Certifying the exponent range
@@ -692,7 +694,7 @@ elab "trim_cert" : tactic => do
   let q ← Term.exprToSyntax (toExpr (findTrimCertificate exponent))
   evalTactic (← `(tactic| exact ⟨$q, by decide +kernel⟩))
 
-theorem trim_windows_refuted (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
+private theorem trim_windows_refuted (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
     ∃ q, trimCertificateValid e q = true := by
   obtain ⟨hlo, hhi⟩ := he
   interval_cases e <;> trim_cert
@@ -724,7 +726,7 @@ theorem trim_gap_mod (f : ℕ) (e : ℤ) (hlt : trimGap f e < trimScale e) :
   exact trim_mod_shift _ _ _ _ _ hlt
 
 /-- A gap landing in a refuted window is impossible. -/
-theorem trim_no_window_hit {lo hi q : ℤ} (f : ℕ) (e : ℤ)
+private theorem trim_no_window_hit {lo hi q : ℤ} (f : ℕ) (e : ℤ)
     (h : Regular f e)
     (hcert : modWindowRefuted (2 * (trimNum e : ℤ)) (trimScale e : ℤ)
       (2 ^ 52 + 1) (2 ^ 53 - 1) lo hi q = true)
@@ -1709,7 +1711,7 @@ theorem one_even_of_not_round_up (f : ℕ) (e : ℤ) (hsh : decimalShift e < 4)
 
 /-- The undecided bands as windows on the doubled residue. The truncation error
     is below `2^54·den`, so `2^54` bounds its reach in remainder units. -/
-def oneWindows (e : ℤ) : List (ℤ × ℤ) :=
+private def oneWindows (e : ℤ) : List (ℤ × ℤ) :=
   let half : ℤ := 2 ^ (127 - decimalShift e)
   let band : ℤ := 2 ^ (64 - decimalShift e)
   let w : ℤ := 2 ^ (128 - decimalShift e)
@@ -1722,7 +1724,7 @@ def oneWindows (e : ℤ) : List (ℤ × ℤ) :=
       [(half - 2 ^ 54, half), (w + half - 2 ^ 54, w + half - 1)]
 
 /-- The unit-step windows of one exponent, refuted by a given multiplier. -/
-def oneCertificateValid (e q : ℤ) : Bool :=
+private def oneCertificateValid (e q : ℤ) : Bool :=
   modWindowsRefuted (2 * trimSig e) (2 ^ (129 - decimalShift e)) q
     (oneWindows e)
 
@@ -1747,12 +1749,13 @@ elab "one_cert" : tactic => do
   let q ← Term.exprToSyntax (toExpr (findOneCertificate exponent))
   evalTactic (← `(tactic| exact ⟨$q, by decide +kernel⟩))
 
-theorem one_windows_refuted (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
+private theorem one_windows_refuted (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
     ∃ q, oneCertificateValid e q = true := by
   obtain ⟨hlo, hhi⟩ := he
   interval_cases e <;> one_cert
 
-theorem one_no_window_hit {lo hi q : ℤ} (f : ℕ) (e : ℤ) (h : Regular f e)
+private theorem one_no_window_hit {lo hi q : ℤ} (f : ℕ) (e : ℤ)
+    (h : Regular f e)
     (hcert : modWindowRefuted (2 * (trimSig e : ℤ))
       ((2 : ℤ) ^ (129 - decimalShift e)) (2 ^ 52 + 1) (2 ^ 53 - 1) lo hi q
         = true)
