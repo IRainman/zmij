@@ -15,7 +15,7 @@ def value (f : ℕ) (e : ℤ) : ℚ := f * 2 ^ e
 def ulp (e : ℤ) : ℚ := 2 ^ e
 
 -- Whether the rational value `r` rounds to the regularly spaced value
--- f · 2^e under round-to-nearest, ties-to-even.
+-- f·2^e under round-to-nearest, ties-to-even.
 def Roundtrips (f : ℕ) (e : ℤ) (r : ℚ) : Prop :=
   if f % 2 = 0 then
     |r - value f e| ≤ ulp e / 2
@@ -40,7 +40,7 @@ def CorrectlyRounded (f : ℕ) (e : ℤ) (d : ℕ) (k : ℤ) : Prop :=
       |r - v| = |(d' : ℚ) * 10 ^ k - v| →
         d' = d ∨ d % 2 = 0
 
--- Whether f · 2^e is a regularly spaced positive normal binary64 value,
+-- Whether f·2^e is a regularly spaced positive normal binary64 value,
 -- excluding powers of 2.
 def Regular (f : ℕ) (e : ℤ) : Prop :=
   2 ^ 52 < f ∧ f < 2 ^ 53 ∧
@@ -280,7 +280,7 @@ theorem power10_exact_ratio (k : ℤ) :
 
 /-! ### yy's conversion -/
 
--- Approximation of floor(e · log₁₀ 2) used as yy's decimal exponent.
+-- Approximation of floor(e·log₁₀ 2) used as yy's decimal exponent.
 def decimalExponent (e : ℤ) : ℤ :=
   e * 315_653 / 2 ^ 20
 
@@ -354,7 +354,7 @@ def toDecimalCandidates (f : ℕ) (e : ℤ) : DecimalCandidates :=
     roundU0 := roundU0
   }
 
--- Converts a regularly spaced binary floating-point value f · 2^e
+-- Converts a regularly spaced binary floating-point value f·2^e
 -- to a decimal significand and exponent using yy's full path.
 def toDecimal (f : ℕ) (e : ℤ) : ℕ × ℤ :=
   let c := toDecimalCandidates f e
@@ -715,7 +715,7 @@ returns.
 def modWindowRefuted (g modulus f0 f1 lo hi q : ℤ) : Bool :=
   let p := (2 * (g * q) + modulus) / (2 * modulus)
   let r := g * q - modulus * p
-  -- `f · r` runs between the two endpoint values, in whichever order the sign
+  -- `f·r` runs between the two endpoint values, in whichever order the sign
   -- of `r` dictates.
   let lo' := q * lo - max (f0 * r) (f1 * r)
   let hi' := q * hi - min (f0 * r) (f1 * r)
