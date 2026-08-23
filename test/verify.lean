@@ -65,7 +65,7 @@ theorem power10_exponent_bounds (k : ℤ) :
     · rw [h10, show (l : ℤ) + 1 = ((l + 1 : ℕ) : ℤ) from by omega,
         zpow_natCast]
       exact_mod_cast Nat.lt_pow_succ_log_self (by norm_num) (10 ^ n)
-  · set m := (-k).toNat with hm
+  · set m := (-k).toNat
     set l := Nat.log 2 (10 ^ m)
     have hk' : k = -(m : ℤ) := by omega
     refine ⟨?_, ?_⟩
@@ -2169,7 +2169,7 @@ theorem trimmed_roundtrips (f : ℕ) (e : ℤ) (h : Regular f e)
       || (toDecimalCandidates f e).roundU0) = true) :
     (toDecimal f e).1 % 10 = 0 ∧
       Roundtrips f e (((toDecimal f e).1 : ℚ) * 10 ^ decimalExponent e) := by
-  set c := toDecimalCandidates f e with hc
+  set c := toDecimalCandidates f e
   have hy : (toDecimal f e).1 = c.decTen := by
     show (if c.roundD0 || c.roundU0 then c.decTen else c.decOne) = _
     rw [htrim]

@@ -86,7 +86,7 @@ private theorem eq_of_abs_sub_eq_of_lt_half {x : ℚ} {d d' : ℕ}
 
 /-- Correct rounding in the scaled domain: `10^k` is positive, so it cancels
     from every comparison, leaving comparisons between `d`, `d'` and `x`. -/
-theorem correctly_rounded_iff_scaled (f : ℕ) (e : ℤ) (d : ℕ) (k : ℤ) :
+private theorem correctly_rounded_iff_scaled (f : ℕ) (e : ℤ) (d : ℕ) (k : ℤ) :
     let x := value f e * 10 ^ (-k)
     CorrectlyRounded f e d k
       ↔ (∀ d' : ℕ, |(d : ℚ) - x| ≤ |(d' : ℚ) - x|) ∧
@@ -227,7 +227,7 @@ private theorem reduce_shift (d : ℕ) (k : ℤ) :
     ∃ t : ℕ, (reduceDecimal d k).2 = k + t
       ∧ d = (reduceDecimal d k).1 * 10 ^ t := by
   fun_induction reduceDecimal d k with
-  | case1 d k hgo ih =>
+  | case1 d k _ ih =>
     obtain ⟨t, hk, hd⟩ := ih
     refine ⟨t + 1, by push_cast; omega, ?_⟩
     rw [pow_succ, ← Nat.mul_assoc, ← hd]
@@ -304,7 +304,7 @@ private theorem coarse_roundtrip_unique (f : ℕ) (e k : ℤ)
     (h₁ : c₁ % 10 = 0) (h₂ : c₂ % 10 = 0)
     (hr₁ : Roundtrips f e (c₁ * 10 ^ k)) (hr₂ : Roundtrips f e (c₂ * 10 ^ k)) :
     c₁ = c₂ := by
-  set x := value f e * 10 ^ (-k) with hx
+  let x := value f e * 10 ^ (-k)
   have hb (c : ℕ) (hr : Roundtrips f e (c * 10 ^ k)) :
       |(c : ℚ) - x| ≤ ulp e * 10 ^ (-k) / 2 := by
     have hs := (roundtrips_iff_scaled f e k c).mp hr
