@@ -524,178 +524,39 @@ still requires a finite Diophantine check over the binary64 significand range.
 The direct modular-window formulation below matches yy more closely and is
 substantially simpler.
 
-Soundness and completeness for both trim boundaries reduce to one arithmetic
-question per exponent. Writing `num/den` for the exact power of ten,
-`modulus = N·den`, and `g = 2·num`, any violation forces `g·f mod modulus` into
-a narrow interval of width below `den·U`.
-
-A window is refuted by a single multiplier `q`. Writing `y = g·f - modulus·j`
-for the residue and `r = g·q - modulus·p` for the approximation error of
-`p/q ≈ g/modulus`, one has
-
-    modulus·(p·f - q·j) = q·y - f·r.
-
-Thus, if `q·y - f·r` stays strictly between two consecutive multiples of
-`modulus` throughout the box `f ∈ [F₀,F₁]`, `y ∈ [lo,hi]`, no `f` can hit the
-window. Continued-fraction denominators of `g/modulus` make `r` small enough
-that such a separating multiplier is easy to find for these windows.
-
-The multiplier is a witness, not an assumption: the search procedure is
-untrusted, and the kernel proves correctness by checking the certificate it
-returns.
+Soundness and completeness for both trim boundaries reduce to one modular
+question per exponent, of the kind `ModWindows` answers. Writing `num/den` for
+the exact power of ten, the progression is `g = 2·num` modulo
+`modulus = N·den`, the residue is the gap, and any violation forces the gap into
+a window of width below `den·U`.
 -/
-
-private def modWindowRefuted (g modulus f0 f1 lo hi q : ℤ) : Bool :=
-  let p := (2 * (g * q) + modulus) / (2 * modulus)
-  let r := g * q - modulus * p
-  -- `f·r` runs between the two endpoint values, in whichever order the sign
-  -- of `r` dictates.
-  let lo' := q * lo - max (f0 * r) (f1 * r)
-  let hi' := q * hi - min (f0 * r) (f1 * r)
-  decide (0 < q ∧ modulus * (lo' / modulus) < lo'
-    ∧ hi' < modulus * (lo' / modulus) + modulus)
-
-/-- A value strictly between consecutive multiples of `modulus` is absurd. -/
-private theorem window_gap_absurd {modulus lo' hi' v : ℤ}
-    (hmodulus : 0 < modulus)
-    (hlo : lo' ≤ modulus * v) (hhi : modulus * v ≤ hi')
-    (hgap_lo : modulus * (lo' / modulus) < lo')
-    (hgap_hi : hi' < modulus * (lo' / modulus) + modulus) :
-    False := by
-  have hv_lo : lo' / modulus < v :=
-    lt_of_mul_lt_mul_left (lt_of_lt_of_le hgap_lo hlo) hmodulus.le
-  have hv_hi : v < lo' / modulus + 1 := by
-    refine lt_of_mul_lt_mul_left (a := modulus) ?_ hmodulus.le
-    calc
-      modulus * v ≤ hi' := hhi
-      _ < modulus * (lo' / modulus) + modulus := hgap_hi
-      _ = modulus * (lo' / modulus + 1) := by ring
-  omega
-
-/-- The certificate identity and the resulting bounds on the significand box. -/
-private theorem window_bounds {g modulus f0 f1 lo hi q p r f j y : ℤ}
-    (hq : 0 < q) (hr : r = g * q - modulus * p)
-    (hf0 : f0 ≤ f) (hf1 : f ≤ f1)
-    (hy : y = g * f - modulus * j) (hlo : lo ≤ y) (hhi : y ≤ hi) :
-    q * lo - max (f0 * r) (f1 * r) ≤ modulus * (p * f - q * j) ∧
-      modulus * (p * f - q * j) ≤ q * hi - min (f0 * r) (f1 * r) := by
-  have hkey : modulus * (p * f - q * j) = q * y - f * r := by
-    rw [hy, hr]
-    ring
-  have hqy0 : q * lo ≤ q * y := mul_le_mul_of_nonneg_left hlo hq.le
-  have hqy1 : q * y ≤ q * hi := mul_le_mul_of_nonneg_left hhi hq.le
-  have hfr : min (f0 * r) (f1 * r) ≤ f * r ∧ f * r ≤ max (f0 * r) (f1 * r) := by
-    rcases le_total 0 r with hr0 | hr0
-    · exact ⟨le_trans (min_le_left _ _) (mul_le_mul_of_nonneg_right hf0 hr0),
-        le_trans (mul_le_mul_of_nonneg_right hf1 hr0) (le_max_right _ _)⟩
-    · exact ⟨le_trans (min_le_right _ _) (mul_le_mul_of_nonpos_right hf1 hr0),
-        le_trans (mul_le_mul_of_nonpos_right hf0 hr0) (le_max_left _ _)⟩
-  exact ⟨by linarith [hfr.2], by linarith [hfr.1]⟩
-
-private theorem not_window_hit {g modulus f0 f1 lo hi q f j y : ℤ}
-    (hmodulus : 0 < modulus)
-    (hcert : modWindowRefuted g modulus f0 f1 lo hi q = true)
-    (hf0 : f0 ≤ f) (hf1 : f ≤ f1)
-    (hy : y = g * f - modulus * j)
-    (hlo : lo ≤ y) (hhi : y ≤ hi) :
-    False := by
-  simp only [modWindowRefuted, decide_eq_true_eq] at hcert
-  obtain ⟨hq, hgap0, hgap1⟩ := hcert
-  let p := (2 * (g * q) + modulus) / (2 * modulus)
-  obtain ⟨hb0, hb1⟩ :=
-    window_bounds
-      (p := p)
-      (r := g * q - modulus * p)
-      hq rfl hf0 hf1 hy hlo hhi
-  exact window_gap_absurd hmodulus hb0 hb1 hgap0 hgap1
-
-/-- A list of windows refuted by one multiplier, over the significand range. -/
-private def modWindowsRefuted (g modulus q : ℤ)
-    (windows : List (ℤ × ℤ)) : Bool :=
-  windows.all fun w =>
-    modWindowRefuted g modulus (2 ^ 52 + 1) (2 ^ 53 - 1) w.1 w.2 q
 
 /--
 The four windows a violation would have to hit around `num` and `modulus - num`.
 The outward windows extend to `bnd`, while the inward windows extend by one
 `edge`; soundness uses the outward pair and completeness the inward pair. The
-trim quantities are computed once here so the search below can retry a window
-without recomputing the power of ten.
+trim quantities are computed once here so the search can retry a window without
+recomputing the power of ten.
 -/
-private def trimWindows (e : ℤ) : List (ℤ × ℤ) :=
-  let num : ℤ := trimNum e
-  let bnd : ℤ := trimBnd e
-  let edge : ℤ := trimEdge e
-  let modulus : ℤ := trimScale e
-  [(num + 1, bnd - 1), (num - edge + 1, num - 1),
-    (modulus - bnd, modulus - num - 1),
-    (modulus - num + 1, modulus - num + edge - 1)]
+private def trimWindows (e : ℤ) : ModWindows where
+  g := 2 * trimNum e
+  modulus := trimScale e
+  f0 := 2 ^ 52 + 1
+  f1 := 2 ^ 53 - 1
+  windows :=
+    let num : ℤ := trimNum e
+    let bnd : ℤ := trimBnd e
+    let edge : ℤ := trimEdge e
+    let scale : ℤ := trimScale e
+    [(num + 1, bnd - 1), (num - edge + 1, num - 1),
+      (scale - bnd, scale - num - 1),
+      (scale - num + 1, scale - num + edge - 1)]
 
-/--
-The multiplier is searched for rather than tabulated, by the elaborator rather
-than by the kernel. Convergent denominators of `g/modulus` give the relevant
-best rational approximations. The Euclidean remainder `v` that produces `qc` is
-the error `|g·qc - modulus·p|`; it must fall below `modulus/2^53` before a
-window can be refuted. Testing that first skips the small denominators and
-leaves at most three window checks per exponent. Such a denominator leaves the
-span of `q·y - f·r` at about `2·√(n·(hi-lo)/modulus) ≈ 2⁻⁵` of `modulus`, where
-`n = 2^52` is the number of significands in the box, so it fits between
-consecutive multiples with room to spare.
--/
-private def modCertSearch (g modulus : ℤ) (windows : List (ℤ × ℤ)) :
-    ℕ → ℤ → ℤ → ℤ → ℤ → ℤ
-  | 0, _, _, _, qc => qc
-  | n + 1, u, v, qp, qc =>
-    if decide (2 ^ 53 * v < modulus)
-        && modWindowsRefuted g modulus qc windows then
-      qc
-    else if v = 0 then
-      qc
-    else
-      modCertSearch g modulus windows n v (u % v) qc (u / v * qc + qp)
-
-/-- All windows of one exponent, refuted by a given multiplier: a handful of
-    big-integer operations, with the search for the multiplier left outside. -/
-private def trimCertificateValid (e q : ℤ) : Bool :=
-  modWindowsRefuted (2 * trimNum e) (trimScale e) q (trimWindows e)
-
-/-! ### Certifying the exponent range
-
-Finding a multiplier and checking one are separated along the trust boundary.
-`findTrimCertificate` runs during elaboration, outside the proof term. The
-tactic below quotes the multiplier it returns as an integer literal, and the
-kernel then checks `trimCertificateValid` on that literal. The search procedure
-is untrusted: if it produces a bad multiplier, the kernel check fails. Thus only
-the certificate appears in the proof term, not the computation that found it.
-
-Previously the search itself was reduced by the kernel through `decide`, which
-kept the intermediate search computation alive while checking the declaration
-and made this section expensive.
--/
-
-private def findTrimCertificate (e : ℤ) : ℤ :=
-  let g : ℤ := 2 * trimNum e
-  let modulus : ℤ := trimScale e
-  modCertSearch g modulus (trimWindows e) 80 modulus (g % modulus) 0 1
-
-open Lean Elab Tactic Meta in
-/-- Close a goal `∃ q, trimCertificateValid e q = true` for a literal exponent
-    `e` by searching for a multiplier and quoting it into the proof term. -/
-elab "trim_cert" : tactic => do
-  let target ← whnfR (← (← getMainGoal).getType)
-  let_expr Exists _ pred := target
-    | throwError "trim_cert: expected `∃ q, trimCertificateValid e q = true`"
-  let_expr Eq _ lhs _ := pred.bindingBody!
-    | throwError "trim_cert: expected an equation under the existential"
-  let_expr trimCertificateValid e _ := lhs
-    | throwError "trim_cert: expected `trimCertificateValid e q`, got {lhs}"
-  let some exponent := e.int?
-    | throwError "trim_cert: the exponent {e} is not a literal"
-  let q ← Term.exprToSyntax (toExpr (findTrimCertificate exponent))
-  evalTactic (← `(tactic| exact ⟨$q, by decide +kernel⟩))
+/-- Close `∃ q, (trimWindows e).refutedBy q = true` for a literal exponent. -/
+elab "trim_cert" : tactic => modCertTactic fun e => (trimWindows e).search
 
 private theorem trim_windows_refuted (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
-    ∃ q, trimCertificateValid e q = true := by
+    ∃ q, (trimWindows e).refutedBy q = true := by
   obtain ⟨hlo, hhi⟩ := he
   interval_cases e <;> trim_cert
 
@@ -725,31 +586,24 @@ theorem trim_gap_mod (f : ℕ) (e : ℤ) (hlt : trimGap f e < trimScale e) :
       from by rw [Nat.div_add_mod']]
   exact trim_mod_shift _ _ _ _ _ hlt
 
-/-- A gap landing in a refuted window is impossible. -/
+/-- A gap landing in a refuted window is impossible: the gap is the residue of
+    `2·num·f` modulo the window modulus, as long as it has not wrapped. -/
 private theorem trim_no_window_hit {lo hi q : ℤ} (f : ℕ) (e : ℤ)
     (h : Regular f e)
-    (hcert : modWindowRefuted (2 * (trimNum e : ℤ)) (trimScale e : ℤ)
-      (2 ^ 52 + 1) (2 ^ 53 - 1) lo hi q = true)
+    (hcert : (trimWindows e).refutedBy q = true)
+    (hmem : (lo, hi) ∈ (trimWindows e).windows)
     (hwrap : trimGap f e < trimScale e)
     (hlo : lo ≤ (trimGap f e : ℤ))
     (hhi : (trimGap f e : ℤ) ≤ hi) :
     False := by
-  obtain ⟨hf_lo, hf_hi, _, _⟩ := h
-  have hscale_pos : (0 : ℤ) < (trimScale e : ℤ) :=
-    Int.natCast_pos.mpr (by
-      rw [trimScale, trimModulus]
-      exact Nat.mul_pos (by positivity) (trim_den_pos e))
-  refine not_window_hit (f := (f : ℤ))
-    (j := ((2 * trimNum e * f / trimScale e : ℕ) : ℤ))
-    hscale_pos hcert (by omega) (by omega) ?_ hlo hhi
-  have hsplit := Nat.div_add_mod (2 * trimNum e * f) (trimScale e)
-  rw [trim_gap_mod f e hwrap] at hsplit
-  have hz :
-      ((trimScale e * (2 * trimNum e * f / trimScale e) + trimGap f e : ℕ) : ℤ)
-        = ((2 * trimNum e * f : ℕ) : ℤ) := by
-    exact_mod_cast hsplit
-  push_cast at hz ⊢
-  linarith
+  obtain ⟨hf_lo, hf_hi, -, -⟩ := h
+  refine (trimWindows e).not_hit f ?_ hcert hmem ?_ ?_ ?_ hlo hhi <;>
+    simp only [trimWindows]
+  · rw [trimScale, trimModulus]
+    exact Nat.mul_pos (by positivity) (trim_den_pos e)
+  · omega
+  · omega
+  · exact (trim_gap_mod f e hwrap).symm
 
 /-- `p10 + U` is far below the window modulus, so a gap bounded by
     `den·(p10 + U)` has not wrapped. -/
@@ -951,21 +805,19 @@ structure TrimGapSeparated (f : ℕ) (e : ℤ) : Prop where
 theorem trim_gap_separated (f : ℕ) (e : ℤ) (h : Regular f e) :
     TrimGapSeparated f e := by
   obtain ⟨q, hcert⟩ := trim_windows_refuted e h.2.2
-  simp only [trimCertificateValid, trimWindows, modWindowsRefuted,
-    List.all_cons, List.all_nil, Bool.and_eq_true, and_true] at hcert
-  obtain ⟨hc1, hc2, hc3, hc4⟩ := hcert
   have hbnd := trim_bnd_le_scale e h.2.2
   have hedge := trim_two_edge_lt_num e h.2.2
   have hnarrow := trim_two_num_lt_scale e h.2.2
-  refine ⟨?_, ?_, ?_, ?_⟩
-  · rintro ⟨hlo, hhi⟩
-    exact trim_no_window_hit f e h hc1 (by omega) (by omega) (by omega)
-  · rintro ⟨hlo, hhi⟩
-    exact trim_no_window_hit f e h hc2 (by omega) (by omega) (by omega)
-  · rintro ⟨hlo, hhi⟩
-    exact trim_no_window_hit f e h hc3 (by omega) (by omega) (by omega)
-  · rintro ⟨hlo, hhi⟩
-    exact trim_no_window_hit f e h hc4 (by omega) (by omega) (by omega)
+  -- The four windows, in the order `trimWindows` lists them.
+  refine ⟨?_, ?_, ?_, ?_⟩ <;> rintro ⟨hlo, hhi⟩
+  · exact trim_no_window_hit f e h hcert (.head _)
+      (by omega) (by omega) (by omega)
+  · exact trim_no_window_hit f e h hcert (.tail _ (.head _))
+      (by omega) (by omega) (by omega)
+  · exact trim_no_window_hit f e h hcert (.tail _ (.tail _ (.head _)))
+      (by omega) (by omega) (by omega)
+  · exact trim_no_window_hit f e h hcert (.tail _ (.tail _ (.tail _ (.head _))))
+      (by omega) (by omega) (by omega)
 
 /-- Trim-down soundness: if the packed comparison reads `c ≤ halfUlp`, then the
     exact gap is at most `num`; otherwise it would lie in a forbidden window. -/
@@ -1739,69 +1591,66 @@ theorem one_even_of_not_round_up (f : ℕ) (e : ℤ) (hsh : decimalShift e < 4)
 
 /-- The undecided bands as windows on the doubled residue. The truncation error
     is below `2^54·den`, so `2^54` bounds its reach in remainder units. -/
-private def oneWindows (e : ℤ) : List (ℤ × ℤ) :=
-  let half : ℤ := 2 ^ (127 - decimalShift e)
-  let band : ℤ := 2 ^ (64 - decimalShift e)
-  let w : ℤ := 2 ^ (128 - decimalShift e)
-  -- The packed tie band above the midpoint, for an even `sigHi`.
-  (half + 1, half + band - 1) ::
-    if trimNum e % trimDen e = 0 then []
-    else
-      -- The midpoint, which only an even `sigHi` reaches wrongly, and the
-      -- truncation error's reach below it, which either parity reaches.
-      [(half - 2 ^ 54, half), (w + half - 2 ^ 54, w + half - 1)]
+private def oneWindows (e : ℤ) : ModWindows where
+  g := 2 * trimSig e
+  modulus := 2 ^ (129 - decimalShift e)
+  f0 := 2 ^ 52 + 1
+  f1 := 2 ^ 53 - 1
+  windows :=
+    let half : ℤ := 2 ^ (127 - decimalShift e)
+    let band : ℤ := 2 ^ (64 - decimalShift e)
+    let w : ℤ := 2 ^ (128 - decimalShift e)
+    -- The packed tie band above the midpoint, for an even `sigHi`.
+    (half + 1, half + band - 1) ::
+      if trimNum e % trimDen e = 0 then []
+      else
+        -- The midpoint, which only an even `sigHi` reaches wrongly, and the
+        -- truncation error's reach below it, which either parity reaches.
+        [(half - 2 ^ 54, half), (w + half - 2 ^ 54, w + half - 1)]
 
-/-- The unit-step windows of one exponent, refuted by a given multiplier. -/
-private def oneCertificateValid (e q : ℤ) : Bool :=
-  modWindowsRefuted (2 * trimSig e) (2 ^ (129 - decimalShift e)) q
-    (oneWindows e)
-
-private def findOneCertificate (e : ℤ) : ℤ :=
-  let g : ℤ := 2 * trimSig e
-  let modulus : ℤ := 2 ^ (129 - decimalShift e)
-  modCertSearch g modulus (oneWindows e) 80 modulus (g % modulus) 0 1
-
-open Lean Elab Tactic Meta in
-/-- Close a goal `∃ q, oneCertificateValid e q = true` for a literal exponent
-    `e` by searching for a multiplier and quoting it into the proof term. -/
-elab "one_cert" : tactic => do
-  let target ← whnfR (← (← getMainGoal).getType)
-  let_expr Exists _ pred := target
-    | throwError "one_cert: expected `∃ q, oneCertificateValid e q = true`"
-  let_expr Eq _ lhs _ := pred.bindingBody!
-    | throwError "one_cert: expected an equation under the existential"
-  let_expr oneCertificateValid e _ := lhs
-    | throwError "one_cert: expected `oneCertificateValid e q`, got {lhs}"
-  let some exponent := e.int?
-    | throwError "one_cert: the exponent {e} is not a literal"
-  let q ← Term.exprToSyntax (toExpr (findOneCertificate exponent))
-  evalTactic (← `(tactic| exact ⟨$q, by decide +kernel⟩))
+/-- Close `∃ q, (oneWindows e).refutedBy q = true` for a literal exponent. -/
+elab "one_cert" : tactic => modCertTactic fun e => (oneWindows e).search
 
 private theorem one_windows_refuted (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
-    ∃ q, oneCertificateValid e q = true := by
+    ∃ q, (oneWindows e).refutedBy q = true := by
   obtain ⟨hlo, hhi⟩ := he
   interval_cases e <;> one_cert
 
+/-- A doubled residue landing in a refuted window is impossible: it is the
+    residue of `2·p10·f` modulo one bit more than the unit step. -/
 private theorem one_no_window_hit {lo hi q : ℤ} (f : ℕ) (e : ℤ)
     (h : Regular f e)
-    (hcert : modWindowRefuted (2 * (trimSig e : ℤ))
-      ((2 : ℤ) ^ (129 - decimalShift e)) (2 ^ 52 + 1) (2 ^ 53 - 1) lo hi q
-        = true)
+    (hcert : (oneWindows e).refutedBy q = true)
+    (hmem : (lo, hi) ∈ (oneWindows e).windows)
     (hlo : lo ≤ (oneParityResidue f e : ℤ))
     (hhi : (oneParityResidue f e : ℤ) ≤ hi) :
     False := by
-  obtain ⟨hf_lo, hf_hi, _, _⟩ := h
-  refine not_window_hit (f := (f : ℤ))
-    (j := ((2 * f * trimSig e / 2 ^ (129 - decimalShift e) : ℕ) : ℤ))
-    (by positivity) hcert (by omega) (by omega) ?_ hlo hhi
-  have hz : ((2 ^ (129 - decimalShift e)
-        * (2 * f * trimSig e / 2 ^ (129 - decimalShift e))
-        + oneParityResidue f e : ℕ) : ℤ)
-      = ((2 * f * trimSig e : ℕ) : ℤ) := by
-    rw [oneParityResidue, stepResidue]
-    exact_mod_cast Nat.div_add_mod _ _
-  push_cast at hz ⊢
-  linarith
+  obtain ⟨hf_lo, hf_hi, -, -⟩ := h
+  refine (oneWindows e).not_hit f ?_ hcert hmem ?_ ?_ ?_ hlo hhi <;>
+    simp only [oneWindows]
+  · positivity
+  · omega
+  · omega
+  · rw [oneParityResidue, stepResidue, Nat.mul_right_comm]
+
+/-- The packed tie band is a window at every exponent. -/
+private theorem one_window_band (e : ℤ) :
+    ((2 : ℤ) ^ (127 - decimalShift e) + 1,
+        (2 : ℤ) ^ (127 - decimalShift e) + 2 ^ (64 - decimalShift e) - 1)
+      ∈ (oneWindows e).windows :=
+  .head _
+
+/-- A truncated cached power adds the midpoint and the truncation error's reach
+    below it, one for each parity of `sigHi`. -/
+private theorem one_windows_truncated (e : ℤ)
+    (hτ : trimNum e % trimDen e ≠ 0) :
+    ((2 : ℤ) ^ (127 - decimalShift e) - 2 ^ 54,
+        (2 : ℤ) ^ (127 - decimalShift e)) ∈ (oneWindows e).windows ∧
+      ((2 : ℤ) ^ (128 - decimalShift e) + 2 ^ (127 - decimalShift e) - 2 ^ 54,
+          (2 : ℤ) ^ (128 - decimalShift e) + 2 ^ (127 - decimalShift e) - 1)
+        ∈ (oneWindows e).windows := by
+  simp only [oneWindows, ite_eq_right hτ]
+  exact ⟨.tail _ (.head _), .tail _ (.tail _ (.head _))⟩
 
 /-- Below the midpoint the truncation error cannot reach it: a remainder short
     of half the window is short of it by more than `2^54`. -/
@@ -1812,10 +1661,7 @@ theorem one_residue_below_half (f : ℕ) (e : ℤ) (h : Regular f e)
   by_contra hcon
   have hsh := decimal_shift_lt_four e h.2.2
   obtain ⟨q, hcert⟩ := one_windows_refuted e h.2.2
-  simp only [oneCertificateValid, oneWindows, ite_eq_right hτ,
-    modWindowsRefuted, List.all_cons, List.all_nil, Bool.and_eq_true,
-    and_true] at hcert
-  obtain ⟨-, hbelow, habove⟩ := hcert
+  obtain ⟨hbelow, habove⟩ := one_windows_truncated e hτ
   -- The remainder is in the last `2^54` below the midpoint; the parity of
   -- `sigHi` decides which of the two windows holds it.
   have hlo : (2 : ℤ) ^ (127 - decimalShift e)
@@ -1830,13 +1676,13 @@ theorem one_residue_below_half (f : ℕ) (e : ℤ) (h : Regular f e)
   -- Even `sigHi`: the doubled residue is the remainder itself.
   · have hp : (oneParityResidue f e : ℤ) = (oneResidue f e : ℤ) := by
       rw [hsplit, hpar]; push_cast; ring
-    exact one_no_window_hit f e h hbelow (by rw [hp]; linarith)
+    exact one_no_window_hit f e h hcert hbelow (by rw [hp]; linarith)
       (by rw [hp]; linarith)
   -- Odd `sigHi`: one whole window above it.
   · have hp : (oneParityResidue f e : ℤ)
         = (2 : ℤ) ^ (128 - decimalShift e) + (oneResidue f e : ℤ) := by
       rw [hsplit, hpar]; push_cast; ring
-    exact one_no_window_hit f e h habove (by rw [hp]; linarith)
+    exact one_no_window_hit f e h hcert habove (by rw [hp]; linarith)
       (by rw [hp]; linarith)
 
 /-- In the packed tie band an even `sigHi` occurs only at a genuine midpoint:
@@ -1868,28 +1714,22 @@ theorem one_tie_band_even (f : ℕ) (e : ℤ) (h : Regular f e)
     rw [hp]
     exact_mod_cast
       (show 2 ^ (127 - decimalShift e) + 1 ≤ oneResidue f e from hgt)
-  by_cases hτ : trimNum e % trimDen e = 0
-  -- An exact cached power refutes the band above the midpoint, leaving the
+  -- The band above the midpoint is refuted at every exponent, leaving the
   -- midpoint itself.
-  · refine ⟨?_, hτ⟩
-    by_contra hne
-    simp only [oneCertificateValid, oneWindows, ite_eq_left hτ,
-      modWindowsRefuted, List.all_cons, List.all_nil, Bool.and_eq_true,
-      and_true] at hcert
-    exact one_no_window_hit f e h hcert (hdown (by omega)) hup
-  -- A truncated one refutes the midpoint too, so the pairing cannot arise.
-  · exfalso
-    simp only [oneCertificateValid, oneWindows, ite_eq_right hτ,
-      modWindowsRefuted, List.all_cons, List.all_nil, Bool.and_eq_true,
-      and_true] at hcert
-    obtain ⟨hband, hmid, -⟩ := hcert
+  have hband (hgt : 2 ^ (127 - decimalShift e) < oneResidue f e) : False :=
+    one_no_window_hit f e h hcert (one_window_band e) (hdown hgt) hup
+  have hmid : oneResidue f e = 2 ^ (127 - decimalShift e) := by
     rcases Nat.eq_or_lt_of_le hlo with heq | hgt
-    · have hz : (oneParityResidue f e : ℤ)
-          = (2 : ℤ) ^ (127 - decimalShift e) := by
-        rw [hp, ← heq]; push_cast; ring
-      exact one_no_window_hit f e h hmid
-        (by rw [hz]; exact sub_le_self _ (by positivity)) (by rw [hz])
-    · exact one_no_window_hit f e h hband (hdown hgt) hup
+    · exact heq.symm
+    · exact (hband hgt).elim
+  -- A truncated cached power refutes the midpoint too, so it is exact here.
+  refine ⟨hmid, ?_⟩
+  by_contra hτ
+  obtain ⟨hwin, -⟩ := one_windows_truncated e hτ
+  have hz : (oneParityResidue f e : ℤ) = (2 : ℤ) ^ (127 - decimalShift e) := by
+    rw [hp, hmid]; push_cast; ring
+  exact one_no_window_hit f e h hcert hwin
+    (by rw [hz]; exact sub_le_self _ (by positivity)) (by rw [hz])
 
 /-- The certificates' semantic content at the unit step: the remainder never
     lands where the packed test could round the wrong way. Below this theorem is

@@ -10,6 +10,12 @@ correctly rounded for any positive value, given only that the decimal grid is no
 coarser than one ULP and strictly coarser than one tenth of an ULP. Nothing here
 knows a binary format, or how the grid is chosen.
 
+The last section is unrelated to decimal conversion. An implementation of any
+such method observes exact quantities through lossy comparisons, and where the
+observation is ambiguous the ambiguity is a Diophantine question about a modular
+progression. `ModWindows` answers those questions by certificate, knowing
+nothing about what the residues mean.
+
 Throughout:
 
 * `f`, `e`: binary significand and exponent, representing `f·2^e`;
@@ -431,3 +437,176 @@ theorem exact_candidate_correct (f : ℕ) (e k : ℤ) {d : ℕ} (hf0 : 0 < f)
     exact ⟨⟨hrt, fun c hc =>
         hnone ((coarse_roundtrip_iff_next_grid f e k).mpr ⟨c, hc⟩)⟩,
       correctly_rounded_of_le_half f e d k hle heven⟩
+
+/-! ## Certified modular windows
+
+An implementation reads its exact quantities through lossy comparisons, and
+where a comparison is ambiguous the ambiguity is a narrow window of residues.
+Closing such a window is a Diophantine question: can `g·f mod modulus` land in
+`[lo, hi]` for some significand `f` in `[f0, f1]`? Nothing in this section knows
+what the residue means.
+
+One multiplier `q` answers the question. Write `y = g·f - modulus·j` for the
+residue and `r = g·q - modulus·p` for the error of an approximation
+`p/q ≈ g/modulus`. Then
+
+    modulus·(p·f - q·j) = q·y - f·r,
+
+so if `q·y - f·r` stays strictly between two consecutive multiples of `modulus`
+throughout the box `f ∈ [f0, f1]`, `y ∈ [lo, hi]`, no `f` can put the residue in
+the window. Convergent denominators of `g/modulus` make `r` small enough that
+such a `q` is easy to find.
+
+The multiplier is a witness, not an assumption. `ModWindows.search` runs during
+elaboration, outside the proof term, and `modCertTactic` quotes what it returns
+as a literal for the kernel to check against `ModWindows.refutedBy`. A bad
+multiplier is a failed proof rather than an unsound one, so no theorem here
+depends on how the search works.
+-/
+
+/-- A modular window problem: the progression `g·f mod modulus`, the range
+    `f0 ≤ f ≤ f1` it runs over, and the closed windows of residues to
+    exclude. -/
+structure ModWindows where
+  g : ℕ
+  modulus : ℕ
+  f0 : ℕ
+  f1 : ℕ
+  windows : List (ℤ × ℤ)
+
+private def modWindowRefuted (g modulus f0 f1 lo hi q : ℤ) : Bool :=
+  let p := (2 * (g * q) + modulus) / (2 * modulus)
+  let r := g * q - modulus * p
+  -- `f·r` runs between the two endpoint values, in whichever order the sign
+  -- of `r` dictates.
+  let lo' := q * lo - max (f0 * r) (f1 * r)
+  let hi' := q * hi - min (f0 * r) (f1 * r)
+  decide (0 < q ∧ modulus * (lo' / modulus) < lo'
+    ∧ hi' < modulus * (lo' / modulus) + modulus)
+
+/-- Every window of the problem refuted by the one multiplier `q`: a handful of
+    big-integer operations per window, with the search for `q` left outside. -/
+def ModWindows.refutedBy (W : ModWindows) (q : ℤ) : Bool :=
+  W.windows.all fun w => modWindowRefuted W.g W.modulus W.f0 W.f1 w.1 w.2 q
+
+/-- A value strictly between consecutive multiples of `modulus` is absurd. -/
+private theorem window_gap_absurd {modulus lo' hi' v : ℤ}
+    (hmodulus : 0 < modulus)
+    (hlo : lo' ≤ modulus * v) (hhi : modulus * v ≤ hi')
+    (hgap_lo : modulus * (lo' / modulus) < lo')
+    (hgap_hi : hi' < modulus * (lo' / modulus) + modulus) :
+    False := by
+  have hv_lo : lo' / modulus < v :=
+    lt_of_mul_lt_mul_left (lt_of_lt_of_le hgap_lo hlo) hmodulus.le
+  have hv_hi : v < lo' / modulus + 1 := by
+    refine lt_of_mul_lt_mul_left (a := modulus) ?_ hmodulus.le
+    calc
+      modulus * v ≤ hi' := hhi
+      _ < modulus * (lo' / modulus) + modulus := hgap_hi
+      _ = modulus * (lo' / modulus + 1) := by ring
+  omega
+
+/-- The certificate identity and the resulting bounds on the significand box. -/
+private theorem window_bounds {g modulus f0 f1 lo hi q p r f j y : ℤ}
+    (hq : 0 < q) (hr : r = g * q - modulus * p)
+    (hf0 : f0 ≤ f) (hf1 : f ≤ f1)
+    (hy : y = g * f - modulus * j) (hlo : lo ≤ y) (hhi : y ≤ hi) :
+    q * lo - max (f0 * r) (f1 * r) ≤ modulus * (p * f - q * j) ∧
+      modulus * (p * f - q * j) ≤ q * hi - min (f0 * r) (f1 * r) := by
+  have hkey : modulus * (p * f - q * j) = q * y - f * r := by
+    rw [hy, hr]
+    ring
+  have hqy0 : q * lo ≤ q * y := mul_le_mul_of_nonneg_left hlo hq.le
+  have hqy1 : q * y ≤ q * hi := mul_le_mul_of_nonneg_left hhi hq.le
+  have hfr : min (f0 * r) (f1 * r) ≤ f * r ∧ f * r ≤ max (f0 * r) (f1 * r) := by
+    rcases le_total 0 r with hr0 | hr0
+    · exact ⟨le_trans (min_le_left _ _) (mul_le_mul_of_nonneg_right hf0 hr0),
+        le_trans (mul_le_mul_of_nonneg_right hf1 hr0) (le_max_right _ _)⟩
+    · exact ⟨le_trans (min_le_right _ _) (mul_le_mul_of_nonpos_right hf1 hr0),
+        le_trans (mul_le_mul_of_nonpos_right hf0 hr0) (le_max_left _ _)⟩
+  exact ⟨by linarith [hfr.2], by linarith [hfr.1]⟩
+
+private theorem not_window_hit {g modulus f0 f1 lo hi q f j y : ℤ}
+    (hmodulus : 0 < modulus)
+    (hcert : modWindowRefuted g modulus f0 f1 lo hi q = true)
+    (hf0 : f0 ≤ f) (hf1 : f ≤ f1)
+    (hy : y = g * f - modulus * j)
+    (hlo : lo ≤ y) (hhi : y ≤ hi) :
+    False := by
+  simp only [modWindowRefuted, decide_eq_true_eq] at hcert
+  obtain ⟨hq, hgap0, hgap1⟩ := hcert
+  let p := (2 * (g * q) + modulus) / (2 * modulus)
+  obtain ⟨hb0, hb1⟩ :=
+    window_bounds
+      (p := p)
+      (r := g * q - modulus * p)
+      hq rfl hf0 hf1 hy hlo hhi
+  exact window_gap_absurd hmodulus hb0 hb1 hgap0 hgap1
+
+/-- What a certificate says: no significand in range has its residue in any
+    window the multiplier refutes. Everything an implementation has to supply is
+    the identification of its own quantity with the residue. -/
+theorem ModWindows.not_hit (W : ModWindows) (f : ℕ) (hmodulus : 0 < W.modulus)
+    {q : ℤ} (hcert : W.refutedBy q = true) {lo hi : ℤ}
+    (hmem : (lo, hi) ∈ W.windows) {y : ℕ} (hf0 : W.f0 ≤ f) (hf1 : f ≤ W.f1)
+    (hy : y = W.g * f % W.modulus)
+    (hlo : lo ≤ (y : ℤ)) (hhi : (y : ℤ) ≤ hi) :
+    False := by
+  have hwindow : modWindowRefuted W.g W.modulus W.f0 W.f1 lo hi q = true :=
+    List.all_eq_true.mp hcert _ hmem
+  refine not_window_hit (f := (f : ℤ))
+    (j := ((W.g * f / W.modulus : ℕ) : ℤ))
+    (by exact_mod_cast hmodulus) hwindow (by exact_mod_cast hf0)
+    (by exact_mod_cast hf1) ?_ hlo hhi
+  have hz : ((W.modulus * (W.g * f / W.modulus) + W.g * f % W.modulus : ℕ) : ℤ)
+      = ((W.g * f : ℕ) : ℤ) := by
+    exact_mod_cast Nat.div_add_mod (W.g * f) W.modulus
+  rw [hy]
+  push_cast at hz ⊢
+  linarith
+
+/--
+The multiplier is searched for rather than tabulated, by the elaborator rather
+than by the kernel. Convergent denominators of `g/modulus` give the relevant
+best rational approximations. The Euclidean remainder `v` that produces `qc` is
+the error `|g·qc - modulus·p|`; it must fall below `modulus/(f1 + 1)` before a
+window can be refuted. Testing that first skips the small denominators and
+leaves few window checks per problem. Such a denominator leaves the span of
+`q·y - f·r` at about `2·√(n·(hi-lo)/modulus)` of `modulus`, where `n` is the
+number of significands in the box, so it fits between consecutive multiples with
+room to spare.
+-/
+private def modCertSearch (W : ModWindows) : ℕ → ℤ → ℤ → ℤ → ℤ → ℤ
+  | 0, _, _, _, qc => qc
+  | n + 1, u, v, qp, qc =>
+    if decide (((W.f1 : ℤ) + 1) * v < W.modulus) && W.refutedBy qc then
+      qc
+    else if v = 0 then
+      qc
+    else
+      modCertSearch W n v (u % v) qc (u / v * qc + qp)
+
+/-- A multiplier refuting every window, or the best attempt at one. Untrusted:
+    what it returns is checked by `refutedBy`. -/
+def ModWindows.search (W : ModWindows) : ℤ :=
+  modCertSearch W 80 W.modulus ((W.g : ℤ) % (W.modulus : ℤ)) 0 1
+
+open Lean Elab Tactic Meta in
+/-- Close a goal `∃ q, W.refutedBy q = true`, where `W` is a definition applied
+    to one integer literal, by running the given search on that literal during
+    elaboration and quoting the multiplier it returns. Only the literal reaches
+    the proof term, where the kernel checks the certificate. -/
+def modCertTactic (search : ℤ → ℤ) : TacticM Unit := do
+  let target ← whnfR (← (← getMainGoal).getType)
+  let_expr Exists _ pred := target
+    | throwError "mod_cert: expected `∃ q, W.refutedBy q = true`"
+  let_expr Eq _ lhs _ := pred.bindingBody!
+    | throwError "mod_cert: expected an equation under the existential"
+  let_expr ModWindows.refutedBy problem _ := lhs
+    | throwError "mod_cert: expected `W.refutedBy q`, got {lhs}"
+  let .app _ argument := problem
+    | throwError "mod_cert: {problem} is not applied to an index"
+  let some index := argument.int?
+    | throwError "mod_cert: the index {argument} is not a literal"
+  let q ← Term.exprToSyntax (toExpr (search index))
+  evalTactic (← `(tactic| exact ⟨$q, by decide +kernel⟩))
