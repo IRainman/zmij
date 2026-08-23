@@ -8,11 +8,11 @@ import exact
 /-! # yy realizes the exact method
 
 `exact.lean` proves the Schubfach-like method shortest and correctly rounded on
-any decimal grid between one ULP and a tenth of one. Here the truncated cached
-power of ten, the packed comparisons and the finite certificates show that yy's
-output is a candidate of that method, `yy_exact_candidate`. No claim is made
-that yy's packed decisions agree with the exact ones; only that its output does.
-`yy_correct` composes the two.
+any decimal grid no coarser than one ULP and strictly coarser than a tenth of
+one. Here the truncated cached power of ten, the packed comparisons and the
+finite certificates show that yy's output is a candidate of that method,
+`yy_exact_candidate`. No claim is made that yy's packed decisions agree with the
+exact ones; only that its output does. `yy_correct` composes the two.
 -/
 
 /-- Whether f·2^e is a regularly spaced positive normal binary64 value,

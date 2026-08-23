@@ -5,10 +5,10 @@ import Mathlib.Tactic
 
 The specification, and the exact mathematics of the Schubfach-like method:
 prefer a multiple of ten that round-trips, and settle for a nearest grid point
-otherwise. `exact_candidate_correct` proves that method shortest and correctly
-rounded for any positive value, given only that the decimal grid is no coarser
-than one ULP and no finer than a tenth of one. Nothing here knows a binary
-format, or how the grid is chosen.
+otherwise. `exact_candidate_correct` proves that method is shortest and
+correctly rounded for any positive value, given only that the decimal grid is no
+coarser than one ULP and strictly coarser than one tenth of an ULP. Nothing here
+knows a binary format, or how the grid is chosen.
 
 Throughout:
 
