@@ -400,8 +400,7 @@ theorem trim_modulus_eq (e : ℤ) (hsh : decimalShift e < 4) :
 
 /-! ## The separation facts
 
-After the reduction above, the two multiple-of-ten candidates are within half a
-ULP exactly when
+The two multiple-of-ten candidates are within half a ULP exactly when
 
     trim down:  W + (2f-1)·p10Exact ≤ 2·f·p10,
     trim up:    N + 2·f·p10 ≤ W + (2f+1)·p10Exact,
