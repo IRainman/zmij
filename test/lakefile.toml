@@ -1,5 +1,11 @@
 name = "zmij-verify"
+defaultTargets = ["zmij"]
 
 [[require]]
 name = "mathlib"
 scope = "leanprover-community"
+
+[[lean_lib]]
+name = "zmij"
+srcDir = "."
+roots = ["exact", "verify"]
