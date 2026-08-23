@@ -212,12 +212,6 @@ theorem decimal_shift_align (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
   unfold decimalShift power10Exponent
   omega
 
-/-- The decimal exponents yy asks the cached table for. -/
-theorem decimal_exponent_range (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
-    -292 ≤ -decimalExponent e ∧ -decimalExponent e ≤ 324 := by
-  unfold decimalExponent
-  omega
-
 /-! ## The packed trim window
 
 yy's `roundD0` and `roundU0` compare the packed value `c` (the last decimal
@@ -251,11 +245,11 @@ theorem trim_den_pos (e : ℤ) : 0 < trimDen e := power10_den_pos _
 theorem trim_sig_nat (e : ℤ) : trimSig e = trimNum e / trimDen e :=
   power10_significand_nat _
 
-/-- yy's truncated power of ten is normalized, which is where the range of
-    `power10_ratio_normalized` meets the binary64 exponent range. -/
+/-- yy's truncated power of ten is normalized: the decimal exponents it asks the
+    cached table for land inside the range `power10_ratio_normalized` checks. -/
 theorem trim_sig_bounds (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
     2 ^ 127 ≤ trimSig e ∧ trimSig e < 2 ^ 128 :=
-  power10_significand_bounds _ (decimal_exponent_range e he)
+  power10_significand_bounds _ (by unfold decimalExponent; omega)
 
 /-- Modulus of the packed comparison: the window wraps every 10·2^(128-h). -/
 def trimModulus (e : ℤ) : ℕ := 10 * 2 ^ (128 - decimalShift e)
@@ -305,12 +299,6 @@ theorem pow_shift_split (e : ℤ) (n : ℕ) (hn : decimalShift e ≤ n) :
   congr 1
   omega
 
-/-- The same split with the extra factor of ten of the window modulus. -/
-theorem pow_split (e : ℤ) (hsh : decimalShift e < 4) :
-    (2 : ℕ) ^ 128 * 10 = 2 ^ decimalShift e * trimModulus e := by
-  rw [trimModulus, pow_shift_split e 128 (by omega)]
-  ring
-
 /-- Splitting a value at bit 128 and then discarding the low 68 bits is the same
     as discarding them directly; this is what packs the last digit into `c`. -/
 theorem div_window (r : ℕ) :
@@ -339,8 +327,11 @@ theorem trim_c_eq (f : ℕ) (e : ℤ) (hsh : decimalShift e < 4) :
     rw [← pow_add]
     congr 1
     omega
+  have hmodulus : (2 : ℕ) ^ 128 * 10 = 2 ^ h * trimModulus e := by
+    rw [trimModulus, ← hh, pow_shift_split e 128 (by omega)]
+    ring
   have hresidue : r = 2 ^ h * trimResidue f e := by
-    rw [hr, pow_split e hsh, Nat.mul_mod_mul_left]
+    rw [hr, hmodulus, Nat.mul_mod_mul_left]
     rfl
   have hscaled : trimResidue f e / trimUnit e = r / 2 ^ 68 := by
     rw [hresidue, h68, trimUnit, ← hh, Nat.mul_div_mul_left _ _ hpos]
@@ -727,23 +718,6 @@ theorem trim_trunc_lt (f : ℕ) (e : ℤ) (h : Regular f e) :
     2 * f * (trimNum e % trimDen e) < 2 ^ 54 * trimDen e :=
   lt_of_le_of_lt (Nat.mul_le_mul_right _ (by have := h.2.1; omega))
     (mul_lt_mul_of_pos_left (Nat.mod_lt _ (trim_den_pos e)) (by positivity))
-
-/-- Whatever the step, the gap can overshoot it, but by less than `num`: the
-    residue stays below the step, and `num ≥ 2^127·den` absorbs the truncation
-    error. -/
-theorem step_gap_lt_scale_add (m f : ℕ) (e : ℤ) (h : Regular f e)
-    (hm : 0 < m) : stepGap m f e < m * trimDen e + trimNum e := by
-  have hres : trimDen e * stepResidue m f e < m * trimDen e := by
-    rw [stepResidue, Nat.mul_comm m]
-    exact mul_lt_mul_of_pos_left (Nat.mod_lt _ hm) (trim_den_pos e)
-  have hlow := trim_trunc_lt f e h
-  have htrunc : 2 ^ 54 * trimDen e ≤ trimNum e :=
-    le_trans
-      (Nat.mul_le_mul_right _
-        (Nat.pow_le_pow_right (by norm_num) (by norm_num)))
-      (trim_num_lower e h.2.2)
-  rw [stepGap]
-  omega
 
 /-- The bridge every trim bound crosses: the gap is `den` times the residue plus
     the truncation error `2·f·τ`, and `trim_low_bits` keeps that error inside
@@ -1165,10 +1139,23 @@ theorem trim_gap_num_le_scale (f : ℕ) (e : ℤ) (h : Regular f e)
   have hedge := trim_residue_low_lt_edge f e
   exact (trim_gap_separated f e h).aboveScale ⟨hcon, by omega⟩
 
-/-- The free side of the trim-up bound, at the multiple-of-ten step. -/
+/-- The free side of the trim-up bound: the gap can overshoot the window step,
+    but by less than `num`, since the residue stays below the step and
+    `num ≥ 2^127·den` absorbs the truncation error. -/
 theorem trim_gap_lt_scale_add (f : ℕ) (e : ℤ) (h : Regular f e) :
-    trimGap f e < trimScale e + trimNum e :=
-  step_gap_lt_scale_add _ f e h (by rw [trimModulus]; positivity)
+    trimGap f e < trimScale e + trimNum e := by
+  have hres : trimDen e * trimResidue f e < trimScale e := by
+    rw [trimResidue, stepResidue, trimScale, Nat.mul_comm (trimModulus e)]
+    exact mul_lt_mul_of_pos_left
+      (Nat.mod_lt _ (by rw [trimModulus]; positivity)) (trim_den_pos e)
+  have hlow := trim_trunc_lt f e h
+  have htrunc : 2 ^ 54 * trimDen e ≤ trimNum e :=
+    le_trans
+      (Nat.mul_le_mul_right _
+        (Nat.pow_le_pow_right (by norm_num) (by norm_num)))
+      (trim_num_lower e h.2.2)
+  rw [trimGap, stepGap, ← trimResidue]
+  omega
 
 /-! ## From integer bounds to half-ULP bounds
 
@@ -1206,44 +1193,37 @@ theorem trim_mul_eq_two_half (e : ℤ) (hsh : decimalShift e < 4) :
     rw [← pow_succ']; congr 1; omega]
   ring
 
-/-- Exponent alignment: the inverse scale `s = 2^(1-e)·10^k` turns the
-    power-of-ten factor `10^(-k)·2^(128-pe)` into `2^(128-h)`. -/
-theorem exact_scale (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
-    let k := decimalExponent e
-    let pe := power10Exponent (-k)
-    (10 : ℚ) ^ (-k) * 2 ^ (128 - pe) * (2 ^ (1 - e) * 10 ^ k)
-      = 2 ^ (128 - decimalShift e) := by
-  intro k pe
-  have h10 : (10 : ℚ) ^ (-k) * 10 ^ k = 1 := by
-    rw [← zpow_add₀ (by norm_num : (10 : ℚ) ≠ 0)]; simp
-  have halign : (decimalShift e : ℤ) + 1 - pe = e := decimal_shift_align e he
-  have hsh : decimalShift e < 4 := decimal_shift_lt_four e he
-  calc (10 : ℚ) ^ (-k) * 2 ^ (128 - pe) * (2 ^ (1 - e) * 10 ^ k)
-      = (10 ^ (-k) * 10 ^ k) * (2 ^ (128 - pe) * 2 ^ (1 - e)) := by
-        ring
-    _ = (2 : ℚ) ^ ((128 - pe) + (1 - e)) := by
-        rw [h10, one_mul, ← zpow_add₀ (by norm_num : (2 : ℚ) ≠ 0)]
-    _ = 2 ^ (128 - decimalShift e) := by
-        rw [show (128 - pe) + (1 - e) = ((128 - decimalShift e : ℕ) : ℤ)
-              from by omega, zpow_natCast]
-
 /-- `trimMul` clears the denominator in `power10_exact_ratio`, leaving `trimNum`
     times the binary-decimal scaling factor. -/
 theorem trim_mul_eq (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
     (trimMul e : ℚ)
       = (trimNum e : ℚ) * (2 ^ (1 - e) * 10 ^ decimalExponent e) := by
+  set k := decimalExponent e
+  set pe := power10Exponent (-k)
   have hd : (0 : ℚ) < (trimDen e : ℚ) := by
     exact_mod_cast trim_den_pos e
-  have hnum :
-      (10 : ℚ) ^ (-decimalExponent e)
-          * 2 ^ (128 - power10Exponent (-decimalExponent e))
-          * trimDen e
-        = trimNum e := by
+  have hnum : (10 : ℚ) ^ (-k) * 2 ^ (128 - pe) * trimDen e = trimNum e := by
     rw [power10_exact_ratio, ← trimNum, ← trimDen,
       div_mul_cancel₀ _ (ne_of_gt hd)]
+  -- The inverse scale `s = 2^(1-e)·10^k` turns the power-of-ten factor into
+  -- `2^(128-h)`, which is where the shift alignment is spent.
+  have hscale : (10 : ℚ) ^ (-k) * 2 ^ (128 - pe) * (2 ^ (1 - e) * 10 ^ k)
+      = 2 ^ (128 - decimalShift e) := by
+    have h10 : (10 : ℚ) ^ (-k) * 10 ^ k = 1 := by
+      rw [← zpow_add₀ (by norm_num : (10 : ℚ) ≠ 0)]; simp
+    have halign : (decimalShift e : ℤ) + 1 - pe = e := decimal_shift_align e he
+    have hsh : decimalShift e < 4 := decimal_shift_lt_four e he
+    calc (10 : ℚ) ^ (-k) * 2 ^ (128 - pe) * (2 ^ (1 - e) * 10 ^ k)
+        = (10 ^ (-k) * 10 ^ k) * (2 ^ (128 - pe) * 2 ^ (1 - e)) := by
+          ring
+      _ = (2 : ℚ) ^ ((128 - pe) + (1 - e)) := by
+          rw [h10, one_mul, ← zpow_add₀ (by norm_num : (2 : ℚ) ≠ 0)]
+      _ = 2 ^ (128 - decimalShift e) := by
+          rw [show (128 - pe) + (1 - e) = ((128 - decimalShift e : ℕ) : ℤ)
+                from by omega, zpow_natCast]
   rw [trimMul]
   push_cast
-  rw [← exact_scale e he, ← hnum]
+  rw [← hscale, ← hnum]
   ring
 
 /-- The scale sends half a scaled ULP to `trimNum`. -/
@@ -1262,13 +1242,6 @@ theorem trim_mul_half_ulp (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
           show -k + k = 0 from by ring, zpow_zero]
         ring
 
-/-- The scale sends the scaled value to `2·f·num`. -/
-theorem trim_mul_value (f : ℕ) (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
-    value f e * 10 ^ (-decimalExponent e) * (trimMul e : ℚ)
-      = 2 * f * (trimNum e : ℚ) := by
-  rw [← trim_mul_half_ulp e he, value, ulp]
-  ring
-
 /-- Both candidates reach ℚ the same way: cleared of the scale, a candidate
     accounting for the whole product except its gap sits exactly that gap below
     the scaled value. -/
@@ -1279,7 +1252,12 @@ theorem scaled_error_of_nat {cand gap : ℕ} (f : ℕ) (e : ℤ)
       = -(gap : ℚ) := by
   have hcast : (cand : ℚ) * trimMul e + gap = 2 * f * trimNum e := by
     exact_mod_cast hnat
-  linear_combination hcast - trim_mul_value f e he
+  -- The same scale sends the scaled value to `2·f·num`.
+  have hvalue : value f e * 10 ^ (-decimalExponent e) * (trimMul e : ℚ)
+      = 2 * f * (trimNum e : ℚ) := by
+    rw [← trim_mul_half_ulp e he, value, ulp]
+    ring
+  linear_combination hcast - hvalue
 
 /-- The trim-down candidate sits exactly `trimGap` below the scaled value: it is
     the quotient at the window step, which is ten unit steps. -/
@@ -1633,13 +1611,6 @@ private theorem one_no_window_hit {lo hi q : ℤ} (f : ℕ) (e : ℤ)
   · omega
   · rw [oneParityResidue, stepResidue, Nat.mul_right_comm]
 
-/-- The packed tie band is a window at every exponent. -/
-private theorem one_window_band (e : ℤ) :
-    ((2 : ℤ) ^ (127 - decimalShift e) + 1,
-        (2 : ℤ) ^ (127 - decimalShift e) + 2 ^ (64 - decimalShift e) - 1)
-      ∈ (oneWindows e).windows :=
-  .head _
-
 /-- A truncated cached power adds the midpoint and the truncation error's reach
     below it, one for each parity of `sigHi`. -/
 private theorem one_windows_truncated (e : ℤ)
@@ -1717,7 +1688,7 @@ theorem one_tie_band_even (f : ℕ) (e : ℤ) (h : Regular f e)
   -- The band above the midpoint is refuted at every exponent, leaving the
   -- midpoint itself.
   have hband (hgt : 2 ^ (127 - decimalShift e) < oneResidue f e) : False :=
-    one_no_window_hit f e h hcert (one_window_band e) (hdown hgt) hup
+    one_no_window_hit f e h hcert (.head _) (hdown hgt) hup
   have hmid : oneResidue f e = 2 ^ (127 - decimalShift e) := by
     rcases Nat.eq_or_lt_of_le hlo with heq | hgt
     · exact heq.symm
