@@ -1,9 +1,8 @@
 import exact
 
--- The finite checks below enumerate up to 2046 exponents in the kernel.
--- Range-wide `decide` checks raise the recursion guard where they appear,
--- and those evaluating 10^324 also raise the elaborator's exponentiation
--- guard.
+-- The finite checks below enumerate up to 2046 exponents. They say `+kernel`
+-- so that only the kernel evaluates them, which is also what keeps them clear
+-- of the elaborator's recursion and exponentiation guards.
 
 /-! # yy realizes the exact method
 
@@ -78,8 +77,6 @@ theorem power10_significand_nat (k : ℤ) :
   rw [power10Significand, power10_exact_ratio]
   exact Nat.floor_div_eq_div _ _
 
-set_option exponentiation.threshold 5000 in
-set_option maxRecDepth 100000 in
 /-- The fixed-point exponent does normalize `10^k`, over the range yy's decimal
     exponents reach. Beyond it the approximation eventually drifts from
     `⌊k·log₂10⌋ + 1`, so this is where the range is pinned down. In ratio form
@@ -88,7 +85,7 @@ theorem power10_ratio_normalized :
     ∀ k ∈ Finset.Icc (-292 : ℤ) 324,
       2 ^ 127 * power10Den k ≤ power10Num k ∧
         power10Num k < 2 ^ 128 * power10Den k := by
-  decide
+  decide +kernel
 
 /-- Hence the significand is a normalized 128-bit number: its top bit is set,
     which is what makes `power10Exponent` an exponent for a 128-bit significand,
@@ -193,7 +190,6 @@ theorem decimal_shift_lt_four (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
   unfold decimalShift decimalExponent
   omega
 
-set_option maxRecDepth 100000 in
 /-- The shift is nonnegative, so `Int.toNat` does not clamp it. The two
     fixed-point constants multiply to just over one, by a part in 2^17.4, and
     that is exactly enough for `omega`'s rational relaxation to still admit a
@@ -203,7 +199,7 @@ set_option maxRecDepth 100000 in
 theorem decimal_shift_nonneg :
     ∀ e ∈ Finset.Icc (-1074 : ℤ) 971,
       0 ≤ e + (-decimalExponent e * 217_707) / 2 ^ 16 := by
-  decide
+  decide +kernel
 
 /-- The shift undoes the cached power's exponent: `h + 1 - pe = e`. Both sides
     scale the same fixed-point quotient, so once the shift is known not to have
@@ -478,10 +474,9 @@ def trimEdge (e : ℤ) : ℕ := trimUnit e * trimDen e
 def trimNarrowHolds (e : ℤ) : Bool :=
   decide (2 * (trimNum e / trimDen e) + 2 ≤ trimModulus e)
 
-set_option exponentiation.threshold 5000 in
-set_option maxRecDepth 100000 in
 theorem trim_narrow_all :
-    ∀ e ∈ Finset.Icc (-1074 : ℤ) 971, trimNarrowHolds e = true := by decide
+    ∀ e ∈ Finset.Icc (-1074 : ℤ) 971, trimNarrowHolds e = true := by
+  decide +kernel
 
 /-- Integer form of `2^54·(p10Exact - p10) ≤ p10 % U` and of its complement
     `2^54·(p10Exact - p10) ≤ U - p10 % U`, with the denominator cleared. The
@@ -494,10 +489,9 @@ def trimLowBitsHolds (e : ℤ) : Bool :=
   decide (2 ^ 54 * (num % den) ≤ low * den
     ∧ 2 ^ 54 * (num % den) + low * den ≤ trimUnit e * den)
 
-set_option exponentiation.threshold 5000 in
-set_option maxRecDepth 100000 in
 theorem trim_low_bits_all :
-    ∀ e ∈ Finset.Icc (-1074 : ℤ) 971, trimLowBitsHolds e = true := by decide
+    ∀ e ∈ Finset.Icc (-1074 : ℤ) 971, trimLowBitsHolds e = true := by
+  decide +kernel
 
 /-- The discarded low bits `p10 % U` dominate the cached-power truncation error
     `p10Exact - p10 = τ/den`: the margin used when a packed comparison is strict
