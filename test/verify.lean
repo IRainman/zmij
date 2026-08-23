@@ -1404,21 +1404,22 @@ theorem trim_mul_eq (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
 /-- The scale sends half a scaled ULP to `trimNum`. -/
 theorem trim_mul_half_ulp (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
     let k := decimalExponent e
-    ulp e * (10 ^ k)⁻¹ / 2 * (trimMul e : ℚ) = (trimNum e : ℚ) := by
+    ulp e * 10 ^ (-k) / 2 * (trimMul e : ℚ) = (trimNum e : ℚ) := by
   intro k
-  calc ulp e * (10 ^ k)⁻¹ / 2 * (trimMul e : ℚ)
+  calc ulp e * 10 ^ (-k) / 2 * (trimMul e : ℚ)
       = (trimNum e : ℚ) * (2 ^ e * 2 ^ (1 - e) / 2)
-          * ((10 ^ k)⁻¹ * 10 ^ k) := by
+          * (10 ^ (-k) * 10 ^ k) := by
         rw [ulp, trim_mul_eq e he]; ring
     _ = (trimNum e : ℚ) := by
         rw [← zpow_add₀ (two_ne_zero' ℚ) e (1 - e),
           show e + (1 - e) = 1 from by ring, zpow_one,
-          inv_mul_cancel₀ (by positivity)]
+          ← zpow_add₀ (by norm_num : (10 : ℚ) ≠ 0) (-k) k,
+          show -k + k = 0 from by ring, zpow_zero]
         ring
 
 /-- The scale sends the scaled value to `2·f·num`. -/
 theorem trim_mul_value (f : ℕ) (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
-    value f e * (10 ^ decimalExponent e)⁻¹ * (trimMul e : ℚ)
+    value f e * 10 ^ (-decimalExponent e) * (trimMul e : ℚ)
       = 2 * f * (trimNum e : ℚ) := by
   rw [← trim_mul_half_ulp e he, value, ulp]
   ring
@@ -1429,7 +1430,7 @@ theorem trim_mul_value (f : ℕ) (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
 theorem scaled_error_of_nat {cand gap : ℕ} (f : ℕ) (e : ℤ)
     (he : -1074 ≤ e ∧ e ≤ 971)
     (hnat : cand * trimMul e + gap = 2 * f * trimNum e) :
-    ((cand : ℚ) - value f e * (10 ^ decimalExponent e)⁻¹) * (trimMul e : ℚ)
+    ((cand : ℚ) - value f e * 10 ^ (-decimalExponent e)) * (trimMul e : ℚ)
       = -(gap : ℚ) := by
   have hcast : (cand : ℚ) * trimMul e + gap = 2 * f * trimNum e := by
     exact_mod_cast hnat
@@ -1439,7 +1440,7 @@ theorem scaled_error_of_nat {cand gap : ℕ} (f : ℕ) (e : ℤ)
     the quotient at the window step, which is ten unit steps. -/
 theorem dec_ten_down_scaled_error (f : ℕ) (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
     (((sigHi f e - sigHi f e % 10 : ℕ) : ℚ)
-        - value f e * (10 ^ decimalExponent e)⁻¹) * (trimMul e : ℚ)
+        - value f e * 10 ^ (-decimalExponent e)) * (trimMul e : ℚ)
       = -(trimGap f e : ℚ) :=
   scaled_error_of_nat f e he <| by
     calc (sigHi f e - sigHi f e % 10) * trimMul e + trimGap f e
@@ -1453,7 +1454,7 @@ theorem dec_ten_down_scaled_error (f : ℕ) (e : ℤ) (he : -1074 ≤ e ∧ e �
     since the scale sends a decimal step of `10` to the window modulus. -/
 theorem dec_ten_up_scaled_error (f : ℕ) (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
     (((sigHi f e - sigHi f e % 10 : ℕ) : ℚ) + 10
-        - value f e * (10 ^ decimalExponent e)⁻¹) * (trimMul e : ℚ)
+        - value f e * 10 ^ (-decimalExponent e)) * (trimMul e : ℚ)
       = (trimScale e : ℚ) - (trimGap f e : ℚ) := by
   have hten : (10 : ℚ) * (trimMul e : ℚ) = (trimScale e : ℚ) := by
     exact_mod_cast (trim_scale_eq_ten_mul e).symm
@@ -1463,11 +1464,11 @@ theorem dec_ten_up_scaled_error (f : ℕ) (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 
     within half a ULP exactly when `|dist|` is at most `trimNum`. -/
 theorem half_ulp_iff_scaled_error {cand dist : ℚ} (f : ℕ) (e : ℤ)
     (he : -1074 ≤ e ∧ e ≤ 971)
-    (hscale : (cand - value f e * (10 ^ decimalExponent e)⁻¹) * (trimMul e : ℚ)
+    (hscale : (cand - value f e * 10 ^ (-decimalExponent e)) * (trimMul e : ℚ)
       = dist) :
     let k := decimalExponent e
-    let x := value f e * (10 ^ k)⁻¹
-    let u := ulp e * (10 ^ k)⁻¹
+    let x := value f e * 10 ^ (-k)
+    let u := ulp e * 10 ^ (-k)
     (|cand - x| ≤ u / 2 ↔ |dist| ≤ (trimNum e : ℚ)) ∧
       (|cand - x| < u / 2 ↔ |dist| < (trimNum e : ℚ)) := by
   intro k x u
@@ -1485,9 +1486,9 @@ theorem half_ulp_iff_scaled_error {cand dist : ℚ} (f : ℕ) (e : ℤ)
     step exactly when `2·|dist|` is at most `trimMul`, and sits at a midpoint
     exactly when they are equal. -/
 theorem half_step_iff_scaled_error {cand dist : ℚ} (f : ℕ) (e : ℤ)
-    (hscale : (cand - value f e * (10 ^ decimalExponent e)⁻¹) * (trimMul e : ℚ)
+    (hscale : (cand - value f e * 10 ^ (-decimalExponent e)) * (trimMul e : ℚ)
       = dist) :
-    let x := value f e * (10 ^ decimalExponent e)⁻¹
+    let x := value f e * 10 ^ (-decimalExponent e)
     (|cand - x| ≤ 1 / 2 ↔ 2 * |dist| ≤ (trimMul e : ℚ)) ∧
       (|cand - x| = 1 / 2 ↔ 2 * |dist| = (trimMul e : ℚ)) := by
   intro x
@@ -1584,7 +1585,7 @@ theorem one_round_half (f : ℕ) (e : ℤ) (hsh : decimalShift e < 4) :
 
 /-- `sigHi` sits exactly `oneGap` below the scaled value. -/
 theorem sig_hi_scaled_error (f : ℕ) (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
-    ((sigHi f e : ℚ) - value f e * (10 ^ decimalExponent e)⁻¹)
+    ((sigHi f e : ℚ) - value f e * 10 ^ (-decimalExponent e))
         * (trimMul e : ℚ)
       = -(oneGap f e : ℚ) :=
   scaled_error_of_nat f e he
@@ -1984,14 +1985,14 @@ theorem dec_one_nearest (f : ℕ) (e : ℤ) (h : Regular f e) :
         exact_mod_cast one_gap_lt_mul_add f e h
       linarith
     refine ⟨?_, ?_⟩
-    · rw [zpow_neg, hdec]
+    · rw [hdec]
       refine hle.mpr ?_
       have habs :
           |(trimMul e : ℚ) - (oneGap f e : ℚ)| ≤ (trimMul e : ℚ) / 2 :=
         abs_le.mpr ⟨by linarith, by linarith⟩
       linarith
     · intro hmid
-      rw [zpow_neg, hdec] at hmid
+      rw [hdec] at hmid
       have hq := heq.mp hmid
       -- Equal distance allows `oneGap = trimMul / 2` or `3 * trimMul / 2`.
       -- The room below a step and a half excludes the latter.
@@ -2022,12 +2023,12 @@ theorem dec_one_nearest (f : ℕ) (e : ℤ) (h : Regular f e) :
     have habs : |(-(oneGap f e : ℚ))| = (oneGap f e : ℚ) := by
       rw [abs_neg, Nat.abs_cast]
     refine ⟨?_, ?_⟩
-    · rw [zpow_neg, hdec]
+    · rw [hdec]
       refine hle.mpr ?_
       rw [habs]
       exact_mod_cast hsep.belowHalf hu1
     · intro hmid
-      rw [zpow_neg, hdec] at hmid
+      rw [hdec] at hmid
       have hq := heq.mp hmid
       rw [habs] at hq
       have hnat : 2 * oneGap f e = trimMul e := by exact_mod_cast hq
@@ -2040,8 +2041,8 @@ theorem dec_ten_down (f : ℕ) (e : ℤ) (h : Regular f e)
     (hd0 : (toDecimalCandidates f e).roundD0 = true) :
     let k := decimalExponent e
     let ten : ℕ := sigHi f e - sigHi f e % 10
-    let x := value f e * (10 ^ k)⁻¹
-    let u := ulp e * (10 ^ k)⁻¹
+    let x := value f e * 10 ^ (-k)
+    let u := ulp e * 10 ^ (-k)
     if f % 2 = 0 then
       |(ten : ℚ) - x| ≤ u / 2
     else
@@ -2084,8 +2085,8 @@ theorem dec_ten_up (f : ℕ) (e : ℤ) (h : Regular f e)
     (hu0 : (toDecimalCandidates f e).roundU0 = true) :
     let k := decimalExponent e
     let ten : ℕ := sigHi f e - sigHi f e % 10
-    let x := value f e * (10 ^ k)⁻¹
-    let u := ulp e * (10 ^ k)⁻¹
+    let x := value f e * 10 ^ (-k)
+    let u := ulp e * 10 ^ (-k)
     if f % 2 = 0 then
       |(ten : ℚ) + 10 - x| ≤ u / 2
     else
@@ -2230,7 +2231,7 @@ theorem roundtrips_bound (f : ℕ) (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) (d
     (hr : Roundtrips f e (d * 10 ^ decimalExponent e)) :
     |(d : ℚ) * (trimMul e : ℚ) - 2 * f * (trimNum e : ℚ)| ≤ (trimNum e : ℚ) := by
   have hscale :
-      ((d : ℚ) - value f e * (10 ^ decimalExponent e)⁻¹) * (trimMul e : ℚ)
+      ((d : ℚ) - value f e * 10 ^ (-decimalExponent e)) * (trimMul e : ℚ)
         = (d : ℚ) * (trimMul e : ℚ) - 2 * f * (trimNum e : ℚ) := by
     rw [sub_mul, trim_mul_value f e he]
   obtain ⟨hle, _⟩ := half_ulp_iff_scaled_error f e he hscale
@@ -2419,7 +2420,7 @@ theorem ulp_scaled_bounds (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
       ulp e * 10 ^ (-decimalExponent e) < 10 := by
   have hsh := decimal_shift_lt_four e he
   have hpos := trim_mul_pos e
-  have hstep : (ulp e * (10 ^ decimalExponent e)⁻¹) * (trimMul e : ℚ)
+  have hstep : (ulp e * 10 ^ (-decimalExponent e)) * (trimMul e : ℚ)
       = 2 * (trimNum e : ℚ) := by
     linear_combination 2 * trim_mul_half_ulp e he
   have hlow : (trimMul e : ℚ) ≤ 2 * (trimNum e : ℚ) := by
@@ -2433,7 +2434,6 @@ theorem ulp_scaled_bounds (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
     have hn : 2 * trimNum e < trimScale e := trim_two_num_lt_scale e he
     rw [trim_scale_eq_ten_mul] at hn
     exact_mod_cast hn
-  rw [zpow_neg]
   refine ⟨(mul_le_mul_iff_of_pos_right hpos).mp ?_,
     (mul_lt_mul_iff_of_pos_right hpos).mp ?_⟩
   · rw [one_mul, hstep]; exact hlow

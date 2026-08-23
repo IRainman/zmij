@@ -134,8 +134,8 @@ odd `f`.
 /-- Scaling by the positive factor `10^k` preserves the rounding bounds, so a
     round-trip on the grid at `k` is the scaled half-ULP bound. -/
 theorem roundtrips_iff_scaled (f : ℕ) (e k : ℤ) (d : ℕ) :
-    let x := value f e * (10 ^ k)⁻¹
-    let u := ulp e * (10 ^ k)⁻¹
+    let x := value f e * 10 ^ (-k)
+    let u := ulp e * 10 ^ (-k)
     Roundtrips f e (d * 10 ^ k)
       ↔ (if f % 2 = 0 then |(d : ℚ) - x| ≤ u / 2
           else |(d : ℚ) - x| < u / 2) := by
@@ -144,10 +144,10 @@ theorem roundtrips_iff_scaled (f : ℕ) (e k : ℤ) (d : ℕ) :
   have hne : (10 : ℚ) ^ k ≠ 0 := ne_of_gt hp
   have hdist : |(d : ℚ) - x| * 10 ^ k = |(d : ℚ) * 10 ^ k - value f e| := by
     have h : ((d : ℚ) - x) * 10 ^ k = (d : ℚ) * 10 ^ k - value f e := by
-      simp only [x]; field_simp
+      simp only [x, zpow_neg]; field_simp
     rw [← h, abs_mul, abs_of_pos hp]
   have hhalf : u / 2 * 10 ^ k = ulp e / 2 := by
-    simp only [u]; field_simp
+    simp only [u, zpow_neg]; field_simp
   simp only [Roundtrips]
   split_ifs
   · rw [← hdist, ← hhalf]; exact mul_le_mul_iff_of_pos_right hp
@@ -183,10 +183,9 @@ theorem roundtrips_of_le_half (f : ℕ) (e k : ℤ) (d : ℕ)
     (hfine : 1 ≤ ulp e * 10 ^ (-k))
     (hd : |(d : ℚ) - value f e * 10 ^ (-k)| ≤ 1 / 2) :
     Roundtrips f e (d * 10 ^ k) := by
-  rw [zpow_neg] at hfine hd
   refine (roundtrips_iff_scaled f e k d).mpr ?_
   rcases eq_or_lt_of_le hfine with hone | hgt
-  · have hx : value f e * (10 ^ k)⁻¹ = (f : ℚ) := by
+  · have hx : value f e * 10 ^ (-k) = (f : ℚ) := by
       rw [show value f e = (f : ℚ) * ulp e from by rw [value, ulp], mul_assoc,
         ← hone, mul_one]
     rw [hx] at hd ⊢
@@ -299,10 +298,9 @@ theorem coarse_roundtrip_unique (f : ℕ) (e k : ℤ)
     (h₁ : c₁ % 10 = 0) (h₂ : c₂ % 10 = 0)
     (hr₁ : Roundtrips f e (c₁ * 10 ^ k)) (hr₂ : Roundtrips f e (c₂ * 10 ^ k)) :
     c₁ = c₂ := by
-  rw [zpow_neg] at hcoarse
-  set x := value f e * (10 ^ k)⁻¹ with hx
+  set x := value f e * 10 ^ (-k) with hx
   have hb (c : ℕ) (hr : Roundtrips f e (c * 10 ^ k)) :
-      |(c : ℚ) - x| ≤ ulp e * (10 ^ k)⁻¹ / 2 := by
+      |(c : ℚ) - x| ≤ ulp e * 10 ^ (-k) / 2 := by
     have hs := (roundtrips_iff_scaled f e k c).mp hr
     split_ifs at hs <;> linarith
   have hd₁ := hb c₁ hr₁
