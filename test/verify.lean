@@ -14,7 +14,7 @@ def value (f : ℕ) (e : ℤ) : ℚ := f * 2 ^ e
 -- One ULP for a regularly spaced value with exponent `e`.
 def ulp (e : ℤ) : ℚ := 2 ^ e
 
--- Whether the exact rational result `r` rounds to the regularly spaced value
+-- Whether the rational value `r` rounds to the regularly spaced value
 -- f · 2^e under round-to-nearest, ties-to-even.
 def Roundtrips (f : ℕ) (e : ℤ) (r : ℚ) : Prop :=
   if f % 2 = 0 then
@@ -30,11 +30,99 @@ def Shortest (f : ℕ) (e : ℤ) (d : ℕ) (k : ℤ) : Prop :=
   Roundtrips f e (d * 10 ^ k) ∧
     ∀ d' : ℕ, ¬Roundtrips f e (d' * 10 ^ (k + 1))
 
--- Whether f · 2^e is a regularly spaced normal binary64 value,
+-- A decimal representation is correctly rounded on its decimal grid if no
+-- value on that grid is closer to the exact value, with ties resolved to even.
+def CorrectlyRounded (f : ℕ) (e : ℤ) (d : ℕ) (k : ℤ) : Prop :=
+  let r := (d : ℚ) * 10 ^ k
+  let v := value f e
+  (∀ d' : ℕ, |r - v| ≤ |(d' : ℚ) * 10 ^ k - v|) ∧
+    ∀ d' : ℕ,
+      |r - v| = |(d' : ℚ) * 10 ^ k - v| →
+        d' = d ∨ d % 2 = 0
+
+-- Whether f · 2^e is a regularly spaced positive normal binary64 value,
 -- excluding powers of 2.
 def Regular (f : ℕ) (e : ℤ) : Prop :=
   2 ^ 52 < f ∧ f < 2 ^ 53 ∧
    -1074 ≤ e ∧ e ≤ 971
+
+/-! ### Nearest values on a decimal grid
+
+Scaled by `10^(-k)`, the grid at `k` becomes the integers, so correct rounding
+means choosing a nearest integer to the scaled value, with ties resolved to
+even. Half a step is then enough: distinct candidates are at least one step
+apart, so a candidate within half a step is nearest, and one strictly within
+half a step is uniquely nearest.
+-/
+
+-- Distinct integer candidates are at least one step apart, so the sum of
+-- their distances to any value is at least one.
+theorem one_le_abs_sub_add_abs_sub {x : ℚ} {d d' : ℕ} (hne : d' ≠ d) :
+    1 ≤ |(d' : ℚ) - x| + |(d : ℚ) - x| := by
+  have hstep : (1 : ℚ) ≤ |(d' : ℚ) - (d : ℚ)| := by
+    exact_mod_cast Int.one_le_abs (show (d' : ℤ) - d ≠ 0 by omega)
+  calc (1 : ℚ) ≤ |(d' : ℚ) - (d : ℚ)| := hstep
+    _ ≤ |(d' : ℚ) - x| + |x - (d : ℚ)| := abs_sub_le _ _ _
+    _ = |(d' : ℚ) - x| + |(d : ℚ) - x| := by rw [abs_sub_comm x]
+
+-- A candidate within half a step is a nearest grid point.
+theorem abs_sub_le_of_le_half {x : ℚ} {d : ℕ}
+    (hd : |(d : ℚ) - x| ≤ 1 / 2) (d' : ℕ) :
+    |(d : ℚ) - x| ≤ |(d' : ℚ) - x| := by
+  rcases eq_or_ne d' d with rfl | hne
+  · exact le_rfl
+  · linarith [one_le_abs_sub_add_abs_sub (x := x) hne]
+
+-- A candidate strictly within half a step is the unique nearest grid point.
+theorem eq_of_abs_sub_eq_of_lt_half {x : ℚ} {d d' : ℕ}
+    (hd : |(d : ℚ) - x| < 1 / 2) (heq : |(d : ℚ) - x| = |(d' : ℚ) - x|) :
+    d' = d := by
+  by_contra hne
+  linarith [one_le_abs_sub_add_abs_sub (x := x) hne]
+
+-- Correct rounding in the scaled domain: `10^k` is positive, so it cancels from
+-- every comparison, leaving comparisons between `d`, `d'` and `x`.
+theorem correctly_rounded_iff_scaled (f : ℕ) (e : ℤ) (d : ℕ) (k : ℤ) :
+    let x := value f e * 10 ^ (-k)
+    CorrectlyRounded f e d k
+      ↔ (∀ d' : ℕ, |(d : ℚ) - x| ≤ |(d' : ℚ) - x|) ∧
+        ∀ d' : ℕ,
+          |(d : ℚ) - x| = |(d' : ℚ) - x| → d' = d ∨ d % 2 = 0 := by
+  intro x
+  have hp : (0 : ℚ) < 10 ^ k := by positivity
+  have hdist : ∀ n : ℕ,
+      |(n : ℚ) - x| * 10 ^ k = |(n : ℚ) * 10 ^ k - value f e| := by
+    intro n
+    have h : ((n : ℚ) - x) * 10 ^ k = (n : ℚ) * 10 ^ k - value f e := by
+      simp only [x, zpow_neg]
+      field_simp
+    rw [← h, abs_mul, abs_of_pos hp]
+  simp only [CorrectlyRounded]
+  constructor
+  · rintro ⟨hnear, hties⟩
+    refine ⟨fun d' => ?_, fun d' hd' => hties d' ?_⟩
+    · have hscaled := hnear d'
+      rw [← hdist d, ← hdist d'] at hscaled
+      exact (mul_le_mul_iff_of_pos_right hp).mp hscaled
+    · rw [← hdist d, ← hdist d', hd']
+  · rintro ⟨hnear, hties⟩
+    refine ⟨fun d' => ?_, fun d' hd' => hties d' ?_⟩
+    · rw [← hdist d, ← hdist d']
+      exact (mul_le_mul_iff_of_pos_right hp).mpr (hnear d')
+    · rw [← hdist d, ← hdist d'] at hd'
+      exact mul_right_cancel₀ (ne_of_gt hp) hd'
+
+-- A candidate within half a grid step is correctly rounded if an exact
+-- midpoint is resolved to an even candidate.
+theorem correctly_rounded_of_le_half (f : ℕ) (e : ℤ) (d : ℕ) (k : ℤ)
+    (hle : |(d : ℚ) - value f e * 10 ^ (-k)| ≤ 1 / 2)
+    (heven : |(d : ℚ) - value f e * 10 ^ (-k)| = 1 / 2 → d % 2 = 0) :
+    CorrectlyRounded f e d k := by
+  refine (correctly_rounded_iff_scaled f e d k).mpr
+    ⟨fun d' => abs_sub_le_of_le_half hle d', fun d' hd' => ?_⟩
+  rcases lt_or_eq_of_le hle with hlt | heq
+  · exact Or.inl (eq_of_abs_sub_eq_of_lt_half hlt hd')
+  · exact Or.inr (heven heq)
 
 /-! ### Decimal reduction -/
 
@@ -1407,6 +1495,13 @@ theorem trim_scale_eq_ten_mul (e : ℤ) : trimScale e = 10 * trimMul e := by
   simp only [trimScale, trimMul, trimModulus]
   ring
 
+-- Twice the bound on the cached-power truncation error fits inside one grid
+-- step: `trimMul ≥ 2^125·den`, while the doubled bound is `2^55·den`.
+theorem trim_two_trunc_le_mul (e : ℤ) (hsh : decimalShift e < 4) :
+    2 ^ 55 * trimDen e ≤ trimMul e := by
+  rw [trimMul]
+  exact Nat.mul_le_mul_right _ (Nat.pow_le_pow_right (by norm_num) (by omega))
+
 -- Exponent alignment: the inverse scale `s = 2^(1-e)·10^k` turns the
 -- power-of-ten factor `10^(-k)·2^(128-pe)` into `2^(128-h)`.
 theorem exact_scale (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
@@ -1549,6 +1644,30 @@ theorem roundtrips_iff_scaled (f : ℕ) (e : ℤ) (d : ℕ) :
   · rw [← hdist, ← hhalf]; exact mul_le_mul_iff_of_pos_right hp
   · rw [← hdist, ← hhalf]; exact mul_lt_mul_iff_of_pos_right hp
 
+-- The same for half a grid step: the scale sends one step of the grid at `k` to
+-- one `trimMul`, so a candidate with scaled error `dist` is within half a step
+-- exactly when `2·|dist|` is at most `trimMul`, and sits at a midpoint exactly
+-- when they are equal.
+theorem half_step_iff_scaled_error {cand dist : ℚ} (f : ℕ) (e : ℤ)
+    (hscale : (cand - value f e * (10 ^ decimalExponent e)⁻¹) * (trimMul e : ℚ)
+      = dist) :
+    let x := value f e * (10 ^ decimalExponent e)⁻¹
+    (|cand - x| ≤ 1 / 2 ↔ 2 * |dist| ≤ (trimMul e : ℚ)) ∧
+      (|cand - x| = 1 / 2 ↔ 2 * |dist| = (trimMul e : ℚ)) := by
+  intro x
+  have hpos : (0 : ℚ) < (trimMul e : ℚ) :=
+    Nat.cast_pos.mpr
+      (by rw [trimMul]; exact Nat.mul_pos (by positivity) (trim_den_pos e))
+  have hval : |cand - x| = |dist| / (trimMul e : ℚ) := by
+    rw [← hscale, abs_mul, abs_of_pos hpos, mul_div_assoc,
+      div_self (ne_of_gt hpos), mul_one]
+  rw [hval]
+  refine ⟨?_, ?_⟩
+  · rw [div_le_iff₀ hpos]
+    constructor <;> intro hq <;> linarith
+  · rw [div_eq_iff (ne_of_gt hpos)]
+    constructor <;> intro hq <;> linarith
+
 /-! ### The unit-step candidate
 
 `decOne` is `sigHi` rounded to nearest using the discarded word `sigLo`. In
@@ -1573,6 +1692,14 @@ theorem sig_hi_add_one_gap (f : ℕ) (e : ℤ) (hsh : decimalShift e < 4) :
   rw [sig_hi_quotient f e hsh]
   exact step_quotient_add_gap _ f e
 
+-- `sigLo` is the unit-step remainder with its low `64 - h` bits discarded, so
+-- the packed test sees the remainder only in units of `2^(64-h)`.
+theorem sig_lo_eq_residue_div (f : ℕ) (e : ℤ) (hsh : decimalShift e < 4) :
+    sigLo f e = oneResidue f e / 2 ^ (64 - decimalShift e) := by
+  rw [sig_lo_eq, oneResidue, stepResidue, pow_shift_split e 128 (by omega),
+    Nat.mul_mod_mul_left, pow_shift_split e 64 (by omega),
+    Nat.mul_div_mul_left _ _ (by positivity)]
+
 -- What `roundU1` says about the remainder: yy compares the discarded word with
 -- half its range, so the test is on the remainder against half the window
 -- `2^(128-h)`, blind only to the `2^(64-h)` bits below `sigLo`.
@@ -1583,11 +1710,7 @@ theorem one_round_half (f : ℕ) (e : ℤ) (hsh : decimalShift e < 4) :
         oneResidue f e
           < 2 ^ (127 - decimalShift e) + 2 ^ (64 - decimalShift e)) := by
   have hpos : (0 : ℕ) < 2 ^ (64 - decimalShift e) := by positivity
-  -- `sigLo` is the remainder with the bits below the last kept one dropped.
-  have hlo : sigLo f e = oneResidue f e / 2 ^ (64 - decimalShift e) := by
-    rw [sig_lo_eq, oneResidue, stepResidue, pow_shift_split e 128 (by omega),
-      Nat.mul_mod_mul_left, pow_shift_split e 64 (by omega),
-      Nat.mul_div_mul_left _ _ (by positivity)]
+  have hlo := sig_lo_eq_residue_div f e hsh
   have hpow : (2 : ℕ) ^ 63 * 2 ^ (64 - decimalShift e)
       = 2 ^ (127 - decimalShift e) := by
     rw [← pow_add]
@@ -1762,6 +1885,175 @@ theorem dec_one_error_bound (f : ℕ) (e : ℤ) (h : Regular f e) :
     refine hlt.mpr ?_
     rw [abs_neg, abs_of_nonneg (Nat.cast_nonneg _)]
     exact_mod_cast one_gap_lt f e h hu1
+
+/-! ### Correct rounding of the unit-step candidate
+
+On the grid at `decimalExponent e`, one decimal step is one `trimMul`.
+`sigHi` lies `oneGap` below the scaled value, so rounding to the nearest grid
+point is determined by comparing `2 * oneGap` with `trimMul`; equality is the
+exact midpoint case.
+
+Rounding up needs no additional separation: when `roundU1` fires, the packed
+remainder has reached half the window, hence the exact gap has reached at least
+half a step, since cached-power truncation only increases it.
+
+Rounding down and exact midpoints are subtler. The packed test sees the
+remainder only down to `2^(64-h)`, while the exact gap also contains the
+truncation term `2·f·(num % den)`. Thus the packed comparison alone cannot
+exclude a gap just past half a step or guarantee that an exact midpoint appears
+as a packed midpoint. These two remaining facts are isolated in
+`OneMidpointSeparated`.
+-/
+
+-- The unit-step gap is the denominator-cleared remainder plus the cached-power
+-- truncation error.
+theorem one_gap_split (f : ℕ) (e : ℤ) :
+    oneGap f e
+      = trimDen e * oneResidue f e + 2 * f * (trimNum e % trimDen e) := by
+  rw [oneGap, stepGap, ← oneResidue]
+
+-- The gap can exceed one whole step only by the cached-power truncation error.
+theorem one_gap_lt_mul_add (f : ℕ) (e : ℤ) (h : Regular f e) :
+    oneGap f e < trimMul e + 2 ^ 54 * trimDen e := by
+  have hres : trimDen e * oneResidue f e < trimMul e := by
+    rw [trimMul, Nat.mul_comm (2 ^ (128 - decimalShift e)) (trimDen e)]
+    exact mul_lt_mul_of_pos_left
+      (by rw [oneResidue, stepResidue]; exact Nat.mod_lt _ (by positivity))
+      (trim_den_pos e)
+  have htrunc := trim_trunc_lt f e h
+  rw [one_gap_split]
+  omega
+
+-- Rounding up means the gap is at least half a step: the packed test saw the
+-- remainder reach half the window, and the truncation error only increases it.
+theorem one_half_step_le_gap (f : ℕ) (e : ℤ) (h : Regular f e)
+    (hu1 : (toDecimalCandidates f e).roundU1 = true) :
+    trimMul e ≤ 2 * oneGap f e := by
+  have hsh := decimal_shift_lt_four e h.2.2
+  have hres :=
+    Nat.mul_le_mul_left (trimDen e) ((one_round_half f e hsh).1 hu1)
+  have hhalf : trimMul e = 2 * (trimDen e * 2 ^ (127 - decimalShift e)) := by
+    rw [trimMul,
+      show (2 : ℕ) ^ (128 - decimalShift e)
+          = 2 * 2 ^ (127 - decimalShift e) from by
+        rw [← pow_succ']; congr 1; omega]
+    ring
+  rw [one_gap_split]
+  omega
+
+-- What the packed `roundU1` test cannot settle analytically. Both facts concern
+-- where `2·f·num mod trimMul` lies relative to the midpoint `trimMul / 2`.
+-- Cached-power truncation and discarded low bits leave a narrow undecided
+-- window there, analogous to the windows refuted by `trimWindows`.
+structure OneMidpointSeparated (f : ℕ) (e : ℤ) : Prop where
+  -- If `roundU1` does not fire, the exact gap is at most half a step.
+  belowHalf :
+    (toDecimalCandidates f e).roundU1 = false →
+      2 * oneGap f e ≤ trimMul e
+
+  -- An exact midpoint is visible as a packed midpoint too.
+  packedMidpoint :
+    2 * oneGap f e = trimMul e →
+      oneResidue f e = 2 ^ (127 - decimalShift e)
+
+-- At a packed midpoint the remainder is exactly half the window, so yy takes
+-- its tie branch and rounds the significand to even.
+theorem dec_one_even_of_packed_midpoint (f : ℕ) (e : ℤ)
+    (hsh : decimalShift e < 4)
+    (hres : oneResidue f e = 2 ^ (127 - decimalShift e)) :
+    (toDecimalCandidates f e).decOne % 2 = 0 := by
+  set c := toDecimalCandidates f e
+  have hlo : sigLo f e = 2 ^ 63 := by
+    rw [sig_lo_eq_residue_div f e hsh, hres,
+      Nat.pow_div (by omega) (by norm_num),
+      show 127 - decimalShift e - (64 - decimalShift e) = 63 from by omega]
+  have hround : c.roundU1 = decide (sigHi f e % 2 = 1) := by
+    show (if sigLo f e = 2 ^ 63 then decide (sigHi f e % 2 = 1)
+      else decide (2 ^ 63 < sigLo f e)) = _
+    simp [hlo]
+  -- Odd increments, even stays put, and both land on an even significand.
+  show (sigHi f e + if c.roundU1 then 1 else 0) % 2 = 0
+  by_cases hpar : sigHi f e % 2 = 1 <;> simp [hround, hpar] <;> omega
+
+-- Granted the separation, `decOne` is a nearest value on the grid at
+-- `decimalExponent e`, ties to even.
+theorem dec_one_correctly_rounded (f : ℕ) (e : ℤ) (h : Regular f e)
+    (hsep : OneMidpointSeparated f e) :
+    CorrectlyRounded f e (toDecimalCandidates f e).decOne
+      (decimalExponent e) := by
+  have he := h.2.2
+  have hsh := decimal_shift_lt_four e he
+  set c := toDecimalCandidates f e
+  by_cases hu1 : c.roundU1 = true
+  -- Rounding up: the candidate is `trimMul - oneGap` above the value, and the
+  -- packed test has already carried the gap past half a step.
+  · have hdec : (c.decOne : ℚ) = (sigHi f e : ℚ) + 1 := by
+      show ((sigHi f e + if c.roundU1 then 1 else 0 : ℕ) : ℚ) = _
+      simp [hu1]
+    obtain ⟨hle, heq⟩ := half_step_iff_scaled_error f e
+      (cand := (sigHi f e : ℚ) + 1)
+      (dist := (trimMul e : ℚ) - (oneGap f e : ℚ))
+      (by linear_combination sig_hi_scaled_error f e he)
+    have hlow : (trimMul e : ℚ) ≤ 2 * (oneGap f e : ℚ) := by
+      exact_mod_cast one_half_step_le_gap f e h hu1
+    -- The gap can pass the step, but only by a truncation error, so it stays
+    -- clear of a step and a half.
+    have hroom : (oneGap f e : ℚ) < 3 / 2 * (trimMul e : ℚ) := by
+      have hbig : (2 : ℚ) ^ 55 * (trimDen e : ℚ) ≤ (trimMul e : ℚ) := by
+        exact_mod_cast trim_two_trunc_le_mul e hsh
+      have hhigh :
+          (oneGap f e : ℚ) < (trimMul e : ℚ) + 2 ^ 54 * (trimDen e : ℚ) := by
+        exact_mod_cast one_gap_lt_mul_add f e h
+      linarith
+    refine correctly_rounded_of_le_half f e _ _ ?_ ?_
+    · rw [zpow_neg, hdec]
+      refine hle.mpr ?_
+      have habs :
+          |(trimMul e : ℚ) - (oneGap f e : ℚ)| ≤ (trimMul e : ℚ) / 2 :=
+        abs_le.mpr ⟨by linarith, by linarith⟩
+      linarith
+    · intro hmid
+      rw [zpow_neg, hdec] at hmid
+      have hq := heq.mp hmid
+      -- Equal distance allows `oneGap = trimMul / 2` or `3 * trimMul / 2`.
+      -- The room below a step and a half excludes the latter.
+      have hnat : 2 * oneGap f e = trimMul e := by
+        by_cases hcase : oneGap f e ≤ trimMul e
+        · have hcast : (oneGap f e : ℚ) ≤ (trimMul e : ℚ) := by
+            exact_mod_cast hcase
+          rw [abs_of_nonneg (by linarith)] at hq
+          have hgap : (2 : ℚ) * (oneGap f e : ℚ) = (trimMul e : ℚ) := by
+            linarith
+          exact_mod_cast hgap
+        · exfalso
+          have hcast : (trimMul e : ℚ) < (oneGap f e : ℚ) := by
+            exact_mod_cast Nat.not_le.mp hcase
+          rw [abs_of_nonpos (by linarith)] at hq
+          linarith
+      exact dec_one_even_of_packed_midpoint f e hsh (hsep.packedMidpoint hnat)
+  -- Rounding down: the candidate is `oneGap` below the value, and only the
+  -- separation says the gap has not passed half a step.
+  · rw [Bool.not_eq_true] at hu1
+    have hdec : (c.decOne : ℚ) = (sigHi f e : ℚ) := by
+      show ((sigHi f e + if c.roundU1 then 1 else 0 : ℕ) : ℚ) = _
+      simp [hu1]
+    obtain ⟨hle, heq⟩ := half_step_iff_scaled_error f e
+      (cand := (sigHi f e : ℚ))
+      (dist := -(oneGap f e : ℚ))
+      (sig_hi_scaled_error f e he)
+    have habs : |(-(oneGap f e : ℚ))| = (oneGap f e : ℚ) := by
+      rw [abs_neg, Nat.abs_cast]
+    refine correctly_rounded_of_le_half f e _ _ ?_ ?_
+    · rw [zpow_neg, hdec]
+      refine hle.mpr ?_
+      rw [habs]
+      exact_mod_cast hsep.belowHalf hu1
+    · intro hmid
+      rw [zpow_neg, hdec] at hmid
+      have hq := heq.mp hmid
+      rw [habs] at hq
+      have hnat : 2 * oneGap f e = trimMul e := by exact_mod_cast hq
+      exact dec_one_even_of_packed_midpoint f e hsh (hsep.packedMidpoint hnat)
 
 /-! ### The multiple-of-ten candidates -/
 
