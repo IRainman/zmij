@@ -158,6 +158,13 @@ theorem roundtrips_iff_scaled (f : ℕ) (e k : ℤ) (d : ℕ) :
   · rw [← hdist, ← hhalf]; exact mul_le_mul_iff_of_pos_right hp
   · rw [← hdist, ← hhalf]; exact mul_lt_mul_iff_of_pos_right hp
 
+/-- Either parity of a round-trip bounds the scaled distance by half a ULP. -/
+private theorem abs_sub_le_half_ulp (f : ℕ) (e k : ℤ) {d : ℕ}
+    (hr : Roundtrips f e (d * 10 ^ k)) :
+    |(d : ℚ) - value f e * 10 ^ (-k)| ≤ ulp e * 10 ^ (-k) / 2 := by
+  have hs := (roundtrips_iff_scaled f e k d).mp hr
+  split_ifs at hs <;> linarith
+
 /-- Whether a value round-trips depends only on its distance to the exact value,
     so anything no farther away than one that round-trips does too. -/
 private theorem roundtrips_of_abs_le (f : ℕ) (e : ℤ) {r r' : ℚ}
@@ -266,7 +273,10 @@ representation is coarser than the grid at `k`.
 
 Only two properties of `k` are used. The grid must be fine enough that a
 nearest grid point round-trips, `1 ≤ u`, and coarse enough that the round-trip
-interval, one ULP wide, cannot hold two multiples of ten, `u < 10`.
+interval, one ULP wide, cannot hold two multiples of ten, `u < 10`. That second
+bound also pins down where the one multiple of ten can be,
+`coarse_roundtrip_adjacent`, which is how an implementation gets away with
+testing two candidates.
 -/
 
 /-- Whether some multiple of ten round-trips on the grid at `k`. -/
@@ -305,12 +315,8 @@ private theorem coarse_roundtrip_unique (f : ℕ) (e k : ℤ)
     (hr₁ : Roundtrips f e (c₁ * 10 ^ k)) (hr₂ : Roundtrips f e (c₂ * 10 ^ k)) :
     c₁ = c₂ := by
   let x := value f e * 10 ^ (-k)
-  have hb (c : ℕ) (hr : Roundtrips f e (c * 10 ^ k)) :
-      |(c : ℚ) - x| ≤ ulp e * 10 ^ (-k) / 2 := by
-    have hs := (roundtrips_iff_scaled f e k c).mp hr
-    split_ifs at hs <;> linarith
-  have hd₁ := hb c₁ hr₁
-  have hd₂ := hb c₂ hr₂
+  have hd₁ := abs_sub_le_half_ulp f e k hr₁
+  have hd₂ := abs_sub_le_half_ulp f e k hr₂
   have hsum : |(c₁ : ℚ) - (c₂ : ℚ)| < 10 :=
     calc |(c₁ : ℚ) - (c₂ : ℚ)| ≤ |(c₁ : ℚ) - x| + |x - (c₂ : ℚ)| :=
           abs_sub_le _ _ _
@@ -321,6 +327,27 @@ private theorem coarse_roundtrip_unique (f : ℕ) (e k : ℤ)
     exact_mod_cast (show (c₁ : ℚ) < (c₂ : ℚ) + 10 by linarith)
   have hn₂ : c₂ < c₁ + 10 := by
     exact_mod_cast (show (c₂ : ℚ) < (c₁ : ℚ) + 10 by linarith)
+  omega
+
+/-- Where to look for it. Take a multiple of ten `c` bracketing the scaled value
+    from below, to within half a ULP and less than one coarse step. Then a
+    multiple of ten that round-trips is `c` or the next one up: the round-trip
+    reaches half a ULP either side of the value too, which confines it to
+    `(c - 10, c + 20)`, where the only multiples of ten are `c` and `c + 10`.
+    The tolerance is the round-trip's own radius, so an implementation has two
+    candidates to test from any bracket it locates the value to that well. -/
+theorem coarse_roundtrip_adjacent (f : ℕ) (e k : ℤ)
+    (hcoarse : ulp e * 10 ^ (-k) < 10) {c d : ℕ}
+    (hc : c % 10 = 0) (hd : d % 10 = 0)
+    (hlo : (c : ℚ) - ulp e * 10 ^ (-k) / 2 ≤ value f e * 10 ^ (-k))
+    (hhi : value f e * 10 ^ (-k) < (c : ℚ) + 10 + ulp e * 10 ^ (-k) / 2)
+    (hr : Roundtrips f e (d * 10 ^ k)) :
+    d = c ∨ d = c + 10 := by
+  obtain ⟨hlo', hhi'⟩ := abs_le.mp (abs_sub_le_half_ulp f e k hr)
+  have h10 : c < d + 10 := by
+    exact_mod_cast (show (c : ℚ) < (d : ℚ) + 10 by linarith)
+  have h20 : d < c + 20 := by
+    exact_mod_cast (show (d : ℚ) < (c : ℚ) + 20 by linarith)
   omega
 
 /--

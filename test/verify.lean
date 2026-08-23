@@ -1494,6 +1494,34 @@ theorem half_step_iff_scaled_error {cand dist : ℚ} (f : ℕ) (e : ℤ)
   · rw [div_eq_iff (ne_of_gt hpos)]
     constructor <;> intro hq <;> linarith
 
+/-- The grid at yy's exponent lies between one and ten ULPs. One grid step is
+    `2^(128-h)·den` while half a ULP is `num ≥ 2^127·den`, which gives the lower
+    bound; the upper bound is the narrowness certificate of the packed
+    comparison. -/
+theorem ulp_scaled_bounds (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
+    1 ≤ ulp e * 10 ^ (-decimalExponent e) ∧
+      ulp e * 10 ^ (-decimalExponent e) < 10 := by
+  have hsh := decimal_shift_lt_four e he
+  have hpos := trim_mul_pos e
+  have hstep : (ulp e * 10 ^ (-decimalExponent e)) * (trimMul e : ℚ)
+      = 2 * (trimNum e : ℚ) := by
+    linear_combination 2 * trim_mul_half_ulp e he
+  have hlow : (trimMul e : ℚ) ≤ 2 * (trimNum e : ℚ) := by
+    have h1 : trimMul e ≤ 2 ^ 128 * trimDen e := by
+      rw [trimMul]
+      exact Nat.mul_le_mul_right _
+        (Nat.pow_le_pow_right (by norm_num) (by omega))
+    have h2 := trim_num_lower e he
+    exact_mod_cast (show trimMul e ≤ 2 * trimNum e by omega)
+  have hhigh : 2 * (trimNum e : ℚ) < 10 * (trimMul e : ℚ) := by
+    have hn : 2 * trimNum e < trimScale e := trim_two_num_lt_scale e he
+    rw [trim_scale_eq_ten_mul] at hn
+    exact_mod_cast hn
+  refine ⟨(mul_le_mul_iff_of_pos_right hpos).mp ?_,
+    (mul_lt_mul_iff_of_pos_right hpos).mp ?_⟩
+  · rw [one_mul, hstep]; exact hlow
+  · rw [hstep]; exact hhigh
+
 /-! ## The unit-step candidate
 
 `decOne` is `sigHi` rounded to nearest using the discarded word `sigLo`. In
@@ -2215,59 +2243,28 @@ lies one unit farther out; there the cached power of ten is exact, and
 `trim_gap_num_eq_scale_of_k_zero` settles it directly.
 -/
 
-/-- A round-trip in the candidate scale: the scaled candidate is within `num` of
-    the scaled value, with the strict odd case weakened to `≤`. -/
-theorem roundtrips_bound (f : ℕ) (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) (d : ℕ)
-    (hr : Roundtrips f e (d * 10 ^ decimalExponent e)) :
-    |(d : ℚ) * (trimMul e : ℚ) - 2 * f * (trimNum e : ℚ)| ≤ (trimNum e : ℚ) := by
-  have hscale :
-      ((d : ℚ) - value f e * 10 ^ (-decimalExponent e)) * (trimMul e : ℚ)
-        = (d : ℚ) * (trimMul e : ℚ) - 2 * f * (trimNum e : ℚ) := by
-    rw [sub_mul, trim_mul_value f e he]
-  obtain ⟨hle, _⟩ := half_ulp_iff_scaled_error f e he hscale
-  refine hle.mp ?_
-  have hs := (roundtrips_iff_scaled f e (decimalExponent e) d).mp hr
-  by_cases hev : f % 2 = 0
-  · simpa [hev] using hs
-  · exact le_of_lt (by simpa [hev] using hs)
-
-/-- A multiple of ten that round-trips is one of the two yy considers. The
-    round-trip interval is narrower than one coarse step, and its position
-    relative to the trim-down candidate excludes every other multiple of ten. -/
+/-- A multiple of ten that round-trips is one of the two yy considers. All yy
+    contributes is that its trim-down candidate brackets the scaled value:
+    `trimGap` is exactly how far below it sits, cleared of the scale, and the
+    gap runs to one coarse step plus the half ULP it can overshoot by. -/
 theorem coarse_candidate_cases (f : ℕ) (e : ℤ) (h : Regular f e) (d : ℕ)
     (h10 : d % 10 = 0)
     (hr : Roundtrips f e (d * 10 ^ decimalExponent e)) :
     d = sigHi f e - sigHi f e % 10 ∨ d = sigHi f e - sigHi f e % 10 + 10 := by
-  let ten := sigHi f e - sigHi f e % 10
   have he := h.2.2
   have hmul := trim_mul_pos e
-  obtain ⟨hlo, hhi⟩ := abs_le.mp (roundtrips_bound f e he d hr)
-  -- Against the trim-down candidate, `d` is that error plus the gap away.
-  have hdiff : ((d : ℚ) - (ten : ℚ)) * (trimMul e : ℚ)
-      = ((d : ℚ) * (trimMul e : ℚ) - 2 * f * (trimNum e : ℚ))
-        + (trimGap f e : ℚ) := by
-    simp only [ten]
-    linear_combination -trim_mul_value f e he - dec_ten_down_scaled_error f e he
+  have hdown := dec_ten_down_scaled_error f e he
+  have hhalf := trim_mul_half_ulp e he
   have hgap0 : (0 : ℚ) ≤ (trimGap f e : ℚ) := by positivity
+  have hnum0 : (0 : ℚ) ≤ (trimNum e : ℚ) := by positivity
   have hgap : (trimGap f e : ℚ) < (trimScale e : ℚ) + (trimNum e : ℚ) := by
     exact_mod_cast trim_gap_lt_scale_add f e h
-  have hnarrow : 2 * (trimNum e : ℚ) < (trimScale e : ℚ) := by
-    exact_mod_cast trim_two_num_lt_scale e he
   have hstep : (trimScale e : ℚ) = 10 * (trimMul e : ℚ) := by
     exact_mod_cast trim_scale_eq_ten_mul e
-  -- Half a coarse step below the lower candidate, two steps above it.
-  have hdown : (-5 : ℚ) * (trimMul e : ℚ)
-      < ((d : ℚ) - (ten : ℚ)) * (trimMul e : ℚ) := by
-    rw [hdiff]; linarith
-  have hup : ((d : ℚ) - (ten : ℚ)) * (trimMul e : ℚ) < 20 * (trimMul e : ℚ) := by
-    rw [hdiff]; linarith
-  have h5 : ten < d + 5 := by
-    exact_mod_cast (show (ten : ℚ) < (d : ℚ) + 5 by
-      linarith [lt_of_mul_lt_mul_right hdown hmul.le])
-  have h20 : d < ten + 20 := by
-    exact_mod_cast (show (d : ℚ) < (ten : ℚ) + 20 by
-      linarith [lt_of_mul_lt_mul_right hup hmul.le])
-  omega
+  exact coarse_roundtrip_adjacent f e (decimalExponent e)
+    (ulp_scaled_bounds e he).2 (by omega) h10
+    (le_of_mul_le_mul_right (by linarith) hmul)
+    (lt_of_mul_lt_mul_right (by linarith) hmul.le) hr
 
 /-- Completeness: if the trim-down candidate round-trips, `roundD0` fires. -/
 theorem round_d0_of_ten_down_roundtrips (f : ℕ) (e : ℤ) (h : Regular f e)
@@ -2389,40 +2386,12 @@ theorem trim_of_coarse_roundtrip (f : ℕ) (e : ℤ) (h : Regular f e) (d : ℕ)
 
 /-! ## yy refines the exact method
 
-Nothing above is needed beyond these two facts about yy's exponent and the two
-observable properties of its output. In particular no claim is made that yy's
-packed decisions agree with the exact ones: a packed midpoint need not be an
-exact midpoint, and the trim flags are matched to the existence of an exact
-coarse candidate, not to any exact comparison.
+Nothing above is needed beyond the two grid bounds of `ulp_scaled_bounds` and
+the two observable properties of yy's output. In particular no claim is made
+that yy's packed decisions agree with the exact ones: a packed midpoint need not
+be an exact midpoint, and the trim flags are matched to the existence of an
+exact coarse candidate, not to any exact comparison.
 -/
-
-/-- The grid at yy's exponent lies between one and ten ULPs. One grid step is
-    `2^(128-h)·den` while half a ULP is `num ≥ 2^127·den`, which gives the lower
-    bound; the upper bound is the narrowness certificate of the packed
-    comparison. -/
-theorem ulp_scaled_bounds (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
-    1 ≤ ulp e * 10 ^ (-decimalExponent e) ∧
-      ulp e * 10 ^ (-decimalExponent e) < 10 := by
-  have hsh := decimal_shift_lt_four e he
-  have hpos := trim_mul_pos e
-  have hstep : (ulp e * 10 ^ (-decimalExponent e)) * (trimMul e : ℚ)
-      = 2 * (trimNum e : ℚ) := by
-    linear_combination 2 * trim_mul_half_ulp e he
-  have hlow : (trimMul e : ℚ) ≤ 2 * (trimNum e : ℚ) := by
-    have h1 : trimMul e ≤ 2 ^ 128 * trimDen e := by
-      rw [trimMul]
-      exact Nat.mul_le_mul_right _
-        (Nat.pow_le_pow_right (by norm_num) (by omega))
-    have h2 := trim_num_lower e he
-    exact_mod_cast (show trimMul e ≤ 2 * trimNum e by omega)
-  have hhigh : 2 * (trimNum e : ℚ) < 10 * (trimMul e : ℚ) := by
-    have hn : 2 * trimNum e < trimScale e := trim_two_num_lt_scale e he
-    rw [trim_scale_eq_ten_mul] at hn
-    exact_mod_cast hn
-  refine ⟨(mul_le_mul_iff_of_pos_right hpos).mp ?_,
-    (mul_lt_mul_iff_of_pos_right hpos).mp ?_⟩
-  · rw [one_mul, hstep]; exact hlow
-  · rw [hstep]; exact hhigh
 
 /-- yy implements the exact method: it trims exactly when an exact coarse
     candidate exists. One direction is completeness, `trim_of_coarse_roundtrip`;
