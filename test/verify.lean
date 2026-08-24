@@ -18,10 +18,11 @@ together show that yy's output is a candidate of that method,
 exact ones; only that its output does. `yy_correct` composes the two.
 -/
 
-/-- Whether f·2^e is a regularly spaced positive normal binary64 value,
-    excluding powers of 2. -/
+/-- Whether f·2^e is a regularly spaced positive binary64 value: a normal that
+    is not a power of 2, or anything at the minimum exponent, subnormals
+    included, there being no binade below to halve the spacing. -/
 def Regular (f : ℕ) (e : ℤ) : Prop :=
-  2 ^ 52 < f ∧ f < 2 ^ 53 ∧
+  (0 < f ∧ (2 ^ 52 < f ∨ e = -1074)) ∧ f < 2 ^ 53 ∧
    -1074 ≤ e ∧ e ≤ 971
 
 /-! ## The truncated power of ten -/
@@ -561,7 +562,7 @@ tie, and `trim_tie_gap_eq` disposes of those instead.
 private def trimWindows (e : ℤ) : ModWindows where
   g := 2 * trimNum e
   modulus := trimScale e
-  f0 := 2 ^ 52 + 1
+  f0 := 1
   f1 := 2 ^ 53 - 1
   windows :=
     let num : ℤ := trimNum e
@@ -619,7 +620,7 @@ private theorem trim_no_window_hit {lo hi q : ℤ} (f : ℕ) (e : ℤ)
     (hlo : lo ≤ (trimGap f e : ℤ))
     (hhi : (trimGap f e : ℤ) ≤ hi) :
     False := by
-  obtain ⟨hf_lo, hf_hi, -, -⟩ := h
+  obtain ⟨⟨hf_pos, -⟩, hf_hi, -, -⟩ := h
   refine (trimWindows e).not_hit f ?_ hcert hmem ?_ ?_ ?_ hlo hhi <;>
     simp only [trimWindows]
   · rw [trimScale, trimModulus]
@@ -1546,7 +1547,7 @@ theorem one_even_of_not_round_up (f : ℕ) (e : ℤ) (hsh : decimalShift e < 4)
 private def oneWindows (e : ℤ) : ModWindows where
   g := 2 * trimSig e
   modulus := 2 ^ (129 - decimalShift e)
-  f0 := 2 ^ 52 + 1
+  f0 := 1
   f1 := 2 ^ 53 - 1
   windows :=
     let half : ℤ := 2 ^ (127 - decimalShift e)
@@ -1577,7 +1578,7 @@ private theorem one_no_window_hit {lo hi q : ℤ} (f : ℕ) (e : ℤ)
     (hlo : lo ≤ (oneParityResidue f e : ℤ))
     (hhi : (oneParityResidue f e : ℤ) ≤ hi) :
     False := by
-  obtain ⟨hf_lo, hf_hi, -, -⟩ := h
+  obtain ⟨⟨hf_pos, -⟩, hf_hi, -, -⟩ := h
   refine (oneWindows e).not_hit f ?_ hcert hmem ?_ ?_ ?_ hlo hhi <;>
     simp only [oneWindows]
   · positivity
@@ -2172,15 +2173,14 @@ theorem yy_exact_candidate (f : ℕ) (e : ℤ) (h : Regular f e) :
     rw [trim_of_coarse_roundtrip f e h c h10 hc] at htrim
     exact Bool.noConfusion htrim
 
-/-- yy is correct on regularly spaced positive normal binary64 values, powers
-    of two excluded: after removing trailing zeros its output is a shortest
-    decimal representation that round-trips, and it is correctly rounded on its
-    own decimal grid. -/
+/-- yy is correct on regularly spaced positive binary64 values, normal and
+    subnormal, powers of two above the minimum exponent excluded: after removing
+    trailing zeros its output is a shortest decimal representation that
+    round-trips, and it is correctly rounded on its own decimal grid. -/
 theorem yy_correct (f : ℕ) (e : ℤ) (h : Regular f e) :
     let (d, k) := toDecimal f e
     let (d', k') := reduceDecimal d k
     Shortest f e d' k' ∧ CorrectlyRounded f e d' k' := by
   obtain ⟨hfine, hcoarse⟩ := ulp_scaled_bounds e h.2.2
-  exact exact_candidate_correct f e (decimalExponent e)
-    (lt_of_lt_of_le (by norm_num) h.1.le) hfine hcoarse
+  exact exact_candidate_correct f e (decimalExponent e) h.1.1 hfine hcoarse
     (yy_exact_candidate f e h)
