@@ -530,6 +530,16 @@ The outward windows extend to `bnd`, while the inward windows extend by one
 `edge`; soundness uses the outward pair and completeness the inward pair. The
 trim quantities are computed once here so the search can retry a window without
 recomputing the power of ten.
+
+Those four express what packed truncation leaves undecided, and they stop one
+short of `scale - num` on either side, that residue being an exact tie rather
+than an ambiguity. The fifth window is that residue alone, and it asks the other
+question: whether an exact tie is possible at all. Where the cached power is
+exact it is possible only at `k = 0`, which `roundU0` has a branch for, so
+certifying the residue empty elsewhere is what lets `trim_scale_lt` rule out the
+rest. Both halves of the condition are needed: with an inexact power the residue
+is reachable, at 73 exponents, by significands whose packed comparison is no
+tie, and `trim_tie_gap_eq` disposes of those instead.
 -/
 private def trimWindows (e : ℤ) : ModWindows where
   g := 2 * trimNum e
@@ -544,6 +554,9 @@ private def trimWindows (e : ℤ) : ModWindows where
     [(num + 1, bnd - 1), (num - edge + 1, num - 1),
       (scale - bnd, scale - num - 1),
       (scale - num + 1, scale - num + edge - 1)]
+      ++ if trimNum e % trimDen e = 0 ∧ decimalExponent e ≠ 0 then
+        [(scale - num, scale - num)]
+      else []
 
 /-- Close `∃ q, (trimWindows e).refutedBy q = true` for a literal exponent. -/
 elab "trim_cert" : tactic => modCertTactic fun e => (trimWindows e).search
@@ -763,9 +776,9 @@ theorem trim_gap_box (f : ℕ) (e : ℤ) (h : Regular f e)
     (trim_gap_sandwich f e h).2
   exact lt_of_le_of_lt hsand hscaled
 
-/-- The four windows the certificates refute, named by the boundary they hug and
-    the side they hug it from. Soundness uses the outward pair, completeness the
-    inward pair. -/
+/-- The four truncation windows the certificates refute, named by the boundary
+    they hug and the side they hug it from. Soundness uses the outward pair,
+    completeness the inward pair. -/
 structure TrimGapSeparated (f : ℕ) (e : ℤ) : Prop where
   aboveNum : ¬(trimNum e < trimGap f e ∧ trimGap f e < trimBnd e)
   belowNum : ¬(trimNum e < trimGap f e + trimEdge e ∧ trimGap f e < trimNum e)
@@ -784,7 +797,7 @@ theorem trim_gap_separated (f : ℕ) (e : ℤ) (h : Regular f e) :
   have hbnd := trim_bnd_le_scale e h.2.2
   have hedge := trim_two_edge_lt_num e h.2.2
   have hnarrow := trim_two_num_lt_scale e h.2.2
-  -- The four windows, in the order `trimWindows` lists them.
+  -- The four truncation windows, in the order `trimWindows` lists them.
   refine ⟨?_, ?_, ?_, ?_⟩ <;> rintro ⟨hlo, hhi⟩
   · exact trim_no_window_hit f e h hcert (.head _)
       (by omega) (by omega) (by omega)
@@ -897,76 +910,29 @@ theorem trim_tie_gap_eq (f : ℕ) (e : ℤ)
   rw [hnum, htie]
   ring
 
-/-- Packed equality forces `2^(129-h) ∣ p10`: since `trimModulus = 5·2^(129-h)`
-    and `2f+1` is odd, all of that power of two must come from `p10`. -/
-theorem trim_tie_pow_two_dvd (f : ℕ) (e : ℤ) (hsh : decimalShift e < 4)
-    (htie : trimModulus e = trimResidue f e + trimSig e) :
-    2 ^ (129 - decimalShift e) ∣ trimSig e := by
-  have hw : trimResidue f e = 2 * f * trimSig e % trimModulus e := rfl
-  have hdvd : trimModulus e ∣ (2 * f + 1) * trimSig e := by
-    refine ⟨2 * f * trimSig e / trimModulus e + 1, ?_⟩
-    have hq := Nat.div_add_mod (2 * f * trimSig e) (trimModulus e)
-    calc (2 * f + 1) * trimSig e = 2 * f * trimSig e + trimSig e := by ring
-      _ = trimModulus e * (2 * f * trimSig e / trimModulus e)
-          + (trimResidue f e + trimSig e) := by rw [hw]; omega
-      _ = trimModulus e * (2 * f * trimSig e / trimModulus e + 1) := by
-          rw [← htie]; ring
-  refine Nat.Coprime.dvd_of_dvd_mul_left
-    (Nat.Coprime.pow_left _
-      ((Nat.prime_two.coprime_iff_not_dvd).mpr (by omega)))
-    (dvd_trans ⟨5, ?_⟩ hdvd)
-  rw [trimModulus,
-    show 129 - decimalShift e = (128 - decimalShift e) + 1 from by omega,
-    pow_succ]
-  ring
-
-/-- An exact cached power admits a tie only at `k = 0`. For `k > 0` its
-    denominator retains a factor of five; for `k < 0` it has too few factors of
-    two. At `k = 0`, `p10 = 2^127`, the special tie handled by `roundU0`. -/
+/-- An exact cached power admits a tie only at `k = 0`. An exact tie leaves the
+    gap at `scale - num`, and that is the residue the fifth window refutes
+    wherever the cached power is exact and `k` is not zero. -/
 theorem trim_exact_tie_k_zero (f : ℕ) (e : ℤ) (h : Regular f e)
     (hτ : trimNum e % trimDen e = 0)
     (htie : trimModulus e = trimResidue f e + trimSig e) :
     decimalExponent e = 0 := by
-  have hsplit : trimDen e * trimSig e = trimNum e := by
-    simpa [hτ] using trim_num_split e
-  rcases lt_trichotomy (decimalExponent e) 0 with hk | hk | hk
-  · exfalso
-    have hsh := decimal_shift_lt_four e h.2.2
-    have halign := decimal_shift_align e h.2.2
-    -- Scaling by `log₁₀ 2 < 1` moves a negative exponent towards zero.
-    have hek : e ≤ decimalExponent e := by
-      unfold decimalExponent at hk ⊢
-      omega
-    have htie2 := trim_tie_pow_two_dvd f e hsh htie
-    rw [trimNum, power10Num, trimDen, power10Den, neg_neg,
-      show (decimalExponent e).toNat = 0 from by omega, pow_zero,
-      one_mul] at hsplit
-    set m := (-decimalExponent e).toNat
-    set a := (128 - power10Exponent (-decimalExponent e)).toNat
-    set b := (power10Exponent (-decimalExponent e) - 128).toNat
-    -- The tie needs `129 - h` factors of two, but `5^m` supplies none.
-    have hpow : 2 ^ (b + (129 - decimalShift e)) ∣ 10 ^ m * 2 ^ a := by
-      rw [pow_add, ← hsplit]
-      exact mul_dvd_mul_left (2 ^ b) htie2
-    rw [show 10 ^ m * 2 ^ a = 5 ^ m * 2 ^ (m + a) by
-      rw [show (10 : ℕ) = 5 * 2 from rfl, mul_pow, pow_add]
-      ring] at hpow
-    have hle := (Nat.pow_dvd_pow_iff_le_right (by norm_num : 1 < 2)).mp
-      (Nat.Coprime.dvd_of_dvd_mul_left (Nat.Coprime.pow _ _ (by decide)) hpow)
-    omega
-  · exact hk
-  · exfalso
-    have h5den : 5 ∣ trimDen e := by
-      rw [trimDen, power10Den, neg_neg]
-      exact Dvd.dvd.mul_right
-        (dvd_pow (by norm_num : (5 : ℕ) ∣ 10) (by omega)) _
-    have h5num : ¬5 ∣ trimNum e := by
-      rw [trimNum, power10Num,
-        show (-decimalExponent e).toNat = 0 from by omega, pow_zero, one_mul]
-      intro hcon
-      have := Nat.prime_five.dvd_of_dvd_pow hcon
-      norm_num at this
-    exact h5num (dvd_trans h5den ⟨trimSig e, hsplit.symm⟩)
+  by_contra hk
+  obtain ⟨q, hcert⟩ := trim_windows_refuted e h.2.2
+  -- With no truncation remainder the packed tie is an exact one.
+  have hgap : trimGap f e + trimNum e = trimScale e := by
+    rw [trim_tie_gap_eq f e htie, hτ]
+    simp
+  have hpos : 0 < trimNum e :=
+    lt_of_lt_of_le (Nat.mul_pos (by positivity) (trim_den_pos e))
+      (trim_num_lower e h.2.2)
+  -- The fifth window is present exactly under these two hypotheses.
+  have hmem : ((trimScale e : ℤ) - trimNum e, (trimScale e : ℤ) - trimNum e)
+      ∈ (trimWindows e).windows := by
+    refine List.mem_append_right _ ?_
+    rw [ite_eq_left ⟨hτ, hk⟩]
+    exact List.mem_singleton_self _
+  exact trim_no_window_hit f e h hcert hmem (by omega) (by omega) (by omega)
 
 /-- At `k = 0` the cached power of ten is exactly `2^127`, so it has no low bits
     for the truncation to drop. -/
