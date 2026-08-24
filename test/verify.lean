@@ -1865,7 +1865,57 @@ theorem dec_one_nearest (f : ℕ) (e : ℤ) (h : Regular f e) :
       have hnat : 2 * oneGap f e = trimMul e := by exact_mod_cast hq
       exact dec_one_even_of_packed_midpoint f e hsh (hsep.packedMidpoint hnat)
 
-/-! ## The multiple-of-ten candidates -/
+/-! ## The multiple-of-ten candidates
+
+`roundD0` and `roundU0` are read once each, as exact comparisons of the gap with
+half a scaled ULP. Both the soundness of a fired flag and the completeness of an
+unfired one are then directions of the same equivalence, and neither has to look
+at a packed comparison again.
+-/
+
+/-- What `roundD0` decides: the trim-down gap is within half a ULP, with the
+    boundary itself allowed only for even `f`. -/
+theorem round_d0_iff_gap (f : ℕ) (e : ℤ) (h : Regular f e) :
+    (toDecimalCandidates f e).roundD0 = true
+      ↔ if f % 2 = 0 then trimGap f e ≤ trimNum e
+        else trimGap f e < trimNum e := by
+  have hsh : decimalShift e < 4 := decimal_shift_lt_four e h.2.2
+  set c := trimResidue f e / trimUnit e with hc
+  set p := trimSig e / trimUnit e with hp
+  -- yy's test, in the window quantities it actually compares.
+  have hflag : (toDecimalCandidates f e).roundD0
+      = if p = c then decide (f % 2 = 0) else decide (c < p) := by
+    rw [hc, hp, ← trim_c_eq f e hsh, ← trim_half_ulp_eq e hsh]
+    rfl
+  rw [hflag]
+  constructor
+  · intro hd0
+    split_ifs at hd0 with htie
+    -- The apparent tie `halfUlp = c`, which yy takes only for even `f`.
+    · simp only [show f % 2 = 0 from by simpa using hd0, reduceIte]
+      exact trim_gap_le f e h htie.symm.le
+    -- The strict comparison `c < halfUlp`, which needs no certificate.
+    · have hgap := trim_gap_lt f e h (by simpa using hd0)
+      split_ifs
+      · exact hgap.le
+      · exact hgap
+  · intro hgap
+    split_ifs at hgap with heven
+    -- Even `f`: the gap is within `num`, so `c` cannot have passed `halfUlp`,
+    -- which would put the gap a whole unit beyond `num`.
+    · have hcmp : c ≤ p := by
+        by_contra hcon
+        exact absurd (trim_num_lt_gap f e h (by omega)) (by omega)
+      split_ifs
+      · simpa using heven
+      · simp only [decide_eq_true_eq]; omega
+    -- Odd `f`: the gap is strictly within `num`, which excludes the tie.
+    · have hcmp : c < p := by
+        by_contra hcon
+        exact absurd (trim_num_le_gap f e h (by omega)) (by omega)
+      split_ifs
+      · omega
+      · simpa using hcmp
 
 /-- The trim-down candidate is in range whenever `roundD0` fires. -/
 theorem dec_ten_down (f : ℕ) (e : ℤ) (h : Regular f e)
@@ -1880,38 +1930,77 @@ theorem dec_ten_down (f : ℕ) (e : ℤ) (h : Regular f e)
       |(ten : ℚ) - x| < u / 2 := by
   intro k ten x u
   have he := h.2.2
-  have hsh : decimalShift e < 4 := decimal_shift_lt_four e he
   obtain ⟨hle, hlt⟩ :=
     half_ulp_iff_scaled_error f e he (dec_ten_down_scaled_error f e he)
   have habs : |(-(trimGap f e : ℚ))| = (trimGap f e : ℚ) := by
     rw [abs_neg]; exact abs_of_nonneg (Nat.cast_nonneg _)
-  -- yy's packed operands corresponding to `c` and `halfUlp`.
-  set w := trimResidue f e / trimUnit e with hw
-  set p := trimSig e / trimUnit e with hp
-  -- The two yy tests, in the window quantities they actually compare.
-  have hd0' :
-      (if p = w then decide (f % 2 = 0) else decide (w < p)) = true := by
-    rw [hw, hp, ← trim_c_eq f e hsh, ← trim_half_ulp_eq e hsh]
-    exact hd0
-  split at hd0'
-  -- The apparent tie `halfUlp = c`, which yy takes only for even `f`.
-  · rename_i htie
-    simp only [show f % 2 = 0 from by simpa using hd0', reduceIte]
-    exact hle.mpr (by
-      rw [habs]
-      exact_mod_cast trim_gap_le f e h htie.symm.le)
-  -- The strict comparison `c < halfUlp`.
-  · have hd := hlt.mpr (by
-      rw [habs]
-      exact_mod_cast trim_gap_lt f e h (by simpa using hd0'))
-    split_ifs
-    · exact hd.le
-    · exact hd
+  have hgap := (round_d0_iff_gap f e h).mp hd0
+  split_ifs at hgap ⊢
+  · exact hle.mpr (by rw [habs]; exact_mod_cast hgap)
+  · exact hlt.mpr (by rw [habs]; exact_mod_cast hgap)
 
-/-- The trim-up candidate is in range whenever `roundU0` fires. All three yy
-    branches leave the packed sum within one window unit of the modulus; only
-    the final `t0 ≤ t1` branch can fire for odd `f`, and there the bound is
-    strict. -/
+/-- What `roundU0` decides: the trim-up gap is within half a ULP, with the
+    boundary itself allowed only for even `f`. All three yy branches leave the
+    packed sum within one window unit of the modulus; only the final `t0 ≤ t1`
+    branch can fire for odd `f`, and there the bound is strict. -/
+theorem round_u0_iff_gap (f : ℕ) (e : ℤ) (h : Regular f e) :
+    (toDecimalCandidates f e).roundU0 = true
+      ↔ if f % 2 = 0 then trimScale e ≤ trimGap f e + trimNum e
+        else trimScale e < trimGap f e + trimNum e := by
+  have hsh : decimalShift e < 4 := decimal_shift_lt_four e h.2.2
+  set c := trimResidue f e / trimUnit e with hc
+  set p := trimSig e / trimUnit e with hp
+  -- Lift a packed sum reaching the modulus to the untruncated bound.
+  have hpack (hb : 10 * 2 ^ 60 ≤ c + p + 1) :
+      trimModulus e ≤ trimResidue f e + trimSig e + trimUnit e := by
+    rw [trim_modulus_eq e hsh]
+    calc trimUnit e * (10 * 2 ^ 60)
+        ≤ trimUnit e * (c + p) + trimUnit e := by
+          rw [← Nat.mul_succ]; exact Nat.mul_le_mul_left _ hb
+      _ ≤ trimResidue f e + trimSig e + trimUnit e :=
+          Nat.add_le_add_right (trim_pack f e (c + p) le_rfl) _
+  -- yy's three tests, in the window quantities they actually compare.
+  have hflag : (toDecimalCandidates f e).roundU0
+      = (if c + p + 1 = 10 * 2 ^ 60 then decide (f % 2 = 0)
+        else if decimalExponent e = 0 ∧ c + p = 10 * 2 ^ 60 then
+          decide (f % 2 = 0)
+        else decide (10 * 2 ^ 60 ≤ c + p)) := by
+    rw [hc, hp, ← trim_c_eq f e hsh, ← trim_half_ulp_eq e hsh]
+    rfl
+  rw [hflag]
+  constructor
+  · intro hu0
+    split_ifs at hu0 with htie1 htie0
+    -- The one-LSB-offset tie `t1 + 1 = t0`, for even `f` only.
+    · simp only [show f % 2 = 0 from by simpa using hu0, reduceIte]
+      exact trim_scale_le f e h (hpack htie1.ge)
+    -- The exact tie `t1 = t0`, accepted only when `k = 0`, even `f` only.
+    · simp only [show f % 2 = 0 from by simpa using hu0, reduceIte]
+      exact trim_scale_le f e h (hpack (Nat.le_succ_of_le htie0.2.ge))
+    -- The final `t0 ≤ t1` branch, the only one that can fire for odd `f`.
+    · have hplain : 10 * 2 ^ 60 ≤ c + p := by simpa using hu0
+      split_ifs
+      · exact trim_scale_le f e h (hpack (Nat.le_succ_of_le hplain))
+      · exact trim_scale_lt f e h hplain htie0
+  · intro hbound
+    split_ifs at hbound with heven
+    -- Even `f`: the packed sum cannot fall two units short of the modulus.
+    · split_ifs
+      · simpa using heven
+      · simpa using heven
+      · simp only [decide_eq_true_eq]
+        by_contra hcon
+        exact absurd (trim_gap_num_lt_scale f e h (by omega)) (by omega)
+    -- Odd `f`: a strict bound excludes both tie branches.
+    · split_ifs with htie1 htie0
+      · exact absurd (trim_gap_num_le_scale f e h htie1) (by omega)
+      · exact absurd (trim_gap_num_eq_scale_of_k_zero f e h htie0.1 htie0.2)
+          (by omega)
+      · simp only [decide_eq_true_eq]
+        by_contra hcon
+        exact absurd (trim_gap_num_lt_scale f e h (by omega)) (by omega)
+
+/-- The trim-up candidate is in range whenever `roundU0` fires. -/
 theorem dec_ten_up (f : ℕ) (e : ℤ) (h : Regular f e)
     (hu0 : (toDecimalCandidates f e).roundU0 = true) :
     let k := decimalExponent e
@@ -1924,65 +2013,23 @@ theorem dec_ten_up (f : ℕ) (e : ℤ) (h : Regular f e)
       |(ten : ℚ) + 10 - x| < u / 2 := by
   intro k ten x u
   have he := h.2.2
-  have hsh : decimalShift e < 4 := decimal_shift_lt_four e he
   obtain ⟨hle, hlt⟩ :=
     half_ulp_iff_scaled_error f e he (dec_ten_up_scaled_error f e he)
-  -- The free side, shared by all branches.
+  -- The free side, shared by both parities.
   have hfree : -(trimNum e : ℚ) < (trimScale e : ℚ) - (trimGap f e : ℚ) := by
     have hz : (trimGap f e : ℚ) < (trimScale e : ℚ) + (trimNum e : ℚ) := by
       exact_mod_cast trim_gap_lt_scale_add f e h
     linarith
-  -- Convert the integer bounds to scaled error bounds.
-  have hle_of_pack (hpack : trimScale e ≤ trimGap f e + trimNum e) :
-      |(ten : ℚ) + 10 - x| ≤ u / 2 := by
-    refine hle.mpr (abs_le.mpr ⟨hfree.le, ?_⟩)
+  have hbound := (round_u0_iff_gap f e h).mp hu0
+  split_ifs at hbound ⊢
+  · refine hle.mpr (abs_le.mpr ⟨hfree.le, ?_⟩)
     have hz : (trimScale e : ℚ) ≤ (trimGap f e : ℚ) + (trimNum e : ℚ) := by
-      exact_mod_cast hpack
+      exact_mod_cast hbound
     linarith
-  have hlt_of_pack (hpack : trimScale e < trimGap f e + trimNum e) :
-      |(ten : ℚ) + 10 - x| < u / 2 := by
-    refine hlt.mpr (abs_lt.mpr ⟨hfree, ?_⟩)
+  · refine hlt.mpr (abs_lt.mpr ⟨hfree, ?_⟩)
     have hz : (trimScale e : ℚ) < (trimGap f e : ℚ) + (trimNum e : ℚ) := by
-      exact_mod_cast hpack
+      exact_mod_cast hbound
     linarith
-  -- yy's two packed operands, `t1 = w + p` against the modulus `t0 = 10·2^60`.
-  set w := trimResidue f e / trimUnit e with hw
-  set p := trimSig e / trimUnit e with hp10
-  -- Lift `t0 ≤ t1 + 1` to the untruncated bound used by `trim_scale_le`.
-  have hpack_of_ge (hb : 10 * 2 ^ 60 ≤ w + p + 1) :
-      trimModulus e ≤ trimResidue f e + trimSig e + trimUnit e := by
-    rw [trim_modulus_eq e hsh]
-    calc trimUnit e * (10 * 2 ^ 60)
-        ≤ trimUnit e * (w + p) + trimUnit e := by
-          rw [← Nat.mul_succ]; exact Nat.mul_le_mul_left _ hb
-      _ ≤ trimResidue f e + trimSig e + trimUnit e :=
-          Nat.add_le_add_right (trim_pack f e (w + p) le_rfl) _
-  -- The three yy tests, in the window quantities they actually compare.
-  have hu0' : (if w + p + 1 = 10 * 2 ^ 60 then decide (f % 2 = 0)
-      else if k = 0 ∧ w + p = 10 * 2 ^ 60 then decide (f % 2 = 0)
-      else decide (10 * 2 ^ 60 ≤ w + p)) = true := by
-    rw [hw, hp10, ← trim_c_eq f e hsh, ← trim_half_ulp_eq e hsh]
-    exact hu0
-  split at hu0'
-  -- The one-LSB-offset tie `t1 + 1 = t0`, for even `f` only.
-  · rename_i htie1
-    simp only [show f % 2 = 0 from by simpa using hu0', reduceIte]
-    exact hle_of_pack (trim_scale_le f e h (hpack_of_ge htie1.ge))
-  · split at hu0'
-    -- The exact tie `t1 = t0`, accepted only when `k = 0`, even `f` only.
-    · rename_i htie0
-      simp only [show f % 2 = 0 from by simpa using hu0', reduceIte]
-      exact hle_of_pack
-        (trim_scale_le f e h (hpack_of_ge (Nat.le_succ_of_le htie0.2.ge)))
-    -- The final `t0 ≤ t1` branch, the only one that can fire for odd `f`.
-    · rename_i hnot_tie0
-      have hplain : 10 * 2 ^ 60 ≤ w + p := by simpa using hu0'
-      by_cases heven : f % 2 = 0
-      · simp only [heven, reduceIte]
-        exact hle_of_pack
-          (trim_scale_le f e h (hpack_of_ge (Nat.le_succ_of_le hplain)))
-      · simp only [heven, reduceIte]
-        exact hlt_of_pack (trim_scale_lt f e h hplain hnot_tie0)
 
 /-! ## yy's output in the two cases
 
@@ -2085,47 +2132,17 @@ theorem round_d0_of_ten_down_roundtrips (f : ℕ) (e : ℤ) (h : Regular f e)
       ((sigHi f e - sigHi f e % 10 : ℕ) * 10 ^ decimalExponent e)) :
     (toDecimalCandidates f e).roundD0 = true := by
   have he := h.2.2
-  have hsh : decimalShift e < 4 := decimal_shift_lt_four e he
   obtain ⟨hle, hlt⟩ :=
     half_ulp_iff_scaled_error f e he (dec_ten_down_scaled_error f e he)
   have hs := (roundtrips_iff_scaled f e (decimalExponent e) _).mp hr
-  -- yy's packed operands corresponding to `c` and `halfUlp`.
-  set w := trimResidue f e / trimUnit e with hw
-  set p := trimSig e / trimUnit e with hp
-  -- The two yy tests, in the window quantities they actually compare.
-  have hd0 : (toDecimalCandidates f e).roundD0
-      = if p = w then decide (f % 2 = 0) else decide (w < p) := by
-    rw [hw, hp, ← trim_c_eq f e hsh, ← trim_half_ulp_eq e hsh]
-    rfl
-  rw [hd0]
-  by_cases heven : f % 2 = 0
-  -- Even `f`: the round-trip gives `gap ≤ num`, so `w` cannot have passed `p`,
-  -- which would put the gap a whole unit beyond `num`.
-  · simp only [heven, reduceIte] at hs
-    have hgap : trimGap f e ≤ trimNum e := by
-      have hq := hle.mp hs
-      rw [abs_neg, abs_of_nonneg (Nat.cast_nonneg _)] at hq
-      exact_mod_cast hq
-    have hcmp : w ≤ p := by
-      by_contra hcon
-      exact absurd (trim_num_lt_gap f e h (by omega)) (by omega)
-    split
-    · simpa using heven
-    · simp only [decide_eq_true_eq]
-      omega
-  -- Odd `f`: the round-trip gives `gap < num`, which excludes the tie and
-  -- forces the strict comparison.
-  · simp only [heven, reduceIte] at hs
-    have hgap : trimGap f e < trimNum e := by
-      have hq := hlt.mp hs
-      rw [abs_neg, abs_of_nonneg (Nat.cast_nonneg _)] at hq
-      exact_mod_cast hq
-    have hcmp : w < p := by
-      by_contra hcon
-      exact absurd (trim_num_le_gap f e h (by omega)) (by omega)
-    split
-    · omega
-    · simpa using hcmp
+  refine (round_d0_iff_gap f e h).mpr ?_
+  split_ifs at hs ⊢
+  · have hq := hle.mp hs
+    rw [abs_neg, abs_of_nonneg (Nat.cast_nonneg _)] at hq
+    exact_mod_cast hq
+  · have hq := hlt.mp hs
+    rw [abs_neg, abs_of_nonneg (Nat.cast_nonneg _)] at hq
+    exact_mod_cast hq
 
 /-- Completeness: if the trim-up candidate round-trips, `roundU0` fires. -/
 theorem round_u0_of_ten_up_roundtrips (f : ℕ) (e : ℤ) (h : Regular f e)
@@ -2133,58 +2150,20 @@ theorem round_u0_of_ten_up_roundtrips (f : ℕ) (e : ℤ) (h : Regular f e)
       ((sigHi f e - sigHi f e % 10 + 10 : ℕ) * 10 ^ decimalExponent e)) :
     (toDecimalCandidates f e).roundU0 = true := by
   have he := h.2.2
-  have hsh : decimalShift e < 4 := decimal_shift_lt_four e he
   obtain ⟨hle, hlt⟩ :=
     half_ulp_iff_scaled_error f e he (dec_ten_up_scaled_error f e he)
   have hcast : ((sigHi f e - sigHi f e % 10 + 10 : ℕ) : ℚ)
       = ((sigHi f e - sigHi f e % 10 : ℕ) : ℚ) + 10 := by push_cast; ring
   have hs := (roundtrips_iff_scaled f e (decimalExponent e) _).mp hr
   rw [hcast] at hs
-  -- yy's two packed operands, `t1 = w + p` against the modulus `t0 = 10·2^60`.
-  set w := trimResidue f e / trimUnit e with hw
-  set p := trimSig e / trimUnit e with hp
-  -- The three yy tests, in the window quantities they actually compare.
-  have hu0 : (toDecimalCandidates f e).roundU0
-      = (if w + p + 1 = 10 * 2 ^ 60 then
-          decide (f % 2 = 0)
-        else if decimalExponent e = 0 ∧ w + p = 10 * 2 ^ 60 then
-          decide (f % 2 = 0)
-        else decide (10 * 2 ^ 60 ≤ w + p)) := by
-    rw [hw, hp, ← trim_c_eq f e hsh, ← trim_half_ulp_eq e hsh]
-    rfl
-  rw [hu0]
-  by_cases heven : f % 2 = 0
-  -- Even `f`: the round-trip gives `scale ≤ gap + num`, so the packed sum
-  -- cannot fall two units short of the modulus.
-  · simp only [heven, reduceIte] at hs
-    have hbound : trimScale e ≤ trimGap f e + trimNum e := by
-      have hq := (abs_le.mp (hle.mp hs)).2
-      exact_mod_cast (by linarith :
-        (trimScale e : ℚ) ≤ (trimGap f e : ℚ) + (trimNum e : ℚ))
-    split
-    · simpa using heven
-    · split
-      · simpa using heven
-      · simp only [decide_eq_true_eq]
-        by_contra hcon
-        exact absurd (trim_gap_num_lt_scale f e h (by omega)) (by omega)
-  -- Odd `f`: the round-trip gives `scale < gap + num`, which excludes both tie
-  -- cases and forces the plain comparison.
-  · simp only [heven, reduceIte] at hs
-    have hbound : trimScale e < trimGap f e + trimNum e := by
-      have hq := (abs_lt.mp (hlt.mp hs)).2
-      exact_mod_cast (by linarith :
-        (trimScale e : ℚ) < (trimGap f e : ℚ) + (trimNum e : ℚ))
-    split
-    · rename_i htie1
-      exact absurd (trim_gap_num_le_scale f e h htie1) (by omega)
-    · split
-      · rename_i htie0
-        exact absurd (trim_gap_num_eq_scale_of_k_zero f e h htie0.1 htie0.2)
-          (by omega)
-      · simp only [decide_eq_true_eq]
-        by_contra hcon
-        exact absurd (trim_gap_num_lt_scale f e h (by omega)) (by omega)
+  refine (round_u0_iff_gap f e h).mpr ?_
+  split_ifs at hs ⊢
+  · have hq := (abs_le.mp (hle.mp hs)).2
+    exact_mod_cast (by linarith :
+      (trimScale e : ℚ) ≤ (trimGap f e : ℚ) + (trimNum e : ℚ))
+  · have hq := (abs_lt.mp (hlt.mp hs)).2
+    exact_mod_cast (by linarith :
+      (trimScale e : ℚ) < (trimGap f e : ℚ) + (trimNum e : ℚ))
 
 /-- If the rounding interval contains a multiple of ten, yy trims. -/
 theorem trim_of_coarse_roundtrip (f : ℕ) (e : ℤ) (h : Regular f e) (d : ℕ)
