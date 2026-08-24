@@ -365,25 +365,6 @@ theorem sig_hi_ten_quotient (f : ℕ) (e : ℤ) (hsh : decimalShift e < 4) :
   rw [← hdiv]
   omega
 
-/-! ## What the rounding certificates say about the window
-
-`roundD0` compares `W / U` with `p10 / U`, while `roundU0` compares their sum
-with `N / U`. These tests see the exact quantities only up to one window unit
-`U`; `dec_ten_down` and `dec_ten_up` translate their outcomes back into exact
-bounds.
-
-Because truncation is one-sided, the soundness directions are asymmetric: the
-plain `roundU0` test is safe whenever it fires, while the one-LSB-offset test
-`t1 + 1 = t0` and the trim-down tests may accept one unit early.
-
-Completeness reads the same comparisons in the opposite direction. A test that
-does not fire bounds the exact gap from the other side, again with at most one
-unit of uncertainty. There the relevant margin is the distance from the
-discarded low bits of `p10` to the next window boundary, rather than the low
-bits themselves; this is why `trimLowBitsHolds` certifies both sides of the
-unit.
--/
-
 /-- The window modulus is a whole number of window units. -/
 theorem trim_modulus_eq (e : ℤ) (hsh : decimalShift e < 4) :
     trimModulus e = trimUnit e * (10 * 2 ^ 60) := by
@@ -445,6 +426,22 @@ bounds are then linear in products `omega` treats as atoms, so each follows from
 the packed comparisons by integer arithmetic alone. Dividing `den` back out to
 state them over `ℚ` trades that for casts and field lemmas, and for restating as
 hypotheses the facts about `%` and `/` that `omega` already knows.
+
+The comparisons that decide those bounds are themselves packed: `roundD0`
+compares `W / U` with `p10 / U`, while `roundU0` compares their sum with
+`N / U`. They see the exact quantities only up to one window unit `U`;
+`dec_ten_down` and `dec_ten_up` translate their outcomes back into exact bounds.
+
+Because truncation is one-sided, the soundness directions are asymmetric: the
+plain `roundU0` test is safe whenever it fires, while the one-LSB-offset test
+`t1 + 1 = t0` and the trim-down tests may accept one unit early.
+
+Completeness reads the same comparisons in the opposite direction. A test that
+does not fire bounds the exact gap from the other side, again with at most one
+unit of uncertainty. There the relevant margin is the distance from the
+discarded low bits of `p10` to the next window boundary, rather than the low
+bits themselves; this is why `trimWindowMarginsHolds` certifies both sides of
+the unit.
 -/
 
 /-- The exact distance from a candidate to the scaled value, with the
@@ -494,15 +491,15 @@ theorem trim_narrow_all :
     `2^54·(p10Exact - p10) ≤ U - p10 % U`, with the denominator cleared. The
     truncation error fits in the bits the packed comparison discards, measured
     from either end of the window unit. -/
-def trimLowBitsHolds (e : ℤ) : Bool :=
+def trimWindowMarginsHolds (e : ℤ) : Bool :=
   let num := trimNum e
   let den := trimDen e
   let low := num / den % trimUnit e
   decide (2 ^ 54 * (num % den) ≤ low * den
     ∧ 2 ^ 54 * (num % den) + low * den ≤ trimUnit e * den)
 
-theorem trim_low_bits_all :
-    ∀ e ∈ Finset.Icc (-1074 : ℤ) 971, trimLowBitsHolds e = true := by
+theorem trim_window_margins_all :
+    ∀ e ∈ Finset.Icc (-1074 : ℤ) 971, trimWindowMarginsHolds e = true := by
   decide +kernel
 
 /-- The discarded low bits `p10 % U` dominate the cached-power truncation error
@@ -512,8 +509,8 @@ theorem trim_low_bits_all :
 theorem trim_low_bits (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
     2 ^ 54 * (trimNum e % trimDen e)
       ≤ trimSig e % trimUnit e * trimDen e := by
-  have hcert := trim_low_bits_all e (by simpa [Finset.mem_Icc] using he)
-  simp only [trimLowBitsHolds, decide_eq_true_eq] at hcert
+  have hcert := trim_window_margins_all e (by simpa [Finset.mem_Icc] using he)
+  simp only [trimWindowMarginsHolds, decide_eq_true_eq] at hcert
   rw [trim_sig_nat]
   exact hcert.1
 
@@ -523,8 +520,8 @@ theorem trim_low_bits (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
 theorem trim_high_bits (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
     2 ^ 54 * (trimNum e % trimDen e) + trimSig e % trimUnit e * trimDen e
       ≤ trimUnit e * trimDen e := by
-  have hcert := trim_low_bits_all e (by simpa [Finset.mem_Icc] using he)
-  simp only [trimLowBitsHolds, decide_eq_true_eq] at hcert
+  have hcert := trim_window_margins_all e (by simpa [Finset.mem_Icc] using he)
+  simp only [trimWindowMarginsHolds, decide_eq_true_eq] at hcert
   rw [trim_sig_nat]
   exact hcert.2
 
