@@ -438,6 +438,12 @@ width `U/N ≈ 2^(-63.3)`. The finite certificates rule this out for every
 exponent. This is where verify.py counts solutions with `floor_sum`; here a
 refutation certificate reaches the same conclusion with one small check per
 window.
+
+Clearing the denominator serves the development above the certificates too. The
+bounds are then linear in products `omega` treats as atoms, so each follows from
+the packed comparisons by integer arithmetic alone. Dividing `den` back out to
+state them over `ℚ` trades that for casts and field lemmas, and for restating as
+hypotheses the facts about `%` and `/` that `omega` already knows.
 -/
 
 /-- The exact distance from a candidate to the scaled value, with the
