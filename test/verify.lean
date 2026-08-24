@@ -18,6 +18,107 @@ together show that yy's output is a candidate of that method,
 exact ones; only that its output does. `yy_correct` composes the two.
 -/
 
+/-! ## Proof roadmap
+
+The proof is layered, each layer exposing a small interface to the one above
+it. This roadmap gives those interfaces, then where in the file each part of
+the argument lives, then what rests on what.
+
+### 1. Exact specification (`exact.lean`)
+
+`ExactCandidate` describes the only facts needed about a conversion result:
+
+* coarse case: it is a multiple of ten that round-trips;
+* fine case: no multiple of ten round-trips, and the result is a nearest point
+  on the current decimal grid, ties to even.
+
+`exact_candidate_correct` proves that either case gives a shortest, correctly
+rounded decimal after removing trailing zeros, given only that the grid is no
+coarser than one ULP and strictly coarser than a tenth of one.
+
+Thus this file has only two things to prove: that yy's exponent meets those
+grid bounds,
+
+    ulp_scaled_bounds
+
+and
+
+    yy_exact_candidate :
+      ExactCandidate f e (decimalExponent e) (toDecimal f e).1
+
+### 2. Semantic obligations of yy
+
+There are two possible outputs.
+
+* Trimmed:
+    `trimmed_roundtrips`
+  says yy emits a multiple of ten that round-trips.
+
+* Untrimmed:
+    `untrimmed_nearest`
+  says yy emits a nearest point on the grid at `decimalExponent e`, ties to
+  even.
+
+`trim_of_coarse_roundtrip` supplies completeness: if any multiple of ten
+round-trips, yy trims.
+
+These three facts are assembled by `yy_exact_candidate`.
+
+### 3. The file, in order
+
+The modeled algorithm and its cached power of ten:
+
+    ## The truncated power of ten
+    ## yy's conversion
+    ## Exponent alignment
+
+The trim path, from packed comparisons to exact inequalities:
+
+    ## The packed trim window
+    ## The separation facts
+    ## Refuting the trim windows
+    ## From window counts to trim bounds
+    ## From integer bounds to half-ULP bounds
+
+The unit-step path, following the same route for `decOne`:
+
+    ## The unit-step candidate
+    ## Correct rounding of the unit-step candidate
+    ### Refuting the unit-step windows
+    ### Nearest at the unit step
+
+The two paths are then assembled into the exact-method obligations:
+
+    ## The multiple-of-ten candidates
+    ## yy's output in the two cases
+    ## Completeness of the trim flags
+    ## yy refines the exact method
+
+### 4. Dependency structure
+
+The main correctness argument has the following structure:
+
+    yy_correct
+      ← ulp_scaled_bounds
+      ← yy_exact_candidate
+          ← trimmed_roundtrips
+          ← untrimmed_nearest
+          ← trim_of_coarse_roundtrip
+
+The lower-level arithmetic establishing those interface theorems is organized
+around the two packed comparisons and the unit step:
+
+    trimmed_roundtrips, trim_of_coarse_roundtrip
+      ← round_d0_iff_gap, round_u0_iff_gap
+          ← trim_gap_separated
+              ← ModWindows
+
+    untrimmed_nearest
+      ← dec_one_nearest
+          ← one_midpoint_separated
+              ← ModWindows
+-/
+
 /-- Whether f·2^e is a regularly spaced positive binary64 value: a normal that
     is not a power of 2, or anything at the minimum exponent, subnormals
     included, there being no binade below to halve the spacing. -/
