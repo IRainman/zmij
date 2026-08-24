@@ -494,8 +494,9 @@ private def modWindowRefuted (g modulus f0 f1 lo hi q : ℤ) : Bool :=
 
 /-- Every window of the problem refuted by the one multiplier `q`: a handful of
     big-integer operations per window, with the search for `q` left outside. -/
-def ModWindows.refutedBy (W : ModWindows) (q : ℤ) : Bool :=
-  W.windows.all fun w => modWindowRefuted W.g W.modulus W.f0 W.f1 w.1 w.2 q
+def ModWindows.refutedBy (w : ModWindows) (q : ℤ) : Bool :=
+  w.windows.all fun window =>
+    modWindowRefuted w.g w.modulus w.f0 w.f1 window.1 window.2 q
 
 /-- A value strictly between consecutive multiples of `modulus` is absurd. -/
 private theorem window_gap_absurd {modulus lo' hi' v : ℤ}
@@ -554,21 +555,21 @@ private theorem not_window_hit {g modulus f0 f1 lo hi q f j y : ℤ}
 /-- What a certificate says: no significand in range has its residue in any
     window the multiplier refutes. Everything an implementation has to supply is
     the identification of its own quantity with the residue. -/
-theorem ModWindows.not_hit (W : ModWindows) (f : ℕ) (hmodulus : 0 < W.modulus)
-    {q : ℤ} (hcert : W.refutedBy q = true) {lo hi : ℤ}
-    (hmem : (lo, hi) ∈ W.windows) {y : ℕ} (hf0 : W.f0 ≤ f) (hf1 : f ≤ W.f1)
-    (hy : y = W.g * f % W.modulus)
+theorem ModWindows.not_hit (w : ModWindows) (f : ℕ) (hmodulus : 0 < w.modulus)
+    {q : ℤ} (hcert : w.refutedBy q = true) {lo hi : ℤ}
+    (hmem : (lo, hi) ∈ w.windows) {y : ℕ} (hf0 : w.f0 ≤ f) (hf1 : f ≤ w.f1)
+    (hy : y = w.g * f % w.modulus)
     (hlo : lo ≤ (y : ℤ)) (hhi : (y : ℤ) ≤ hi) :
     False := by
-  have hwindow : modWindowRefuted W.g W.modulus W.f0 W.f1 lo hi q = true :=
+  have hwindow : modWindowRefuted w.g w.modulus w.f0 w.f1 lo hi q = true :=
     List.all_eq_true.mp hcert _ hmem
   refine not_window_hit (f := (f : ℤ))
-    (j := ((W.g * f / W.modulus : ℕ) : ℤ))
+    (j := ((w.g * f / w.modulus : ℕ) : ℤ))
     (by exact_mod_cast hmodulus) hwindow (by exact_mod_cast hf0)
     (by exact_mod_cast hf1) ?_ hlo hhi
-  have hz : ((W.modulus * (W.g * f / W.modulus) + W.g * f % W.modulus : ℕ) : ℤ)
-      = ((W.g * f : ℕ) : ℤ) := by
-    exact_mod_cast Nat.div_add_mod (W.g * f) W.modulus
+  have hz : ((w.modulus * (w.g * f / w.modulus) + w.g * f % w.modulus : ℕ) : ℤ)
+      = ((w.g * f : ℕ) : ℤ) := by
+    exact_mod_cast Nat.div_add_mod (w.g * f) w.modulus
   rw [hy]
   push_cast at hz ⊢
   linarith
@@ -584,34 +585,34 @@ leaves few window checks per problem. Such a denominator leaves the span of
 number of significands in the box, so it fits between consecutive multiples with
 room to spare.
 -/
-private def modCertSearch (W : ModWindows) : ℕ → ℤ → ℤ → ℤ → ℤ → ℤ
+private def modCertSearch (w : ModWindows) : ℕ → ℤ → ℤ → ℤ → ℤ → ℤ
   | 0, _, _, _, qc => qc
   | n + 1, u, v, qp, qc =>
-    if decide (((W.f1 : ℤ) + 1) * v < W.modulus) && W.refutedBy qc then
+    if decide (((w.f1 : ℤ) + 1) * v < w.modulus) && w.refutedBy qc then
       qc
     else if v = 0 then
       qc
     else
-      modCertSearch W n v (u % v) qc (u / v * qc + qp)
+      modCertSearch w n v (u % v) qc (u / v * qc + qp)
 
 /-- A multiplier refuting every window, or the best attempt at one. Untrusted:
     what it returns is checked by `refutedBy`. -/
-def ModWindows.search (W : ModWindows) : ℤ :=
-  modCertSearch W 80 W.modulus ((W.g : ℤ) % (W.modulus : ℤ)) 0 1
+def ModWindows.search (w : ModWindows) : ℤ :=
+  modCertSearch w 80 w.modulus ((w.g : ℤ) % (w.modulus : ℤ)) 0 1
 
 open Lean Elab Tactic Meta in
-/-- Close a goal `∃ q, W.refutedBy q = true`, where `W` is a definition applied
+/-- Close a goal `∃ q, w.refutedBy q = true`, where `w` is a definition applied
     to one integer literal, by running the given search on that literal during
     elaboration and quoting the multiplier it returns. Only the literal reaches
     the proof term, where the kernel checks the certificate. -/
 def modCertTactic (search : ℤ → ℤ) : TacticM Unit := do
   let target ← whnfR (← (← getMainGoal).getType)
   let_expr Exists _ pred := target
-    | throwError "mod_cert: expected `∃ q, W.refutedBy q = true`"
+    | throwError "mod_cert: expected `∃ q, w.refutedBy q = true`"
   let_expr Eq _ lhs _ := pred.bindingBody!
     | throwError "mod_cert: expected an equation under the existential"
   let_expr ModWindows.refutedBy problem _ := lhs
-    | throwError "mod_cert: expected `W.refutedBy q`, got {lhs}"
+    | throwError "mod_cert: expected `w.refutedBy q`, got {lhs}"
   let .app _ argument := problem
     | throwError "mod_cert: {problem} is not applied to an index"
   let some index := argument.int?
