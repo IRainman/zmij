@@ -1,11 +1,5 @@
 import exact
 
--- Some finite checks below enumerate up to 2046 exponents. They say `+kernel`
--- so that only the kernel evaluates them, which is also what keeps them clear
--- of the elaborator's recursion and exponentiation guards. The certificate
--- searches run during elaboration instead, and only the witnesses they return
--- reach the kernel.
-
 /-! # yy realizes the exact method
 
 `exact.lean` proves the Schubfach-like method is shortest and correctly rounded
@@ -191,6 +185,9 @@ theorem power10_ratio_normalized :
     ∀ k ∈ Finset.Icc (-292 : ℤ) 324,
       2 ^ 127 * power10Den k ≤ power10Num k ∧
         power10Num k < 2 ^ 128 * power10Den k := by
+  -- This and the three checks like it below enumerate up to 2046 exponents.
+  -- `+kernel` keeps them out of the elaborator, whose recursion and
+  -- exponentiation guards they would otherwise trip.
   decide +kernel
 
 /-- Hence the significand is a normalized 128-bit number: its top bit is set,
@@ -1397,10 +1394,10 @@ theorem half_step_iff_scaled_error {cand dist : ℚ} (f : ℕ) (e : ℤ)
   · rw [div_eq_iff (ne_of_gt hpos)]
     constructor <;> intro hq <;> linarith
 
-/-- The grid at yy's exponent lies between one and ten ULPs. One grid step is
-    `2^(128-h)·den` while half a ULP is `num ≥ 2^127·den`, which gives the lower
-    bound; the upper bound is the narrowness certificate of the packed
-    comparison. -/
+/-- The grid step at yy's exponent is at most one ULP and strictly greater than
+    one tenth of an ULP. One grid step is `2^(128-h)·den` while half a ULP is
+    `num ≥ 2^127·den`, which gives the first bound; the second is the narrowness
+    certificate of the packed comparison. -/
 theorem ulp_scaled_bounds (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
     1 ≤ ulp e * 10 ^ (-decimalExponent e) ∧
       ulp e * 10 ^ (-decimalExponent e) < 10 := by
@@ -2249,11 +2246,12 @@ theorem trim_of_coarse_roundtrip (f : ℕ) (e : ℤ) (h : Regular f e) (d : ℕ)
 
 /-! ## yy refines the exact method
 
-Nothing above is needed beyond the two grid bounds of `ulp_scaled_bounds` and
-the two observable properties of yy's output. In particular no claim is made
-that yy's packed decisions agree with the exact ones: a packed midpoint need not
-be an exact midpoint, and the trim flags are matched to the existence of an
-exact coarse candidate, not to any exact comparison.
+Nothing above is needed beyond `ulp_scaled_bounds` and the three semantic
+obligations `trimmed_roundtrips`, `untrimmed_nearest`, and
+`trim_of_coarse_roundtrip`. In particular no claim is made that yy's packed
+decisions agree with the exact ones: a packed midpoint need not be an exact
+midpoint, and the trim flags are matched to the existence of an exact coarse
+candidate, not to any exact comparison.
 -/
 
 /-- yy implements the exact method: it trims exactly when an exact coarse
