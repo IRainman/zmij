@@ -1,6 +1,6 @@
 import exact
 
-/-! # yy realizes the exact method
+/-! # Correctness of yy
 
 `exact.lean` proves the Schubfach-like method is shortest and correctly rounded
 whenever the decimal grid step is at most one ULP and strictly greater than one
@@ -10,12 +10,11 @@ packed comparisons, and the windows those comparisons leave ambiguous, which
 together show that yy's output is a candidate of that method,
 `yy_exact_candidate`. No claim is made that yy's packed decisions agree with the
 exact ones; only that its output does. `yy_correct` composes the two.
--/
 
-/-! ## Proof roadmap
+## Proof structure
 
 The proof is layered, each layer exposing a small interface to the one above
-it. This roadmap gives those interfaces, then where in the file each part of
+it. This section gives those interfaces, then where in the file each part of
 the argument lives, then what rests on what.
 
 ### 1. Exact specification (`exact.lean`)
@@ -88,7 +87,7 @@ The two paths are then assembled into the exact-method obligations:
     ## Completeness of the trim flags
     ## yy refines the exact method
 
-### 4. Dependency structure
+### 4. What rests on what
 
 The main correctness argument has the following structure:
 
