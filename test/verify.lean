@@ -456,6 +456,17 @@ def stepGap (m f : ℕ) (e : ℤ) : ℕ :=
     the same denominator cleared. -/
 def trimGap (f : ℕ) (e : ℤ) : ℕ := stepGap (trimModulus e) f e
 
+/-- The residue with that same denominator cleared: the share of the gap the
+    truncated power of ten accounts for, before its truncation error. `omega`
+    reads this and its unfolding as two atoms, so a proof folds it throughout
+    and unfolds only where a product has to be distributed. -/
+def trimResidueScaled (f : ℕ) (e : ℤ) : ℕ := trimDen e * trimResidue f e
+
+/-- The gap is the scaled residue plus the cached-power truncation error. -/
+theorem trim_gap_split (f : ℕ) (e : ℤ) :
+    trimGap f e
+      = trimResidueScaled f e + 2 * f * (trimNum e % trimDen e) := rfl
+
 def trimScale (e : ℤ) : ℕ := trimModulus e * trimDen e
 
 /-- How far a gap can be from the multiple-of-ten candidate and still be
@@ -744,10 +755,10 @@ theorem trim_trunc_lt (f : ℕ) (e : ℤ) (h : Regular f e) :
     the truncation error `2·f·τ`, and `trim_low_bits` keeps that error inside
     the low bits of `p10` that the packed comparison discards anyway. -/
 theorem trim_gap_sandwich (f : ℕ) (e : ℤ) (h : Regular f e) :
-    trimDen e * trimResidue f e ≤ trimGap f e ∧
-      trimGap f e ≤ trimDen e * trimResidue f e
+    trimResidueScaled f e ≤ trimGap f e ∧
+      trimGap f e ≤ trimResidueScaled f e
         + trimSig e % trimUnit e * trimDen e := by
-  rw [trimGap, stepGap, ← trimResidue]
+  rw [trim_gap_split]
   have htrunc : 2 * f * (trimNum e % trimDen e)
       ≤ trimSig e % trimUnit e * trimDen e := by
     calc
@@ -772,15 +783,11 @@ theorem trim_gap_box (f : ℕ) (e : ℤ) (h : Regular f e)
     trimGap f e < trimBnd e := by
   rw [trimBnd, ← trim_sig_nat]
   have hslack := add_mod_lt_of_div_le (trim_unit_pos e) hcmp
-  have hscaled : trimDen e * trimResidue f e
-      + trimSig e % trimUnit e * trimDen e
+  have hscaled : trimResidueScaled f e + trimSig e % trimUnit e * trimDen e
       < trimDen e * (trimSig e + trimUnit e) := by
-    rw [mul_comm (trimSig e % trimUnit e), ← mul_add]
+    rw [trimResidueScaled, mul_comm (trimSig e % trimUnit e), ← mul_add]
     exact mul_lt_mul_of_pos_left hslack (trim_den_pos e)
-  have hsand : trimGap f e
-      ≤ trimDen e * trimResidue f e + trimSig e % trimUnit e * trimDen e :=
-    (trim_gap_sandwich f e h).2
-  exact lt_of_le_of_lt hsand hscaled
+  exact lt_of_le_of_lt (trim_gap_sandwich f e h).2 hscaled
 
 /-- The four truncation windows the certificates refute, named by the boundary
     they hug and the side they hug it from. Soundness uses the outward pair,
@@ -828,16 +835,15 @@ theorem trim_gap_lt (f : ℕ) (e : ℤ) (h : Regular f e)
     (hcmp : trimResidue f e / trimUnit e < trimSig e / trimUnit e) :
     trimGap f e < trimNum e := by
   -- A whole window unit of slack, scaled by `den`, outweighs the low bits.
-  have hscaled : trimDen e * trimResidue f e
+  have hscaled : trimResidueScaled f e
       + trimSig e % trimUnit e * trimDen e < trimDen e * trimSig e := by
     have hslack := add_mod_succ_le_of_div_lt (trim_unit_pos e) hcmp
+    rw [trimResidueScaled]
     rw [mul_comm (trimSig e % trimUnit e), ← mul_add]
     exact mul_lt_mul_of_pos_left (by omega) (trim_den_pos e)
   have hnum : trimDen e * trimSig e + trimNum e % trimDen e = trimNum e :=
     trim_num_split e
-  have hsand : trimGap f e
-      ≤ trimDen e * trimResidue f e + trimSig e % trimUnit e * trimDen e :=
-    (trim_gap_sandwich f e h).2
+  have hsand := (trim_gap_sandwich f e h).2
   omega
 
 /-- Trim-down completeness: if the packed comparison reads `halfUlp < c`, then
@@ -848,14 +854,13 @@ theorem trim_num_lt_gap (f : ℕ) (e : ℤ) (h : Regular f e)
     (hcmp : trimSig e / trimUnit e < trimResidue f e / trimUnit e) :
     trimNum e < trimGap f e := by
   have hslack := add_mod_succ_le_of_div_lt (trim_unit_pos e) hcmp
-  have hscaled : trimDen e * (trimSig e + 1) ≤ trimDen e * trimResidue f e :=
+  have hscaled : trimDen e * (trimSig e + 1) ≤ trimResidueScaled f e :=
     Nat.mul_le_mul_left _ (by omega)
   have hexp : trimDen e * (trimSig e + 1)
       = trimDen e * trimSig e + trimDen e := by ring
   have hnum := trim_num_split e
   have hmod : trimNum e % trimDen e < trimDen e := Nat.mod_lt _ (trim_den_pos e)
-  have hsand : trimDen e * trimResidue f e ≤ trimGap f e :=
-    (trim_gap_sandwich f e h).1
+  have hsand := (trim_gap_sandwich f e h).1
   omega
 
 /-- Trim-down completeness, tie case: if the packed comparison has not read
@@ -873,12 +878,11 @@ theorem trim_num_le_gap (f : ℕ) (e : ℤ) (h : Regular f e)
       = trimDen e * trimSig e + trimDen e * (trimResidue f e % trimUnit e)
         + trimDen e := by ring
   have hexp2 : trimDen e * (trimResidue f e + trimUnit e)
-      = trimDen e * trimResidue f e + trimEdge e := by
-    rw [trimEdge]; ring
+      = trimResidueScaled f e + trimEdge e := by
+    rw [trimResidueScaled, trimEdge]; ring
   have hnum := trim_num_split e
   have hmod : trimNum e % trimDen e < trimDen e := Nat.mod_lt _ (trim_den_pos e)
-  have hsand : trimDen e * trimResidue f e ≤ trimGap f e :=
-    (trim_gap_sandwich f e h).1
+  have hsand := (trim_gap_sandwich f e h).1
   have hnear : trimNum e < trimGap f e + trimEdge e := by omega
   exact (trim_gap_separated f e h).belowNum ⟨hnear, hcon⟩
 
@@ -892,12 +896,10 @@ theorem trim_scale_le (f : ℕ) (e : ℤ) (h : Regular f e)
   have hfar : trimScale e ≤ trimGap f e + trimBnd e := by
     rw [trimBnd, ← trim_sig_nat]
     have hscaled : trimScale e
-        ≤ trimDen e * trimResidue f e
-          + trimDen e * (trimSig e + trimUnit e) := by
-      rw [← trim_scale_split e, ← mul_add, ← Nat.add_assoc]
+        ≤ trimResidueScaled f e + trimDen e * (trimSig e + trimUnit e) := by
+      rw [trimResidueScaled, ← trim_scale_split e, ← mul_add, ← Nat.add_assoc]
       exact Nat.mul_le_mul_left _ hcmp
-    have hsand : trimDen e * trimResidue f e ≤ trimGap f e :=
-      (trim_gap_sandwich f e h).1
+    have hsand := (trim_gap_sandwich f e h).1
     omega
   exact (trim_gap_separated f e h).belowScale ⟨hfar, hcon⟩
 
@@ -911,9 +913,9 @@ theorem trim_tie_gap_eq (f : ℕ) (e : ℤ)
   let τ := trimNum e % trimDen e
   have hnum : trimNum e = trimDen e * trimSig e + τ := by
     simpa [τ] using (trim_num_split e).symm
-  change trimDen e * trimResidue f e + 2 * f * τ + trimNum e =
+  change trimResidueScaled f e + 2 * f * τ + trimNum e =
     trimModulus e * trimDen e + (2 * f + 1) * τ
-  rw [hnum, htie]
+  rw [trimResidueScaled, hnum, htie]
   ring
 
 /-- An exact cached power admits a tie only at `k = 0`. An exact tie leaves the
@@ -971,12 +973,11 @@ theorem trim_gap_num_eq_scale_of_k_zero (f : ℕ) (e : ℤ) (h : Regular f e)
     rw [← Nat.mul_div_cancel' hres, ← Nat.mul_div_cancel' hunit, ← Nat.mul_add,
       htie]
     exact (trim_modulus_eq e hsh).symm
-  have hgap : trimGap f e = trimDen e * trimResidue f e := by
-    rw [trimGap, stepGap, ← trimResidue, hnum, Nat.mul_mod_left, Nat.mul_zero,
-      Nat.add_zero]
+  have hgap : trimGap f e = trimResidueScaled f e := by
+    rw [trim_gap_split, hnum, Nat.mul_mod_left, Nat.mul_zero, Nat.add_zero]
   have hscaled_sum : trimDen e * (trimResidue f e + trimSig e)
-      = trimDen e * trimResidue f e + trimNum e := by
-    rw [hnum, hsig]; ring
+      = trimResidueScaled f e + trimNum e := by
+    rw [trimResidueScaled, hnum, hsig]; ring
   rw [hgap, ← trim_scale_split e, ← hsum, hscaled_sum]
 
 /-- Strict trim-up soundness for the final `t0 ≤ t1` test. Packed equality is
@@ -996,13 +997,12 @@ theorem trim_scale_lt (f : ℕ) (e : ℤ) (h : Regular f e)
   rcases lt_or_eq_of_le hcmp with hlt | heq
   · -- Clearing the denominator preserves the strict inequality.
     have hscaled : trimScale e
-        < trimDen e * trimResidue f e + trimDen e * trimSig e := by
-      rw [← trim_scale_split e, ← mul_add]
+        < trimResidueScaled f e + trimDen e * trimSig e := by
+      rw [trimResidueScaled, ← trim_scale_split e, ← mul_add]
       exact mul_lt_mul_of_pos_left hlt (trim_den_pos e)
     have hnum : trimDen e * trimSig e + trimNum e % trimDen e = trimNum e :=
       trim_num_split e
-    have hsand : trimDen e * trimResidue f e ≤ trimGap f e :=
-      (trim_gap_sandwich f e h).1
+    have hsand := (trim_gap_sandwich f e h).1
     omega
   -- Equality in the packed comparison is a genuine tie only when the cached
   -- power is exact. Otherwise its truncation remainder is precisely the slack
@@ -1049,15 +1049,14 @@ theorem trim_packed_room (f : ℕ) (e : ℤ) (h : Regular f e) (n : ℕ)
     have hmod := trim_modulus_eq e hsh
     omega
   -- Clearing the denominator turns each unit of that room into one `trimEdge`.
-  have hscaled : trimDen e * trimResidue f e
-        + trimDen e * trimSig e + n * trimEdge e
+  have hscaled : trimResidueScaled f e + trimDen e * trimSig e + n * trimEdge e
       ≤ trimScale e + trimResidue f e % trimUnit e * trimDen e
         + trimSig e % trimUnit e * trimDen e := by
     have hs := Nat.mul_le_mul_left (trimDen e) hroom
     have hexp1 : trimDen e * (trimResidue f e + trimSig e + n * trimUnit e)
-        = trimDen e * trimResidue f e + trimDen e * trimSig e
+        = trimResidueScaled f e + trimDen e * trimSig e
           + n * trimEdge e := by
-      rw [trimEdge]; ring
+      rw [trimResidueScaled, trimEdge]; ring
     have hexp2 : trimDen e * (trimModulus e + trimResidue f e % trimUnit e
           + trimSig e % trimUnit e)
         = trimScale e + trimResidue f e % trimUnit e * trimDen e
@@ -1066,13 +1065,13 @@ theorem trim_packed_room (f : ℕ) (e : ℤ) (h : Regular f e) (n : ℕ)
     rwa [hexp1, hexp2] at hs
   -- Reconstructing `gap + num` from those products adds `(2f+1)·τ`.
   have hsum : trimGap f e + trimNum e
-      = trimDen e * trimResidue f e + trimDen e * trimSig e
+      = trimResidueScaled f e + trimDen e * trimSig e
         + (2 * f + 1) * (trimNum e % trimDen e) :=
     calc trimGap f e + trimNum e
-        = trimDen e * trimResidue f e + 2 * f * (trimNum e % trimDen e)
+        = trimResidueScaled f e + 2 * f * (trimNum e % trimDen e)
             + (trimDen e * trimSig e + trimNum e % trimDen e) := by
-          rw [trimGap, stepGap, ← trimResidue, trim_num_split e]
-      _ = trimDen e * trimResidue f e + trimDen e * trimSig e
+          rw [trim_gap_split, trim_num_split e]
+      _ = trimResidueScaled f e + trimDen e * trimSig e
             + (2 * f + 1) * (trimNum e % trimDen e) := by ring
   have htau : (2 * f + 1) * (trimNum e % trimDen e)
       ≤ 2 ^ 54 * (trimNum e % trimDen e) :=
@@ -1118,8 +1117,9 @@ theorem trim_gap_num_le_scale (f : ℕ) (e : ℤ) (h : Regular f e)
     `num ≥ 2^127·den` absorbs the truncation error. -/
 theorem trim_gap_lt_scale_add (f : ℕ) (e : ℤ) (h : Regular f e) :
     trimGap f e < trimScale e + trimNum e := by
-  have hres : trimDen e * trimResidue f e < trimScale e := by
-    rw [trimResidue, stepResidue, trimScale, Nat.mul_comm (trimModulus e)]
+  have hres : trimResidueScaled f e < trimScale e := by
+    rw [trimResidueScaled, trimResidue, stepResidue, trimScale,
+      Nat.mul_comm (trimModulus e)]
     exact mul_lt_mul_of_pos_left
       (Nat.mod_lt _ (by rw [trimModulus]; positivity)) (trim_den_pos e)
   have hlow := trim_trunc_lt f e h
@@ -1128,7 +1128,7 @@ theorem trim_gap_lt_scale_add (f : ℕ) (e : ℤ) (h : Regular f e) :
       (Nat.mul_le_mul_right _
         (Nat.pow_le_pow_right (by norm_num) (by norm_num)))
       (trim_num_lower e h.2.2)
-  rw [trimGap, stepGap, ← trimResidue]
+  rw [trim_gap_split]
   omega
 
 /-! ## From integer bounds to half-ULP bounds
