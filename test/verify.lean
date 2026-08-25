@@ -1103,25 +1103,6 @@ theorem u0_tie_k_zero (f : ℕ) (e : ℤ) (hr : Regular f e)
   · have := hr.pos; omega
   · exact u0_exact_tie_k_zero f e hr h htie
 
-/-- A packed sum one window edge short of the coarse step is an exact tie: the
-    dichotomy leaves no room on either side of `scale`. -/
-theorem u0_one_short_tie (f : ℕ) (e : ℤ) (hr : Regular f e)
-    (h : trimResidue f e / trimUnit e + trimSig e / trimUnit e + 1
-      = 10 * 2 ^ 60) :
-    trimGap f e + trimNum e = trimScale e := by
-  have hsh : exponentShift e < 4 := exponent_shift_lt_four e hr.range
-  have hid := trim_packed_sum f e
-  have hD := trim_err_dropU_lt f e hr
-  have hq : trimEdge e
-      * (trimResidue f e / trimUnit e + trimSig e / trimUnit e) + trimEdge e
-      = trimScale e := by
-    rw [trim_scale_eq_edge e hsh, ← h]
-    ring
-  rcases u0_sum_tie_or_far f e hr with htie | hhi | hlo
-  · exact htie
-  · omega
-  · omega
-
 /-- The unit step, cleared. The coarse step is ten of them. -/
 def trimMul (e : ℤ) : ℕ := 2 ^ (128 - exponentShift e) * trimDen e
 
@@ -1856,11 +1837,12 @@ theorem dec_ten_down (f : ℕ) (e : ℤ) (hr : Regular f e)
   · exact hle.mpr (by rw [habs]; exact_mod_cast hgap)
   · exact hlt.mpr (by rw [habs]; exact_mod_cast hgap)
 
-/-- What `roundU0` decides. All three of yy's tests compare the packed sum with
-    the coarse step in whole window edges, so `hlow` and `hhigh` lift each
-    outcome to the scaled values; the only case the lift cannot settle is a
-    packed sum one edge short, which `u0_one_short_tie` shows is an exact tie,
-    and a packed tie, which is exact only at `k = 0`. -/
+/-- What `roundU0` decides. The packed sum `s` counts window edges below
+    `gap + num`, and the coarse step is `10·2^60` of them, so the dichotomy
+    places `s` relative to that constant: more than one edge below the boundary
+    puts `s + 1` short of it, more than one edge above puts `s` past it, and an
+    exact tie leaves only `s` one short or `s` exact with nothing discarded.
+    Those last two are yy's two special branches. -/
 theorem round_u0_iff_gap (f : ℕ) (e : ℤ) (hr : Regular f e) :
     (toDecimalCandidates f e).roundU0 = true
       ↔ if f % 2 = 0 then trimScale e ≤ trimGap f e + trimNum e
@@ -1879,66 +1861,49 @@ theorem round_u0_iff_gap (f : ℕ) (e : ℤ) (hr : Regular f e) :
   have hid := trim_packed_sum f e
   have hD := trim_err_dropU_lt f e hr
   have hscale := trim_scale_eq_edge e hsh
-  have hshort := u0_one_short_tie f e hr
-  have hkzero := u0_err_dropU_k_zero f e hr
-  have htiek := u0_tie_k_zero f e hr
+  have hE : 0 < trimEdge e :=
+    Nat.mul_pos (trim_unit_pos e) (trim_den_pos e)
   rw [hflag]
   set s := trimResidue f e / trimUnit e + trimSig e / trimUnit e with hs
-  -- The packed sum and the coarse step are both whole numbers of window edges,
-  -- so a comparison of the two lifts to the scaled values.
-  have hlow : ∀ n : ℕ, s + n ≤ 10 * 2 ^ 60 →
-      trimEdge e * s + n * trimEdge e ≤ trimScale e := by
-    intro n h
-    rw [hscale]
-    calc trimEdge e * s + n * trimEdge e = trimEdge e * (s + n) := by ring
-      _ ≤ trimEdge e * (10 * 2 ^ 60) := Nat.mul_le_mul_left _ h
-  have hhigh : ∀ n : ℕ, 10 * 2 ^ 60 + n ≤ s →
-      trimScale e + n * trimEdge e ≤ trimEdge e * s := by
-    intro n h
-    rw [hscale]
-    calc trimEdge e * (10 * 2 ^ 60) + n * trimEdge e
-        = trimEdge e * (10 * 2 ^ 60 + n) := by ring
-      _ ≤ trimEdge e * s := Nat.mul_le_mul_left _ h
-  by_cases h1 : s + 1 = 10 * 2 ^ 60
-  -- One edge short: an exact tie, which even `f` takes and odd `f` does not.
-  · rw [ite_eq_left h1]
-    have htie := hshort h1
-    split_ifs with hpar <;> simp only [decide_eq_true_eq] <;> omega
-  rw [ite_eq_right h1]
-  by_cases h2 : decimalExponent e = 0 ∧ s = 10 * 2 ^ 60
-  -- A packed tie at `k = 0`: the comparison discards nothing, so it is exact.
-  · rw [ite_eq_left h2]
-    obtain ⟨hk0, hst⟩ := h2
-    have hzero := hkzero hk0
-    have hup := hhigh 0 (by omega)
-    have hdn := hlow 0 (by omega)
-    split_ifs with hpar <;> simp only [decide_eq_true_eq] <;> omega
-  rw [ite_eq_right h2]
-  simp only [decide_eq_true_eq]
-  split_ifs with hpar
-  -- The plain test, even `f`: two edges of room decide it either way.
-  · constructor
-    · intro hts
-      have := hhigh 0 (by omega)
+  rcases u0_sum_tie_or_far f e hr with htie | hhi | hlo
+  -- An exact tie. Since the discarded error is under two edges, the packed sum
+  -- is either one edge short of the step or exactly on it with nothing
+  -- discarded, and both are branches yy takes for even `f` alone, as the exact
+  -- comparison does.
+  · have hle : s ≤ 10 * 2 ^ 60 := Nat.le_of_mul_le_mul_left (by omega) hE
+    have hnear : 10 * 2 ^ 60 < s + 2 := by
+      have hexp : trimEdge e * (s + 2) = trimEdge e * s + 2 * trimEdge e := by
+        ring
+      exact Nat.lt_of_mul_lt_mul_left (a := trimEdge e) (by omega)
+    rcases Nat.lt_or_ge s (10 * 2 ^ 60) with hlt | hge
+    · rw [ite_eq_left (by omega)]
+      split_ifs with hpar <;> simp only [decide_eq_true_eq] <;> omega
+    · have heq : s = 10 * 2 ^ 60 := by omega
+      rw [heq] at hid
+      rw [ite_eq_right (by omega), ite_eq_left
+        ⟨u0_tie_k_zero f e hr (by omega) htie, heq⟩]
+      split_ifs with hpar <;> simp only [decide_eq_true_eq] <;> omega
+  -- More than one edge above the boundary, so `s` has passed the step and the
+  -- plain test fires. A packed tie is out of reach: it would need `k = 0`,
+  -- where nothing is discarded and the sum would be the boundary itself.
+  · have hge : 10 * 2 ^ 60 < s + 1 := by
+      have hexp : trimEdge e * (s + 1) = trimEdge e * s + trimEdge e := by ring
+      exact Nat.lt_of_mul_lt_mul_left (a := trimEdge e) (by omega)
+    have hnot : ¬(decimalExponent e = 0 ∧ s = 10 * 2 ^ 60) := by
+      rintro ⟨hk, heq⟩
+      have hzero := u0_err_dropU_k_zero f e hr hk
+      rw [heq] at hid
       omega
-    · intro hex
-      by_contra hcon
-      have := hlow 2 (by omega)
-      omega
-  -- The plain test, odd `f`: a packed tie away from `k = 0` is not exact.
-  · constructor
-    · intro hts
-      rcases Nat.eq_or_lt_of_le hts with heq | hlt
-      · have hup := hhigh 0 (by omega)
-        have hdn := hlow 0 (by omega)
-        by_contra hcon
-        exact h2 ⟨htiek (by omega) (by omega), heq.symm⟩
-      · have := hhigh 1 (by omega)
-        omega
-    · intro hex
-      by_contra hcon
-      have := hlow 2 (by omega)
-      omega
+    rw [ite_eq_right (by omega), ite_eq_right hnot]
+    simp only [decide_eq_true_eq]
+    split_ifs <;> omega
+  -- More than one edge below it, so even `s + 1` falls short and no test fires.
+  · have hlt : s + 1 < 10 * 2 ^ 60 := by
+      have hexp : trimEdge e * (s + 1) = trimEdge e * s + trimEdge e := by ring
+      exact Nat.lt_of_mul_lt_mul_left (a := trimEdge e) (by omega)
+    rw [ite_eq_right (by omega), ite_eq_right (by omega)]
+    simp only [decide_eq_true_eq]
+    split_ifs <;> omega
 
 /-- If `roundU0` fires, the trim-up candidate lies in the rounding interval. -/
 theorem dec_ten_up (f : ℕ) (e : ℤ) (hr : Regular f e)
