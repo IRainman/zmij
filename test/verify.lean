@@ -74,7 +74,7 @@ The modeled algorithm and its power-of-ten significand:
 The trim path, from packed comparisons to exact inequalities:
 
     ## The packed trim window
-    ## The separation facts
+    ## Trim bounds in exact arithmetic
     ## Refuting the trim windows
     ## From window counts to trim bounds
     ## From integer bounds to half-ULP bounds
@@ -477,7 +477,7 @@ theorem trim_modulus_eq (e : ℤ) (hsh : decimalShift e < 4) :
     pow_add]
   ring
 
-/-! ## The separation facts
+/-! ## Trim bounds in exact arithmetic
 
 The two multiple-of-ten candidates are within half a ULP exactly when
 
@@ -515,37 +515,13 @@ exact power of ten and `τ = num % den`, the two bounds become
     trim up:    trimScale ≤ trimGap + num,
 
 and `trim_gap_mod` identifies `trimGap` with `2·num·f mod trimScale` as long as
-it has not wrapped, which the packed comparisons guarantee. Each bound is needed
-in both directions, so each of the two boundaries contributes a window on either
-side of it; the boundary value itself lies in none of them, which is what leaves
-the exact ties above their room. A violation would put a single modular
-progression inside an interval of width below `den·U`, a window of relative
-width `U/N ≈ 2^(-63.3)`. The finite certificates rule this out for every
-exponent. This is where verify.py counts solutions with `floor_sum`; here a
-refutation certificate reaches the same conclusion with one small check per
-window.
+it has not wrapped, which the packed comparisons guarantee.
 
 Clearing the denominator serves the development above the certificates too. The
 bounds are then linear in products `omega` treats as atoms, so each follows from
 the packed comparisons by integer arithmetic alone. Dividing `den` back out to
 state them over `ℚ` trades that for casts and field lemmas, and for restating as
 hypotheses the facts about `%` and `/` that `omega` already knows.
-
-The comparisons that decide those bounds are themselves packed: `roundD0`
-compares `W / U` with `p10 / U`, while `roundU0` compares their sum with
-`N / U`. They see the exact quantities only up to one window unit `U`;
-`dec_ten_down` and `dec_ten_up` translate their outcomes back into exact bounds.
-
-Because truncation is one-sided, the soundness directions are asymmetric: the
-plain `roundU0` test is safe whenever it fires, while the one-LSB-offset test
-`t1 + 1 = t0` and the trim-down tests may accept one unit early.
-
-Completeness reads the same comparisons in the opposite direction. A test that
-does not fire bounds the exact gap from the other side, again with at most one
-unit of uncertainty. There the relevant margin is the distance from the
-discarded low bits of `p10` to the next window boundary, rather than the low
-bits themselves; this is why `trimWindowMarginsHolds` certifies both sides of
-the unit.
 -/
 
 /-- The exact distance from a candidate to the scaled value, with the
@@ -631,16 +607,37 @@ theorem trim_high_bits (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
 
 /-! ## Refuting the trim windows
 
+The comparisons that decide those bounds are themselves packed: `roundD0`
+compares `W / U` with `p10 / U`, while `roundU0` compares their sum with
+`N / U`. They see the exact quantities only up to one window unit `U`;
+`dec_ten_down` and `dec_ten_up` translate their outcomes back into exact bounds.
+
+Because truncation is one-sided, the soundness directions are asymmetric: the
+plain `roundU0` test is safe whenever it fires, while the one-LSB-offset test
+`t1 + 1 = t0` and the trim-down tests may accept one unit early.
+
+Completeness reads the same comparisons in the opposite direction. A test that
+does not fire bounds the exact gap from the other side, again with at most one
+unit of uncertainty. There the relevant margin is the distance from the
+discarded low bits of `p10` to the next window boundary, rather than the low
+bits themselves; this is why `trimWindowMarginsHolds` certifies both sides of
+the unit.
+
+Each bound is needed in both directions, so each of the two boundaries
+contributes a window on either side of it; the boundary value itself lies in
+none of them, which is what leaves the exact ties above their room. Soundness
+and completeness for both boundaries therefore reduce to one modular question
+per exponent, of the kind `ModWindows` answers. Writing `num/den` for the exact
+power of ten, the progression is `g = 2·num` modulo `modulus = N·den`, the
+residue is the gap, and any violation forces it into a window of width below
+`den·U`, a relative width of `U/N ≈ 2^(-63.3)`. This is where verify.py counts
+solutions with `floor_sum`; here a refutation certificate reaches the same
+conclusion with one small check per window.
+
 A Nadezhin-style separation proof, as used in Schubfach, was considered but
 still requires a finite Diophantine check over the binary64 significand range.
 The direct modular-window formulation below matches yy more closely and is
 substantially simpler.
-
-Soundness and completeness for both trim boundaries reduce to one modular
-question per exponent, of the kind `ModWindows` answers. Writing `num/den` for
-the exact power of ten, the progression is `g = 2·num` modulo
-`modulus = N·den`, the residue is the gap, and any violation forces the gap into
-a window of width below `den·U`.
 -/
 
 /--
