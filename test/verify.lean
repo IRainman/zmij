@@ -122,8 +122,19 @@ around the two packed comparisons and the unit step:
     is not a power of 2, or anything at the minimum exponent, subnormals
     included, there being no binade below to halve the spacing. -/
 def Regular (f : ℕ) (e : ℤ) : Prop :=
-  (0 < f ∧ (2 ^ 52 < f ∨ e = -1074)) ∧ f < 2 ^ 53 ∧
-   -1074 ≤ e ∧ e ≤ 971
+  (0 < f ∧ f < 2 ^ 53 ∧ (2 ^ 52 < f ∨ e = -1074)) ∧
+  (-1074 ≤ e ∧ e ≤ 971)
+
+/-- A regular value has a positive significand. -/
+theorem Regular.pos {f : ℕ} {e : ℤ} (h : Regular f e) : 0 < f := h.1.1
+
+/-- A regular value has a significand below `2^53`. -/
+theorem Regular.sig_lt {f : ℕ} {e : ℤ} (h : Regular f e) : f < 2 ^ 53 :=
+  h.1.2.1
+
+/-- A regular value's exponent lies in binary64's range. -/
+theorem Regular.range {f : ℕ} {e : ℤ} (h : Regular f e) :
+    -1074 ≤ e ∧ e ≤ 971 := h.2
 
 /-! ## The truncated power of ten -/
 
@@ -719,7 +730,7 @@ private theorem trim_no_window_hit {lo hi q : ℤ} (f : ℕ) (e : ℤ)
     (hlo : lo ≤ (trimGap f e : ℤ))
     (hhi : (trimGap f e : ℤ) ≤ hi) :
     False := by
-  obtain ⟨⟨hf_pos, -⟩, hf_hi, -, -⟩ := h
+  obtain ⟨⟨hf_pos, hf_hi, -⟩, -⟩ := h
   refine (trimWindows e).not_hit f ?_ hcert hmem ?_ ?_ ?_ hlo hhi <;>
     simp only [trimWindows]
   · rw [trimScale, trimModulus]
@@ -848,7 +859,7 @@ theorem step_quotient_add_gap (m f : ℕ) (e : ℤ) :
     and `2·f < 2^54`. -/
 theorem trim_trunc_lt (f : ℕ) (e : ℤ) (h : Regular f e) :
     2 * f * (trimNum e % trimDen e) < 2 ^ 54 * trimDen e :=
-  lt_of_le_of_lt (Nat.mul_le_mul_right _ (by have := h.2.1; omega))
+  lt_of_le_of_lt (Nat.mul_le_mul_right _ (by have := h.sig_lt; omega))
     (mul_lt_mul_of_pos_left (Nat.mod_lt _ (trim_den_pos e)) (by positivity))
 
 /-- The bridge every trim bound crosses: the gap is `den` times the residue plus
@@ -864,8 +875,8 @@ theorem trim_gap_sandwich (f : ℕ) (e : ℤ) (h : Regular f e) :
     calc
       2 * f * (trimNum e % trimDen e)
           ≤ 2 ^ 54 * (trimNum e % trimDen e) :=
-        Nat.mul_le_mul_right _ (by have := h.2.1; omega)
-      _ ≤ trimSig e % trimUnit e * trimDen e := trim_low_bits e h.2.2
+        Nat.mul_le_mul_right _ (by have := h.sig_lt; omega)
+      _ ≤ trimSig e % trimUnit e * trimDen e := trim_low_bits e h.range
   omega
 
 /-- What the packed comparisons say about the untruncated values: a packed sum
@@ -906,10 +917,10 @@ structure TrimGapSeparated (f : ℕ) (e : ℤ) : Prop where
     behind these four separation facts. -/
 theorem trim_gap_separated (f : ℕ) (e : ℤ) (h : Regular f e) :
     TrimGapSeparated f e := by
-  obtain ⟨q, hcert⟩ := trim_windows_refuted e h.2.2
-  have hbnd := trim_bnd_le_scale e h.2.2
-  have hedge := trim_two_edge_lt_num e h.2.2
-  have hnarrow := trim_two_num_lt_scale e h.2.2
+  obtain ⟨q, hcert⟩ := trim_windows_refuted e h.range
+  have hbnd := trim_bnd_le_scale e h.range
+  have hedge := trim_two_edge_lt_num e h.range
+  have hnarrow := trim_two_num_lt_scale e h.range
   -- The four truncation windows, in the order `trimWindows` lists them.
   refine ⟨?_, ?_, ?_, ?_⟩ <;> rintro ⟨hlo, hhi⟩
   · exact trim_no_window_hit f e h hcert (.head _)
@@ -1026,14 +1037,14 @@ theorem trim_exact_tie_k_zero (f : ℕ) (e : ℤ) (h : Regular f e)
     (htie : trimModulus e = trimResidue f e + trimSig e) :
     decimalExponent e = 0 := by
   by_contra hk
-  obtain ⟨q, hcert⟩ := trim_windows_refuted e h.2.2
+  obtain ⟨q, hcert⟩ := trim_windows_refuted e h.range
   -- With no truncation remainder the packed tie is an exact one.
   have hgap : trimGap f e + trimNum e = trimScale e := by
     rw [trim_tie_gap_eq f e htie, hτ]
     simp
   have hpos : 0 < trimNum e :=
     lt_of_lt_of_le (Nat.mul_pos (by positivity) (trim_den_pos e))
-      (trim_num_lower e h.2.2)
+      (trim_num_lower e h.range)
   -- The fifth window is present exactly under these two hypotheses.
   have hmem : ((trimScale e : ℤ) - trimNum e, (trimScale e : ℤ) - trimNum e)
       ∈ (trimWindows e).windows := by
@@ -1059,7 +1070,7 @@ theorem trim_gap_num_eq_scale_of_k_zero (f : ℕ) (e : ℤ) (h : Regular f e)
     (htie : trimResidue f e / trimUnit e + trimSig e / trimUnit e
       = 10 * 2 ^ 60) :
     trimGap f e + trimNum e = trimScale e := by
-  have hsh : decimalShift e < 4 := decimal_shift_lt_four e h.2.2
+  have hsh : decimalShift e < 4 := decimal_shift_lt_four e h.range
   obtain ⟨hnum, hsig⟩ := trim_power_of_k_zero e hk
   have hunit : trimUnit e ∣ trimSig e := by
     rw [hsig, trimUnit]
@@ -1088,7 +1099,7 @@ theorem trim_scale_lt (f : ℕ) (e : ℤ) (h : Regular f e)
     (hne : ¬(decimalExponent e = 0 ∧ trimResidue f e / trimUnit e
       + trimSig e / trimUnit e = 10 * 2 ^ 60)) :
     trimScale e < trimGap f e + trimNum e := by
-  have hsh : decimalShift e < 4 := decimal_shift_lt_four e h.2.2
+  have hsh : decimalShift e < 4 := decimal_shift_lt_four e h.range
   have hu_pos := trim_unit_pos e
   have hmodeq : trimModulus e = trimUnit e * (10 * 2 ^ 60) :=
     trim_modulus_eq e hsh
@@ -1132,7 +1143,7 @@ theorem trim_packed_room (f : ℕ) (e : ℤ) (h : Regular f e) (n : ℕ)
     trimGap f e + trimNum e + n * trimEdge e
       ≤ trimScale e + trimResidue f e % trimUnit e * trimDen e
         + trimEdge e := by
-  have hsh : decimalShift e < 4 := decimal_shift_lt_four e h.2.2
+  have hsh : decimalShift e < 4 := decimal_shift_lt_four e h.range
   -- Scaled back up, the packed sum leaves `n` whole window units of room.
   have hroom : trimResidue f e + trimSig e + n * trimUnit e
       ≤ trimModulus e + trimResidue f e % trimUnit e
@@ -1175,10 +1186,10 @@ theorem trim_packed_room (f : ℕ) (e : ℤ) (h : Regular f e) (n : ℕ)
             + (2 * f + 1) * (trimNum e % trimDen e) := by ring
   have htau : (2 * f + 1) * (trimNum e % trimDen e)
       ≤ 2 ^ 54 * (trimNum e % trimDen e) :=
-    Nat.mul_le_mul_right _ (by have := h.2.1; omega)
+    Nat.mul_le_mul_right _ (by have := h.sig_lt; omega)
   have hhigh : 2 ^ 54 * (trimNum e % trimDen e)
       + trimSig e % trimUnit e * trimDen e ≤ trimEdge e := by
-    rw [trimEdge]; exact trim_high_bits e h.2.2
+    rw [trimEdge]; exact trim_high_bits e h.range
   omega
 
 /-- The low bits of the residue are worth less than one window unit. -/
@@ -1227,7 +1238,7 @@ theorem trim_gap_lt_scale_add (f : ℕ) (e : ℤ) (h : Regular f e) :
     le_trans
       (Nat.mul_le_mul_right _
         (Nat.pow_le_pow_right (by norm_num) (by norm_num)))
-      (trim_num_lower e h.2.2)
+      (trim_num_lower e h.range)
   rw [trim_gap_split]
   omega
 
@@ -1554,7 +1565,7 @@ theorem one_gap_lt_mul_add (f : ℕ) (e : ℤ) (h : Regular f e) :
 theorem one_half_step_le_gap (f : ℕ) (e : ℤ) (h : Regular f e)
     (hu1 : (toDecimalCandidates f e).roundU1 = true) :
     trimMul e ≤ 2 * oneGap f e := by
-  have hsh := decimal_shift_lt_four e h.2.2
+  have hsh := decimal_shift_lt_four e h.range
   have hres :=
     Nat.mul_le_mul_left (trimDen e) ((one_round_half f e hsh).1 hu1)
   have hhalf := trim_mul_eq_two_half e hsh
@@ -1675,7 +1686,7 @@ private theorem one_no_window_hit {lo hi q : ℤ} (f : ℕ) (e : ℤ)
     (hlo : lo ≤ (oneParityResidue f e : ℤ))
     (hhi : (oneParityResidue f e : ℤ) ≤ hi) :
     False := by
-  obtain ⟨⟨hf_pos, -⟩, hf_hi, -, -⟩ := h
+  obtain ⟨⟨hf_pos, hf_hi, -⟩, -⟩ := h
   refine (oneWindows e).not_hit f ?_ hcert hmem ?_ ?_ ?_ hlo hhi <;>
     simp only [oneWindows]
   · positivity
@@ -1702,8 +1713,8 @@ theorem one_residue_below_half (f : ℕ) (e : ℤ) (h : Regular f e)
     (hres : oneResidue f e < 2 ^ (127 - decimalShift e)) :
     oneResidue f e + 2 ^ 54 < 2 ^ (127 - decimalShift e) := by
   by_contra hcon
-  have hsh := decimal_shift_lt_four e h.2.2
-  obtain ⟨q, hcert⟩ := one_windows_refuted e h.2.2
+  have hsh := decimal_shift_lt_four e h.range
+  obtain ⟨q, hcert⟩ := one_windows_refuted e h.range
   obtain ⟨hbelow, habove⟩ := one_windows_truncated e hτ
   -- The remainder is in the last `2^54` below the midpoint; the parity of
   -- `sigHi` decides which of the two windows holds it.
@@ -1739,8 +1750,8 @@ theorem one_tie_band_even (f : ℕ) (e : ℤ) (h : Regular f e)
       < 2 ^ (127 - decimalShift e) + 2 ^ (64 - decimalShift e)) :
     oneResidue f e = 2 ^ (127 - decimalShift e)
       ∧ trimNum e % trimDen e = 0 := by
-  have hsh := decimal_shift_lt_four e h.2.2
-  obtain ⟨q, hcert⟩ := one_windows_refuted e h.2.2
+  have hsh := decimal_shift_lt_four e h.range
+  obtain ⟨q, hcert⟩ := one_windows_refuted e h.range
   have hp : (oneParityResidue f e : ℤ) = (oneResidue f e : ℤ) := by
     rw [one_parity_residue_split f e hsh, hpar]; push_cast; ring
   -- The two ends of the band above the midpoint, which both window shapes
@@ -1782,7 +1793,7 @@ theorem one_tie_band_even (f : ℕ) (e : ℤ) (h : Regular f e)
     these two implications. -/
 theorem one_midpoint_separated (f : ℕ) (e : ℤ) (h : Regular f e) :
     OneMidpointSeparated f e := by
-  have hsh := decimal_shift_lt_four e h.2.2
+  have hsh := decimal_shift_lt_four e h.range
   have hden := trim_den_pos e
   have htrunc := trim_trunc_lt f e h
   have hstep := trim_mul_eq_two_half e hsh
@@ -1862,8 +1873,7 @@ theorem dec_one_nearest (f : ℕ) (e : ℤ) (h : Regular f e) :
     |((toDecimalCandidates f e).decOne : ℚ) - x| ≤ 1 / 2 ∧
       (|((toDecimalCandidates f e).decOne : ℚ) - x| = 1 / 2 →
         (toDecimalCandidates f e).decOne % 2 = 0) := by
-  have he := h.2.2
-  have hsh := decimal_shift_lt_four e he
+  have hsh := decimal_shift_lt_four e h.range
   have hsep := one_midpoint_separated f e h
   set c := toDecimalCandidates f e
   by_cases hu1 : c.roundU1 = true
@@ -1875,7 +1885,7 @@ theorem dec_one_nearest (f : ℕ) (e : ℤ) (h : Regular f e) :
     obtain ⟨hle, heq⟩ := half_step_iff_scaled_error f e
       (cand := (sigHi f e : ℚ) + 1)
       (dist := (trimMul e : ℚ) - (oneGap f e : ℚ))
-      (by linear_combination sig_hi_scaled_error f e he)
+      (by linear_combination sig_hi_scaled_error f e h.range)
     have hlow : (trimMul e : ℚ) ≤ 2 * (oneGap f e : ℚ) := by
       exact_mod_cast one_half_step_le_gap f e h hu1
     -- The gap can pass the step, but only by a truncation error, so it stays
@@ -1922,7 +1932,7 @@ theorem dec_one_nearest (f : ℕ) (e : ℤ) (h : Regular f e) :
     obtain ⟨hle, heq⟩ := half_step_iff_scaled_error f e
       (cand := (sigHi f e : ℚ))
       (dist := -(oneGap f e : ℚ))
-      (sig_hi_scaled_error f e he)
+      (sig_hi_scaled_error f e h.range)
     have habs : |(-(oneGap f e : ℚ))| = (oneGap f e : ℚ) := by
       rw [abs_neg, Nat.abs_cast]
     refine ⟨?_, ?_⟩
@@ -1951,7 +1961,7 @@ theorem round_d0_iff_gap (f : ℕ) (e : ℤ) (h : Regular f e) :
     (toDecimalCandidates f e).roundD0 = true
       ↔ if f % 2 = 0 then trimGap f e ≤ trimNum e
         else trimGap f e < trimNum e := by
-  have hsh : decimalShift e < 4 := decimal_shift_lt_four e h.2.2
+  have hsh : decimalShift e < 4 := decimal_shift_lt_four e h.range
   set c := trimResidue f e / trimUnit e with hc
   set p := trimSig e / trimUnit e with hp
   -- yy's test, in the window quantities it actually compares.
@@ -2001,9 +2011,9 @@ theorem dec_ten_down (f : ℕ) (e : ℤ) (h : Regular f e)
     else
       |(ten : ℚ) - x| < u / 2 := by
   intro k ten x u
-  have he := h.2.2
   obtain ⟨hle, hlt⟩ :=
-    half_ulp_iff_scaled_error f e he (dec_ten_down_scaled_error f e he)
+    half_ulp_iff_scaled_error f e h.range
+      (dec_ten_down_scaled_error f e h.range)
   have habs : |(-(trimGap f e : ℚ))| = (trimGap f e : ℚ) := by
     rw [abs_neg]; exact abs_of_nonneg (Nat.cast_nonneg _)
   have hgap := (round_d0_iff_gap f e h).mp hd0
@@ -2019,7 +2029,7 @@ theorem round_u0_iff_gap (f : ℕ) (e : ℤ) (h : Regular f e) :
     (toDecimalCandidates f e).roundU0 = true
       ↔ if f % 2 = 0 then trimScale e ≤ trimGap f e + trimNum e
         else trimScale e < trimGap f e + trimNum e := by
-  have hsh : decimalShift e < 4 := decimal_shift_lt_four e h.2.2
+  have hsh : decimalShift e < 4 := decimal_shift_lt_four e h.range
   set c := trimResidue f e / trimUnit e with hc
   set p := trimSig e / trimUnit e with hp
   -- Lift a packed sum reaching the modulus to the untruncated bound.
@@ -2084,9 +2094,9 @@ theorem dec_ten_up (f : ℕ) (e : ℤ) (h : Regular f e)
     else
       |(ten : ℚ) + 10 - x| < u / 2 := by
   intro k ten x u
-  have he := h.2.2
   obtain ⟨hle, hlt⟩ :=
-    half_ulp_iff_scaled_error f e he (dec_ten_up_scaled_error f e he)
+    half_ulp_iff_scaled_error f e h.range
+      (dec_ten_up_scaled_error f e h.range)
   -- The free side, shared by both parities.
   have hfree : -(trimNum e : ℚ) < (trimScale e : ℚ) - (trimGap f e : ℚ) := by
     have hz : (trimGap f e : ℚ) < (trimScale e : ℚ) + (trimNum e : ℚ) := by
@@ -2183,10 +2193,9 @@ theorem coarse_candidate_cases (f : ℕ) (e : ℤ) (h : Regular f e) (d : ℕ)
     (h10 : d % 10 = 0)
     (hr : Roundtrips f e (d * 10 ^ decimalExponent e)) :
     d = sigHi f e - sigHi f e % 10 ∨ d = sigHi f e - sigHi f e % 10 + 10 := by
-  have he := h.2.2
   have hmul := trim_mul_pos e
-  have hdown := dec_ten_down_scaled_error f e he
-  have hhalf := trim_mul_half_ulp e he
+  have hdown := dec_ten_down_scaled_error f e h.range
+  have hhalf := trim_mul_half_ulp e h.range
   have hgap0 : (0 : ℚ) ≤ (trimGap f e : ℚ) := by positivity
   have hnum0 : (0 : ℚ) ≤ (trimNum e : ℚ) := by positivity
   have hgap : (trimGap f e : ℚ) < (trimScale e : ℚ) + (trimNum e : ℚ) := by
@@ -2194,7 +2203,7 @@ theorem coarse_candidate_cases (f : ℕ) (e : ℤ) (h : Regular f e) (d : ℕ)
   have hstep : (trimScale e : ℚ) = 10 * (trimMul e : ℚ) := by
     exact_mod_cast trim_scale_eq_ten_mul e
   exact coarse_roundtrip_adjacent f e (decimalExponent e)
-    (ulp_scaled_bounds e he).2 (by omega) h10
+    (ulp_scaled_bounds e h.range).2 (by omega) h10
     (le_of_mul_le_mul_right (by linarith) hmul)
     (lt_of_mul_lt_mul_right (by linarith) hmul.le) hr
 
@@ -2203,9 +2212,9 @@ theorem round_d0_of_ten_down_roundtrips (f : ℕ) (e : ℤ) (h : Regular f e)
     (hr : Roundtrips f e
       ((sigHi f e - sigHi f e % 10 : ℕ) * 10 ^ decimalExponent e)) :
     (toDecimalCandidates f e).roundD0 = true := by
-  have he := h.2.2
   obtain ⟨hle, hlt⟩ :=
-    half_ulp_iff_scaled_error f e he (dec_ten_down_scaled_error f e he)
+    half_ulp_iff_scaled_error f e h.range
+      (dec_ten_down_scaled_error f e h.range)
   have hs := (roundtrips_iff_scaled f e (decimalExponent e) _).mp hr
   refine (round_d0_iff_gap f e h).mpr ?_
   split_ifs at hs ⊢
@@ -2221,9 +2230,9 @@ theorem round_u0_of_ten_up_roundtrips (f : ℕ) (e : ℤ) (h : Regular f e)
     (hr : Roundtrips f e
       ((sigHi f e - sigHi f e % 10 + 10 : ℕ) * 10 ^ decimalExponent e)) :
     (toDecimalCandidates f e).roundU0 = true := by
-  have he := h.2.2
   obtain ⟨hle, hlt⟩ :=
-    half_ulp_iff_scaled_error f e he (dec_ten_up_scaled_error f e he)
+    half_ulp_iff_scaled_error f e h.range
+      (dec_ten_up_scaled_error f e h.range)
   have hcast : ((sigHi f e - sigHi f e % 10 + 10 : ℕ) : ℚ)
       = ((sigHi f e - sigHi f e % 10 : ℕ) : ℚ) + 10 := by push_cast; ring
   have hs := (roundtrips_iff_scaled f e (decimalExponent e) _).mp hr
@@ -2281,6 +2290,6 @@ theorem yy_correct (f : ℕ) (e : ℤ) (h : Regular f e) :
     let (d, k) := toDecimal f e
     let (d', k') := reduceDecimal d k
     Shortest f e d' k' ∧ CorrectlyRounded f e d' k' := by
-  obtain ⟨hfine, hcoarse⟩ := ulp_scaled_bounds e h.2.2
-  exact exact_candidate_correct f e (decimalExponent e) h.1.1 hfine hcoarse
+  obtain ⟨hfine, hcoarse⟩ := ulp_scaled_bounds e h.range
+  exact exact_candidate_correct f e (decimalExponent e) h.pos hfine hcoarse
     (yy_exact_candidate f e h)
