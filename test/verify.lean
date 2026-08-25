@@ -1238,9 +1238,9 @@ theorem trim_gap_num_le_scale (f : ℕ) (e : ℤ) (hr : Regular f e)
   have hedge := trim_residue_low_lt_edge f e
   exact (trim_gap_separated f e hr).aboveScale ⟨hcon, by omega⟩
 
-/-- The free side of the trim-up bound: the gap can overshoot the coarse step,
-    but by less than `num`, since the residue stays below the step and
-    `num ≥ 2^127·den` absorbs the truncation error. -/
+/-- The gap can overshoot the coarse step, but by less than `num`: the residue
+    stays below the step and `num ≥ 2^127·den` absorbs the truncation error.
+    This is the side of the trim-up bound that needs no flag hypothesis. -/
 theorem trim_gap_lt_scale_add (f : ℕ) (e : ℤ) (hr : Regular f e) :
     trimGap f e < trimScale e + trimNum e := by
   have hres : trimResidueScaled f e < trimScale e := by
@@ -2014,7 +2014,8 @@ theorem round_d0_iff_gap (f : ℕ) (e : ℤ) (hr : Regular f e) :
       · omega
       · simpa using hcmp
 
-/-- The trim-down candidate is in range whenever `roundD0` fires. -/
+/-- If `roundD0` fires, the trim-down candidate lies in the rounding
+    interval. -/
 theorem dec_ten_down (f : ℕ) (e : ℤ) (hr : Regular f e)
     (hd0 : (toDecimalCandidates f e).roundD0 = true) :
     let k := decimalExponent e
@@ -2096,7 +2097,7 @@ theorem round_u0_iff_gap (f : ℕ) (e : ℤ) (hr : Regular f e) :
         by_contra hcon
         exact absurd (trim_gap_num_lt_scale f e hr (by omega)) (by omega)
 
-/-- The trim-up candidate is in range whenever `roundU0` fires. -/
+/-- If `roundU0` fires, the trim-up candidate lies in the rounding interval. -/
 theorem dec_ten_up (f : ℕ) (e : ℤ) (hr : Regular f e)
     (hu0 : (toDecimalCandidates f e).roundU0 = true) :
     let k := decimalExponent e
@@ -2110,18 +2111,18 @@ theorem dec_ten_up (f : ℕ) (e : ℤ) (hr : Regular f e)
   obtain ⟨hle, hlt⟩ :=
     half_ulp_iff_scaled_error f e hr.range
       (dec_ten_up_scaled_error f e hr.range)
-  -- The free side, shared by both parities.
-  have hfree : -(trimNum e : ℚ) < (trimScale e : ℚ) - (trimGap f e : ℚ) := by
+  -- The lower half-ULP bound is strict for both parities.
+  have hlower : -(trimNum e : ℚ) < (trimScale e : ℚ) - (trimGap f e : ℚ) := by
     have hz : (trimGap f e : ℚ) < (trimScale e : ℚ) + (trimNum e : ℚ) := by
       exact_mod_cast trim_gap_lt_scale_add f e hr
     linarith
   have hbound := (round_u0_iff_gap f e hr).mp hu0
   split_ifs at hbound ⊢
-  · refine hle.mpr (abs_le.mpr ⟨hfree.le, ?_⟩)
+  · refine hle.mpr (abs_le.mpr ⟨hlower.le, ?_⟩)
     have hz : (trimScale e : ℚ) ≤ (trimGap f e : ℚ) + (trimNum e : ℚ) := by
       exact_mod_cast hbound
     linarith
-  · refine hlt.mpr (abs_lt.mpr ⟨hfree, ?_⟩)
+  · refine hlt.mpr (abs_lt.mpr ⟨hlower, ?_⟩)
     have hz : (trimScale e : ℚ) < (trimGap f e : ℚ) + (trimNum e : ℚ) := by
       exact_mod_cast hbound
     linarith
@@ -2129,9 +2130,9 @@ theorem dec_ten_up (f : ℕ) (e : ℤ) (hr : Regular f e)
 /-! ## yy's coarse and fine outputs
 
 On the coarse path, yy emits a multiple of ten, and `dec_ten_down` and
-`dec_ten_up` bound its distance. On the fine path, it emits `decOne`, whose
-half-step bound already implies that it round-trips because the grid step at
-`decimalExponent e` is at most one ULP.
+`dec_ten_up` show that it lies within half a ULP of the exact scaled value. On
+the fine path, it emits `decOne`, whose half-step bound already implies that it
+round-trips because the grid step at `decimalExponent e` is at most one ULP.
 -/
 
 /-- On the coarse path, yy emits a multiple of ten that round-trips. Which of
