@@ -17,6 +17,10 @@ ambiguous, which together show that yy's output is a candidate of that method,
 `ulp_scaled_bounds`, gives `yy_correct`. No claim is made that yy's packed
 decisions agree with the exact ones; only that its output does.
 
+Throughout this file:
+* `f`, `e`: binary significand and exponent, denoting `f·2^e`;
+* `d`, `k`: decimal significand and exponent, denoting `d·10^k`.
+
 ## Proof structure
 
 The proof is layered, each layer exposing a small interface to the one above
