@@ -2140,10 +2140,10 @@ half-step bound already implies that it round-trips because the grid step at
 theorem coarse_output_roundtrips (f : ℕ) (e : ℤ) (hr : Regular f e) :
     let c := toDecimalCandidates f e
     (c.roundD0 || c.roundU0) = true →
-    (toDecimal f e).1 % 10 = 0 ∧
-      Roundtrips f e (((toDecimal f e).1 : ℚ) * 10 ^ decimalExponent e) := by
-  intro c htrim
-  have hy : (toDecimal f e).1 = c.decTen := by
+    let d := (toDecimal f e).1
+    d % 10 = 0 ∧ Roundtrips f e ((d : ℚ) * 10 ^ decimalExponent e) := by
+  intro c htrim d
+  have hy : d = c.decTen := by
     show (if c.roundD0 || c.roundU0 then c.decTen else c.decOne) = _
     rw [htrim]
     rfl
@@ -2165,11 +2165,11 @@ theorem coarse_output_roundtrips (f : ℕ) (e : ℤ) (hr : Regular f e) :
 theorem fine_output_nearest (f : ℕ) (e : ℤ) (hr : Regular f e) :
     let c := toDecimalCandidates f e
     (c.roundD0 || c.roundU0) = false →
+    let d := (toDecimal f e).1
     let x := value f e * 10 ^ (-decimalExponent e)
-    |((toDecimal f e).1 : ℚ) - x| ≤ 1 / 2 ∧
-      (|((toDecimal f e).1 : ℚ) - x| = 1 / 2 → (toDecimal f e).1 % 2 = 0) := by
-  intro c htrim
-  rw [show (toDecimal f e).1 = c.decOne from by
+    |(d : ℚ) - x| ≤ 1 / 2 ∧ (|(d : ℚ) - x| = 1 / 2 → d % 2 = 0) := by
+  intro c htrim d
+  rw [show d = c.decOne from by
     show (if c.roundD0 || c.roundU0 then _ else _) = _
     rw [htrim]
     rfl]
@@ -2193,10 +2193,11 @@ Because yy compares quantities truncated to window units, a packed tie can hide
 which side of the exact rounding boundary the candidate lies on. For even `f`,
 ties are accepted, so a rejection implies at least one full window unit of
 separation, enough to dominate the power-of-ten truncation error. For odd `f`,
-ties are rejected, so the ambiguous packed-tie cases fall in the inward windows
-that `trim_gap_separated` excludes. The exceptional `roundU0` tie at `k = 0`
-lies one unit farther out, where the power-of-ten approximation is exact, and
-`trim_gap_num_eq_scale_of_k_zero` settles it directly.
+ties are rejected, so the ambiguous packed-tie cases can lie just inside that
+boundary; `trim_gap_separated` excludes those narrow windows. The exceptional
+`roundU0` tie at `k = 0` lies one unit farther out, where the power-of-ten
+approximation is exact, and `trim_gap_num_eq_scale_of_k_zero` settles it
+directly.
 -/
 
 /-- A multiple of ten that round-trips is one of yy's two coarse candidates,
