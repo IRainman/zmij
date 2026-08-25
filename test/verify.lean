@@ -1342,7 +1342,7 @@ theorem trim_mul_half_ulp (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
           show -k + k = 0 from by ring, zpow_zero]
         ring
 
-/-- Both candidates reach ℚ the same way: cleared of the scale, a candidate
+/-- Both candidates reach ℚ the same way: in the scale `trimMul`, a candidate
     accounting for the whole product except its gap sits exactly that gap below
     the scaled value. -/
 theorem scaled_error_of_nat {cand gap : ℕ} (f : ℕ) (e : ℤ)
@@ -2177,31 +2177,34 @@ theorem fine_output_nearest (f : ℕ) (e : ℤ) (hr : Regular f e) :
 
 /-! ## Completeness of the trim decision
 
-`decOne` lies on the fine decimal grid, while the two multiple-of-ten
-candidates lie on the grid one decimal digit coarser. yy trims exactly when a
-digit could have been dropped, that is, when the rounding interval contains a
-multiple of ten. `dec_ten_down` and `dec_ten_up` give one direction; the
-converses below give the other, which is what makes yy's trim decision a
-decision procedure for the exact method's case split.
+The exact method takes the coarse case exactly when the rounding interval
+contains a multiple of ten, that is, when a digit can be dropped. yy makes the
+same choice through `roundD0` and `roundU0`: it trims when either of its two
+coarse candidates round-trips. `dec_ten_down` and `dec_ten_up` show that a trim
+flag implies such a candidate round-trips; the converses below show that a
+round-tripping coarse candidate fires a flag.
 
-The rounding interval is narrower than one coarse step, so the two
-multiple-of-ten candidates are the only multiples of ten it can contain, and it
-is enough to recognize those two.
+The rounding interval is narrower than one coarse step, so yy's two coarse
+candidates are the only multiples of ten it can contain. It is therefore enough
+to recognize those two. When neither round-trips, yy keeps `decOne`, which lies
+on the grid one decimal digit finer.
 
-For even `f` every tie branch accepts, so a missing flag leaves the packed
-comparison a whole window unit clear of its boundary, enough to dominate the
-power-of-ten truncation error. For odd `f` the tie branches reject, so a
-missing flag at a packed tie can leave the exact gap within one window unit on
-the rejected side of the boundary. The corresponding inward windows are
-excluded by `trim_gap_separated`. The exceptional `roundU0` tie at `k = 0`
-lies one unit farther out; there the power-of-ten approximation is exact, and
+Because yy compares quantities truncated to window units, a packed tie can hide
+which side of the exact rounding boundary the candidate lies on. For even `f`,
+ties are accepted, so a rejection implies at least one full window unit of
+separation, enough to dominate the power-of-ten truncation error. For odd `f`,
+ties are rejected, so the ambiguous packed-tie cases fall in the inward windows
+that `trim_gap_separated` excludes. The exceptional `roundU0` tie at `k = 0`
+lies one unit farther out, where the power-of-ten approximation is exact, and
 `trim_gap_num_eq_scale_of_k_zero` settles it directly.
 -/
 
-/-- A multiple of ten that round-trips is one of the two yy considers. All yy
-    contributes is that its trim-down candidate brackets the scaled value:
-    `trimGap` is exactly how far below it sits, cleared of the scale, and the
-    gap runs to one coarse step plus the half ULP it can overshoot by. -/
+/-- A multiple of ten that round-trips is one of yy's two coarse candidates,
+    `sigTen` or `sigTen + 10`. After scaling by `trimMul`, the lower one sits
+    `trimGap` below the scaled value, and that gap is less than one coarse step
+    plus half a ULP, with the extra room covering the power-of-ten truncation
+    error. This bracket is all `coarse_roundtrip_adjacent` needs to restrict the
+    possibilities to those two. -/
 theorem coarse_candidate_cases (f : ℕ) (e : ℤ) (hr : Regular f e) (d : ℕ)
     (h10 : d % 10 = 0)
     (hround : Roundtrips f e (d * 10 ^ decimalExponent e)) :
