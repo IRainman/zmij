@@ -7,103 +7,56 @@ import exact
 
 /-! # Correctness of yy
 
-`exact.lean` proves that the exact, Schubfach-like method produces a shortest,
-correctly rounded decimal whenever the decimal grid step is at most one ULP and
-strictly greater than a tenth of a ULP, and supplies both halves of the
-lossy-comparison method: `comparison_stable_of_far` away from a boundary, and
-refutation of narrow modular windows near one. Everything specific to yy is
-here: the truncated power-of-ten significand, the identification of its packed
-comparisons with exact quantities plus errors, bounds on those errors, and the
-windows the bounds leave ambiguous, which together show that yy's output is a
-candidate of that method, `yy_exact_candidate`. Composing that with the grid bounds at yy's exponent,
-`ulp_scaled_bounds`, gives `yy_correct`. No claim is made that yy's packed
-decisions agree with the exact ones; only that its output does.
+`exact.lean` proves that an exact, Schubfach-like selection rule produces a
+shortest, correctly rounded decimal whenever the decimal grid step is at most
+one ULP and strictly greater than a tenth of one. This file proves that yy
+implements that rule.
+
+The whole argument is that each of yy's three packed Boolean decisions is an
+exact arithmetic predicate. yy computes them from a truncated power of ten and
+from words it has already dropped bits from, so a decision could in principle
+differ from the exact one; the narrow regions where that could happen are
+discharged by finite modular certificates. Once the three characterizations are
+in hand, the rest is a short assembly into `ExactCandidate`. No claim is made
+that yy's packed comparisons agree with the exact ones case by case—a packed
+midpoint need not be an exact midpoint—only that the output is right.
 
 Throughout this file:
 * `f`, `e`: binary significand and exponent, denoting `f·2^e`;
 * `d`, `k`: decimal significand and exponent, denoting `d·10^k`;
 * `h`: the shift `exponentShift e`, aligning `f·2^e` with `10^k`.
 
-## Proof structure
+## What the three decisions mean
 
-The proof is layered, each layer exposing a small interface to the one above
-it. This section gives those interfaces, then where in the file each part of
-the argument lives, then the dependencies between them.
+Each of yy's flags is characterized once, as an exact integer comparison:
 
-### 1. Exact specification (`exact.lean`)
+    round_d0_iff_gap :  roundD0 ↔ trimGap ≤ trimNum
+    round_u0_iff_gap :  roundU0 ↔ trimScale ≤ trimGap + trimNum
+    round_u1_iff_gap :  roundU1 ↔ trimMul < 2·oneGap
 
-`ExactCandidate` describes the only facts needed about a conversion result:
+The first two are strict for odd `f` and the third non-strict for odd `sigHi`,
+which is each tie rule written into its bound: the coarse candidates are ties in
+the binary rounding interval, resolved by the parity of `f`, while the unit step
+is a decimal tie, resolved by the parity of the digit being emitted.
 
-* coarse case: it is a multiple of ten that round-trips;
-* fine case: no multiple of ten round-trips, and the result is a nearest point
-  on the current decimal grid, ties to even.
+`## yy's arithmetic model` is there to prove those three. It supplies the
+quantities they are stated in—`trimGap`, `trimNum`, `trimScale`, `trimMul`,
+`oneGap`—and keeps the rest below them: the packed words, the exact identities
+behind them, the truncation error, bounds on that error, and the `ModWindows`
+certificates closing the regions the bounds leave open.
 
-`exact_candidate_correct` proves that either case gives a shortest, correctly
-rounded decimal after removing trailing zeros, given only that the grid is no
-coarser than one ULP and strictly coarser than a tenth of one.
+The coarse pair carries a second equivalence, on the other side:
 
-Thus this file has only two things to prove: that yy's exponent meets those
-grid bounds,
+    round_d0_iff_roundtrips :  roundD0 ↔ sigTen round-trips
+    round_u0_iff_roundtrips :  roundU0 ↔ sigTen + 10 round-trips
 
-    ulp_scaled_bounds
+The two boundaries mean different things and stay separate. `*_iff_gap` says the
+finite-precision implementation reaches the correct exact decision;
+`*_iff_roundtrips` connects the integer scale that decision is made in to the
+semantic specification. Consumers read one direction or the other:
+`coarse_output_roundtrips` uses `→`, `trim_of_coarse_roundtrip` uses `←`.
 
-and
-
-    yy_exact_candidate :
-      let (d, k) := toDecimal f e
-      ExactCandidate f e k d
-
-### 2. Semantic obligations of yy
-
-There are two possible outputs, chosen by yy's trim decision.
-
-* Coarse:
-    `coarse_output_roundtrips`
-  says yy emits a multiple of ten that round-trips.
-
-* Fine:
-    `fine_output_nearest`
-  says yy emits a nearest point on the grid at `decimalExponent e`, ties to
-  even.
-
-`trim_of_coarse_roundtrip` supplies completeness: if any multiple of ten
-round-trips, yy takes the coarse path.
-
-These three facts are assembled by `yy_exact_candidate`.
-
-### 3. File organization
-
-The modeled algorithm and its power-of-ten significand:
-
-    ## The truncated power of ten
-    ## yy's conversion
-    ## Exponent alignment
-
-The trim path, from packed comparisons to exact inequalities:
-
-    ## The packed trim comparison
-    ## Trim bounds in exact arithmetic
-    ## Refuting the trim windows
-    ## From packed comparisons to trim bounds
-    ## From integer bounds to half-ULP bounds
-
-The unit-step path, following an analogous route:
-
-    ## The unit-step candidate
-    ## Correct rounding at the unit step
-    ### Refuting the unit-step windows
-    ### Nearest at the unit step
-
-The two paths are then assembled into the exact-method obligations:
-
-    ## The multiple-of-ten candidates
-    ## yy's coarse and fine outputs
-    ## Completeness of the trim decision
-    ## yy refines the exact method
-
-### 4. Proof dependencies
-
-The main correctness argument has the following structure:
+## Dependencies
 
     yy_correct
       ← ulp_scaled_bounds
@@ -112,24 +65,15 @@ The main correctness argument has the following structure:
           ← fine_output_nearest
           ← trim_of_coarse_roundtrip
 
-The lower-level arithmetic establishing those interface theorems is organized
-around the two packed comparisons and the unit step:
-
     coarse_output_roundtrips, trim_of_coarse_roundtrip
-      ← round_d0_iff_gap, round_u0_iff_gap
-          ← d0_gap_tie_or_far, u0_sum_tie_or_far
-              ← ModWindows
+      ← round_d0_iff_roundtrips, round_u0_iff_roundtrips
 
     fine_output_nearest
-      ← dec_one_nearest
-          ← round_u1_iff_gap
-              ← ModWindows
+      ← round_u1_iff_gap
 
-All three comparisons are characterized the same way, as `flag = true ↔ exact
-bound`, and each rests on the same dichotomy about its boundary: either the
-packed comparison is far enough from it that the truncation error cannot matter,
-or the value sits in a narrow window that a finite modular certificate either
-refutes or identifies as a genuine tie that yy resolves the exact way.
+`ulp_scaled_bounds` is the other thing `exact_candidate_correct` asks for: at
+yy's exponent one ULP spans between one and ten grid steps, so the fine case has
+a grid to be correctly rounded on.
 -/
 
 /-- Whether f·2^e is a regularly spaced positive binary64 value: a normal that
@@ -150,7 +94,18 @@ theorem Regular.sig_lt {f : ℕ} {e : ℤ} (hr : Regular f e) : f < 2 ^ 53 :=
 theorem Regular.range {f : ℕ} {e : ℤ} (hr : Regular f e) :
     -1074 ≤ e ∧ e ≤ 971 := hr.2
 
-/-! ## The truncated power of ten -/
+/-! ## yy's arithmetic model
+
+Everything from here to `## The coarse decisions` is machinery for the three
+flag equivalences: the algorithm as yy computes it, the packed quantities its
+comparisons are made of, the exact identities those quantities satisfy, bounds
+on how far truncation can move them, and the certificates that close what the
+bounds leave open. The subsections are stages of one proof, not interfaces.
+`ulp_scaled_bounds`, at the end, is the exception: it is an obligation in its
+own right and is proved here because it is the same arithmetic.
+-/
+
+/-! ### The truncated power of ten -/
 
 /-- Binary exponent of 10^k used to normalize its 128-bit significand: the
     fixed-point form of `⌊k·log₂10⌋ + 1`. Taking a logarithm here instead would
@@ -231,7 +186,7 @@ theorem power10_significand_bounds (k : ℤ) (hk : -292 ≤ k ∧ k ≤ 324) :
   exact ⟨(Nat.le_div_iff_mul_le (power10_den_pos k)).mpr hlo,
     (Nat.div_lt_iff_lt_mul (power10_den_pos k)).mpr hhi⟩
 
-/-! ## yy's conversion -/
+/-! ### yy's conversion -/
 
 /-- Approximation of floor(e·log₁₀ 2) used as yy's decimal exponent. -/
 def decimalExponent (e : ℤ) : ℤ :=
@@ -323,7 +278,7 @@ def toDecimal (f : ℕ) (e : ℤ) : ℕ × ℤ :=
   let c := toDecimalCandidates f e
   (if c.roundD0 || c.roundU0 then c.decTen else c.decOne, c.k)
 
-/-! ## Exponent alignment -/
+/-! ### Exponent alignment -/
 
 /-- The shift used by yy's regular path is less than 4. -/
 theorem exponent_shift_lt_four (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
@@ -351,7 +306,7 @@ theorem exponent_shift_align (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
   unfold exponentShift power10Exponent
   omega
 
-/-! ## The packed trim comparison
+/-! ### Packed quantities
 
 yy's `roundD0` and `roundU0` compare the packed value `c` (the last decimal
 digit of the integral part, followed by the top 60 bits of `sigLo`) with
@@ -510,7 +465,7 @@ theorem trim_modulus_eq (e : ℤ) (hsh : exponentShift e < 4) :
     pow_add]
   ring
 
-/-! ## Trim bounds in exact arithmetic
+/-! ### The bounds the comparisons decide
 
 The two multiple-of-ten candidates are within half a ULP exactly when
 
@@ -628,7 +583,7 @@ theorem trim_high_bits (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
   rw [trim_sig_nat]
   exact hcert.2
 
-/-! ## Refuting the trim windows
+/-! ### The modular formulation
 
 The comparisons that decide those bounds are themselves packed: `roundD0`
 compares `W / U` with `p10 / U`, while `roundU0` compares their sum with
@@ -708,7 +663,7 @@ theorem trim_two_edge_lt_num (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
   have hden := trim_den_pos e
   omega
 
-/-! ## From packed comparisons to trim bounds
+/-! ### Truncated block counts
 
 Truncating to blocks of `U` is what the packed comparisons do, so each trim
 bound has to turn a comparison of block counts back into one of the untruncated
@@ -797,22 +752,7 @@ theorem trim_gap_lt_scale_add (f : ℕ) (e : ℤ) (hr : Regular f e) :
   rw [trim_gap_eq]
   omega
 
-/-! ## Crossing into ℚ
-
-Everything above is integer arithmetic and everything below is a claim about
-the exact value; `scaled_cmp_of_int_eq` is the one crossing, and it asks for
-two things. `trim_value_scaled` says that the scale `trimMul` sends the scaled
-value to the integer `2·f·num`, so each candidate sits a signed integer
-distance from it: `-trimGap` for the trim-down candidate, `trimScale - trimGap`
-for the trim-up one, and `-oneGap` for `sigHi`. The power of ten enters only
-here, through `trim_mul_eq`, which expresses `trimMul` as `trimNum` times the
-inverse scale `s = 2^(1-e)·10^k`. The other is what a threshold is worth in
-that scale: half a ULP is `trimNum`, and half a grid step is `trimMul` over two
-copies of it. Every candidate bound is then an interval condition on that
-integer distance, and the consumers below never leave `ℤ`.
--/
-
-/-! ## What the packed comparisons discard -/
+/-! ### What the comparisons discard -/
 
 /-- What the trim-down comparison throws away, with the denominator cleared: the
     bits of `p10` below the window unit, plus the remainder `τ` that truncating
@@ -834,7 +774,7 @@ private theorem sum_split (den u w p : ℕ) :
         rw [Nat.div_add_mod, Nat.div_add_mod]
     _ = den * (w % u) + den * (p % u) + u * den * (w / u + p / u) := by ring
 
-/-! ## The packed comparisons, exactly -/
+/-! ### The comparisons as exact identities -/
 
 /-- The packed boundary `n` window units above `p10`, scaled: it differs from
     the exact boundary `num` by exactly the discarded bits. -/
@@ -888,7 +828,7 @@ theorem trim_scale_eq_edge (e : ℤ) (hsh : exponentShift e < 4) :
   rw [trimScale, trimEdge, trim_modulus_eq e hsh]
   ring
 
-/-! ## How far the packed comparisons can be wrong -/
+/-! ### How far they can be wrong -/
 
 /-- The truncation error never exceeds the bits the trim-down comparison
     discards: that is what `trim_low_bits` certifies, per exponent. -/
@@ -932,7 +872,7 @@ theorem trim_err_dropU_lt (f : ℕ) (e : ℤ) (hr : Regular f e) :
   rw [trimDropU, trimDrop, trimEdge]
   omega
 
-/-! ## The exceptional regions
+/-! ### Refuting the exceptional windows
 
 Everything above is analytic. What is left is a band of width one window edge on
 either side of each boundary, minus the boundary itself; the certificates say
@@ -1070,6 +1010,21 @@ theorem u0_tie_k_zero (f : ℕ) (e : ℤ) (hr : Regular f e)
   rcases Nat.mul_eq_zero.mp herr with h | h
   · have := hr.pos; omega
   · exact u0_exact_tie_k_zero f e hr h htie
+
+/-! ### Crossing into ℚ
+
+Everything above is integer arithmetic and everything below is a claim about
+the exact value; `scaled_cmp_of_int_eq` is the one crossing, and it asks for
+two things. `trim_value_scaled` says that the scale `trimMul` sends the scaled
+value to the integer `2·f·num`, so each candidate sits a signed integer
+distance from it: `-trimGap` for the trim-down candidate, `trimScale - trimGap`
+for the trim-up one, and `-oneGap` for `sigHi`. The power of ten enters only
+here, through `trim_mul_eq`, which expresses `trimMul` as `trimNum` times the
+inverse scale `s = 2^(1-e)·10^k`. The other is what a threshold is worth in
+that scale: half a ULP is `trimNum`, and half a grid step is `trimMul` over two
+copies of it. Every candidate bound is then an interval condition on that
+integer distance, and the consumers below never leave `ℤ`.
+-/
 
 /-- The unit step, cleared. The coarse step is ten of them. -/
 def trimMul (e : ℤ) : ℕ := 2 ^ (128 - exponentShift e) * trimDen e
@@ -1233,7 +1188,163 @@ theorem ulp_scaled_bounds (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
   · rw [one_mul, hstep]; exact hlow
   · rw [hstep]; exact hhigh
 
-/-! ## The unit-step candidate
+/-! ## The coarse decisions
+
+Each trim flag is pinned to its candidate by two composed equivalences.
+`flag ↔ gap` says what the packed comparison decides about `trimGap`, and
+`roundtrips_iff_dist` says when that same gap admits a round-trip; together they
+give `flag ↔ round-trips`, which consumers read in whichever direction they
+need.
+
+The first equivalence is where the work is. Because yy compares quantities
+truncated to window units, a packed tie can hide which side of the exact
+rounding boundary the candidate lies on. For even `f`, ties are accepted, so a
+rejection implies at least one full window unit of separation, enough to
+dominate the power-of-ten truncation error. For odd `f`, ties are rejected, so
+the ambiguous packed-tie cases can lie just inside that boundary;
+`d0_gap_tie_or_far` and `u0_sum_tie_or_far` confine each comparison to either a
+stable side or one of those narrow windows, which the certificates then close.
+The one window that survives is the `roundU0` tie at `k = 0`, one unit farther
+out, where the power-of-ten approximation is exact and the tie is a genuine one
+that yy resolves the exact way.
+-/
+
+/-! ### The trim-down decision -/
+
+/-- What `roundD0` decides, from the stable/exceptional split alone. -/
+theorem round_d0_iff_gap (f : ℕ) (e : ℤ) (hr : Regular f e) :
+    (toDecimalCandidates f e).roundD0 = true
+      ↔ if f % 2 = 0 then trimGap f e ≤ trimNum e
+        else trimGap f e < trimNum e := by
+  have hsh : exponentShift e < 4 := exponent_shift_lt_four e hr.range
+  -- yy's test is `c ≤ p` for even `f` and `c < p` for odd `f`, that is
+  -- `c < p + 1` and `c < p + 0`.
+  have hflag : (toDecimalCandidates f e).roundD0
+      = if trimSig e / trimUnit e = trimResidue f e / trimUnit e then
+          decide (f % 2 = 0)
+        else decide (trimResidue f e / trimUnit e < trimSig e / trimUnit e) := by
+    rw [← trim_c_eq f e hsh, ← trim_half_ulp_eq e hsh]
+    rfl
+  have hpacked : (toDecimalCandidates f e).roundD0 = true
+      ↔ if f % 2 = 0 then
+          trimResidue f e / trimUnit e < trimSig e / trimUnit e + 1
+        else trimResidue f e / trimUnit e < trimSig e / trimUnit e + 0 := by
+    rw [hflag]
+    split_ifs <;> simp only [decide_eq_true_eq] <;> omega
+  rw [hpacked, packed_iff, packed_iff]
+  have herr := trim_err_le_drop f e hr
+  have hdrop := trim_drop_lt_err_add_edge f e hr
+  rcases d0_gap_tie_or_far f e hr with htie | hfar
+  · -- A genuine exact tie, accepted for even `f` and rejected for odd `f` by
+    -- the packed comparison and the exact one alike.
+    rw [htie]
+    split_ifs <;> omega
+  · -- Far from the boundary: the approximation cannot matter.
+    split_ifs
+    · rw [show trimNum e + trimErr f e + 1 * trimEdge e
+          = trimNum e + (trimErr f e + trimEdge e) from by ring]
+      exact (comparison_stable_of_far (l := trimDrop e)
+        (r := trimErr f e + trimEdge e) (w := trimEdge e)
+        (by omega) (by omega) hfar).1
+    · rw [show trimNum e + trimErr f e + 0 * trimEdge e
+          = trimNum e + trimErr f e from by ring]
+      exact (comparison_stable_of_far (l := trimDrop e) (r := trimErr f e)
+        (w := trimEdge e) (by omega) (by omega) hfar).2
+
+/-- `roundD0` fires exactly when the trim-down candidate round-trips. Both are
+    a bound on `trimGap` by `trimNum`, since the gap is that candidate's
+    distance from the scaled value, and the lower end of the round-trip
+    interval is free because a gap is never negative. -/
+theorem round_d0_iff_roundtrips (f : ℕ) (e : ℤ) (hr : Regular f e) :
+    (toDecimalCandidates f e).roundD0 = true
+      ↔ Roundtrips f e (sigTen f e * 10 ^ decimalExponent e) := by
+  rw [round_d0_iff_gap f e hr, roundtrips_iff_dist f e hr.range
+    (dec_ten_down_scaled f e (exponent_shift_lt_four e hr.range))]
+  split_ifs <;> omega
+
+/-! ### The trim-up decision -/
+
+/-- What `roundU0` decides. The packed sum `s` counts window edges below
+    `gap + num`, and the coarse step is `10·2^60` of them, so the dichotomy
+    places `s` relative to that constant: more than one edge below the boundary
+    puts `s + 1` short of it, more than one edge above puts `s` past it, and an
+    exact tie leaves only `s` one short or `s` exact with nothing discarded.
+    Those last two are yy's two special branches. -/
+theorem round_u0_iff_gap (f : ℕ) (e : ℤ) (hr : Regular f e) :
+    (toDecimalCandidates f e).roundU0 = true
+      ↔ if f % 2 = 0 then trimScale e ≤ trimGap f e + trimNum e
+        else trimScale e < trimGap f e + trimNum e := by
+  have hsh : exponentShift e < 4 := exponent_shift_lt_four e hr.range
+  have hflag : (toDecimalCandidates f e).roundU0
+      = (if trimResidue f e / trimUnit e + trimSig e / trimUnit e + 1
+            = 10 * 2 ^ 60 then decide (f % 2 = 0)
+        else if decimalExponent e = 0
+            ∧ trimResidue f e / trimUnit e + trimSig e / trimUnit e
+              = 10 * 2 ^ 60 then decide (f % 2 = 0)
+        else decide (10 * 2 ^ 60
+          ≤ trimResidue f e / trimUnit e + trimSig e / trimUnit e)) := by
+    rw [← trim_c_eq f e hsh, ← trim_half_ulp_eq e hsh]
+    rfl
+  have hid := trim_packed_sum f e
+  have hD := trim_err_dropU_lt f e hr
+  have hscale := trim_scale_eq_edge e hsh
+  have hE : 0 < trimEdge e :=
+    Nat.mul_pos (trim_unit_pos e) (trim_den_pos e)
+  rw [hflag]
+  set s := trimResidue f e / trimUnit e + trimSig e / trimUnit e with hs
+  rcases u0_sum_tie_or_far f e hr with htie | hhi | hlo
+  -- An exact tie. Since the discarded error is under two edges, the packed sum
+  -- is either one edge short of the step or exactly on it with nothing
+  -- discarded, and both are branches yy takes for even `f` alone, as the exact
+  -- comparison does.
+  · have hle : s ≤ 10 * 2 ^ 60 := Nat.le_of_mul_le_mul_left (by omega) hE
+    have hnear : 10 * 2 ^ 60 < s + 2 := by
+      have hexp : trimEdge e * (s + 2) = trimEdge e * s + 2 * trimEdge e := by
+        ring
+      exact Nat.lt_of_mul_lt_mul_left (a := trimEdge e) (by omega)
+    rcases Nat.lt_or_ge s (10 * 2 ^ 60) with hlt | hge
+    · rw [ite_eq_left (by omega)]
+      split_ifs with hpar <;> simp only [decide_eq_true_eq] <;> omega
+    · have heq : s = 10 * 2 ^ 60 := by omega
+      rw [heq] at hid
+      rw [ite_eq_right (by omega), ite_eq_left
+        ⟨u0_tie_k_zero f e hr (by omega) htie, heq⟩]
+      split_ifs with hpar <;> simp only [decide_eq_true_eq] <;> omega
+  -- More than one edge above the boundary, so `s` has passed the step and the
+  -- plain test fires. A packed tie is out of reach: it would need `k = 0`,
+  -- where nothing is discarded and the sum would be the boundary itself.
+  · have hge : 10 * 2 ^ 60 < s + 1 := by
+      have hexp : trimEdge e * (s + 1) = trimEdge e * s + trimEdge e := by ring
+      exact Nat.lt_of_mul_lt_mul_left (a := trimEdge e) (by omega)
+    have hnot : ¬(decimalExponent e = 0 ∧ s = 10 * 2 ^ 60) := by
+      rintro ⟨hk, heq⟩
+      have hzero := u0_err_dropU_k_zero f e hr hk
+      rw [heq] at hid
+      omega
+    rw [ite_eq_right (by omega), ite_eq_right hnot]
+    simp only [decide_eq_true_eq]
+    split_ifs <;> omega
+  -- More than one edge below it, so even `s + 1` falls short and no test fires.
+  · have hlt : s + 1 < 10 * 2 ^ 60 := by
+      have hexp : trimEdge e * (s + 1) = trimEdge e * s + trimEdge e := by ring
+      exact Nat.lt_of_mul_lt_mul_left (a := trimEdge e) (by omega)
+    rw [ite_eq_right (by omega), ite_eq_right (by omega)]
+    simp only [decide_eq_true_eq]
+    split_ifs <;> omega
+
+/-- `roundU0` fires exactly when the trim-up candidate round-trips. Its
+    distance `trimGap - trimScale` is signed: the flag is the lower end of the
+    round-trip interval, and the upper end is free because the gap never
+    reaches a coarse step plus half a ULP. -/
+theorem round_u0_iff_roundtrips (f : ℕ) (e : ℤ) (hr : Regular f e) :
+    (toDecimalCandidates f e).roundU0 = true
+      ↔ Roundtrips f e ((sigTen f e + 10 : ℕ) * 10 ^ decimalExponent e) := by
+  have hroom := trim_gap_lt_scale_add f e hr
+  rw [round_u0_iff_gap f e hr, roundtrips_iff_dist f e hr.range
+    (dec_ten_up_scaled f e (exponent_shift_lt_four e hr.range))]
+  split_ifs <;> omega
+
+/-! ## The unit-step decision
 
 `decOne` is `sigHi` rounded to nearest using the discarded word `sigLo`. In
 the scale `trimMul = 2^(128-h)·den`, `sigHi` sits `oneGap` below the scaled
@@ -1318,7 +1429,7 @@ theorem sig_hi_scaled (f : ℕ) (e : ℤ) (hsh : exponentShift e < 4) :
     (sigHi f e : ℤ) * trimMul e + oneGap f e = 2 * f * trimNum e := by
   exact_mod_cast sig_hi_add_one_gap f e hsh
 
-/-! ## Correct rounding at the unit step
+/-! ### The gap at the unit step
 
 On the grid at `decimalExponent e`, one decimal step is one `trimMul`.
 `sigHi` lies `oneGap` below the scaled value, so rounding to the nearest grid
@@ -1538,7 +1649,7 @@ theorem one_tie_band_even (f : ℕ) (e : ℤ) (hr : Regular f e)
   exact one_no_window_hit f e hr hcert hwin
     (by rw [hz]; exact sub_le_self _ (by positivity)) (by rw [hz])
 
-/-! ### Nearest at the unit step -/
+/-! ### What roundU1 decides -/
 
 /-- Strictly below the packed midpoint the exact gap is strictly below half a
     step. When the power of ten is exact the remainder is a whole `den` short;
@@ -1668,164 +1779,18 @@ theorem dec_one_nearest (f : ℕ) (e : ℤ) (hr : Regular f e) :
     rw [ite_eq_left (by simp)]
     split_ifs at hflag <;> omega
 
-/-! ## The multiple-of-ten candidates
+/-! ## From decisions to exact candidates
 
-Each trim flag is pinned to its candidate by two composed equivalences:
-`round_d0_iff_gap` says what the packed comparison decides about `trimGap`, and
-`roundtrips_iff_dist` says when that same gap admits a round-trip. Composing
-them gives `flag ↔ round-trips`, so soundness and completeness are the two
-directions of one theorem rather than two proofs run in opposite directions.
-
-The first equivalence is where the work is. Because yy compares quantities
-truncated to window units, a packed tie can hide which side of the exact
-rounding boundary the candidate lies on. For even `f`, ties are accepted, so a
-rejection implies at least one full window unit of separation, enough to
-dominate the power-of-ten truncation error. For odd `f`, ties are rejected, so
-the ambiguous packed-tie cases can lie just inside that boundary;
-`d0_gap_tie_or_far` and `u0_sum_tie_or_far` confine each comparison to either a
-stable side or one of those narrow windows, which the certificates then close.
-The one window that survives is the `roundU0` tie at `k = 0`, one unit farther
-out, where the power-of-ten approximation is exact and the tie is a genuine one
-that yy resolves the exact way.
--/
-
-/-- What `roundD0` decides, from the stable/exceptional split alone. -/
-theorem round_d0_iff_gap (f : ℕ) (e : ℤ) (hr : Regular f e) :
-    (toDecimalCandidates f e).roundD0 = true
-      ↔ if f % 2 = 0 then trimGap f e ≤ trimNum e
-        else trimGap f e < trimNum e := by
-  have hsh : exponentShift e < 4 := exponent_shift_lt_four e hr.range
-  -- yy's test is `c ≤ p` for even `f` and `c < p` for odd `f`, that is
-  -- `c < p + 1` and `c < p + 0`.
-  have hflag : (toDecimalCandidates f e).roundD0
-      = if trimSig e / trimUnit e = trimResidue f e / trimUnit e then
-          decide (f % 2 = 0)
-        else decide (trimResidue f e / trimUnit e < trimSig e / trimUnit e) := by
-    rw [← trim_c_eq f e hsh, ← trim_half_ulp_eq e hsh]
-    rfl
-  have hpacked : (toDecimalCandidates f e).roundD0 = true
-      ↔ if f % 2 = 0 then
-          trimResidue f e / trimUnit e < trimSig e / trimUnit e + 1
-        else trimResidue f e / trimUnit e < trimSig e / trimUnit e + 0 := by
-    rw [hflag]
-    split_ifs <;> simp only [decide_eq_true_eq] <;> omega
-  rw [hpacked, packed_iff, packed_iff]
-  have herr := trim_err_le_drop f e hr
-  have hdrop := trim_drop_lt_err_add_edge f e hr
-  rcases d0_gap_tie_or_far f e hr with htie | hfar
-  · -- A genuine exact tie, accepted for even `f` and rejected for odd `f` by
-    -- the packed comparison and the exact one alike.
-    rw [htie]
-    split_ifs <;> omega
-  · -- Far from the boundary: the approximation cannot matter.
-    split_ifs
-    · rw [show trimNum e + trimErr f e + 1 * trimEdge e
-          = trimNum e + (trimErr f e + trimEdge e) from by ring]
-      exact (comparison_stable_of_far (l := trimDrop e)
-        (r := trimErr f e + trimEdge e) (w := trimEdge e)
-        (by omega) (by omega) hfar).1
-    · rw [show trimNum e + trimErr f e + 0 * trimEdge e
-          = trimNum e + trimErr f e from by ring]
-      exact (comparison_stable_of_far (l := trimDrop e) (r := trimErr f e)
-        (w := trimEdge e) (by omega) (by omega) hfar).2
-
-/-- `roundD0` fires exactly when the trim-down candidate round-trips. Both are
-    a bound on `trimGap` by `trimNum`, since the gap is that candidate's
-    distance from the scaled value, and the lower end of the round-trip
-    interval is free because a gap is never negative. -/
-theorem round_d0_iff_roundtrips (f : ℕ) (e : ℤ) (hr : Regular f e) :
-    (toDecimalCandidates f e).roundD0 = true
-      ↔ Roundtrips f e (sigTen f e * 10 ^ decimalExponent e) := by
-  rw [round_d0_iff_gap f e hr, roundtrips_iff_dist f e hr.range
-    (dec_ten_down_scaled f e (exponent_shift_lt_four e hr.range))]
-  split_ifs <;> omega
-
-/-- What `roundU0` decides. The packed sum `s` counts window edges below
-    `gap + num`, and the coarse step is `10·2^60` of them, so the dichotomy
-    places `s` relative to that constant: more than one edge below the boundary
-    puts `s + 1` short of it, more than one edge above puts `s` past it, and an
-    exact tie leaves only `s` one short or `s` exact with nothing discarded.
-    Those last two are yy's two special branches. -/
-theorem round_u0_iff_gap (f : ℕ) (e : ℤ) (hr : Regular f e) :
-    (toDecimalCandidates f e).roundU0 = true
-      ↔ if f % 2 = 0 then trimScale e ≤ trimGap f e + trimNum e
-        else trimScale e < trimGap f e + trimNum e := by
-  have hsh : exponentShift e < 4 := exponent_shift_lt_four e hr.range
-  have hflag : (toDecimalCandidates f e).roundU0
-      = (if trimResidue f e / trimUnit e + trimSig e / trimUnit e + 1
-            = 10 * 2 ^ 60 then decide (f % 2 = 0)
-        else if decimalExponent e = 0
-            ∧ trimResidue f e / trimUnit e + trimSig e / trimUnit e
-              = 10 * 2 ^ 60 then decide (f % 2 = 0)
-        else decide (10 * 2 ^ 60
-          ≤ trimResidue f e / trimUnit e + trimSig e / trimUnit e)) := by
-    rw [← trim_c_eq f e hsh, ← trim_half_ulp_eq e hsh]
-    rfl
-  have hid := trim_packed_sum f e
-  have hD := trim_err_dropU_lt f e hr
-  have hscale := trim_scale_eq_edge e hsh
-  have hE : 0 < trimEdge e :=
-    Nat.mul_pos (trim_unit_pos e) (trim_den_pos e)
-  rw [hflag]
-  set s := trimResidue f e / trimUnit e + trimSig e / trimUnit e with hs
-  rcases u0_sum_tie_or_far f e hr with htie | hhi | hlo
-  -- An exact tie. Since the discarded error is under two edges, the packed sum
-  -- is either one edge short of the step or exactly on it with nothing
-  -- discarded, and both are branches yy takes for even `f` alone, as the exact
-  -- comparison does.
-  · have hle : s ≤ 10 * 2 ^ 60 := Nat.le_of_mul_le_mul_left (by omega) hE
-    have hnear : 10 * 2 ^ 60 < s + 2 := by
-      have hexp : trimEdge e * (s + 2) = trimEdge e * s + 2 * trimEdge e := by
-        ring
-      exact Nat.lt_of_mul_lt_mul_left (a := trimEdge e) (by omega)
-    rcases Nat.lt_or_ge s (10 * 2 ^ 60) with hlt | hge
-    · rw [ite_eq_left (by omega)]
-      split_ifs with hpar <;> simp only [decide_eq_true_eq] <;> omega
-    · have heq : s = 10 * 2 ^ 60 := by omega
-      rw [heq] at hid
-      rw [ite_eq_right (by omega), ite_eq_left
-        ⟨u0_tie_k_zero f e hr (by omega) htie, heq⟩]
-      split_ifs with hpar <;> simp only [decide_eq_true_eq] <;> omega
-  -- More than one edge above the boundary, so `s` has passed the step and the
-  -- plain test fires. A packed tie is out of reach: it would need `k = 0`,
-  -- where nothing is discarded and the sum would be the boundary itself.
-  · have hge : 10 * 2 ^ 60 < s + 1 := by
-      have hexp : trimEdge e * (s + 1) = trimEdge e * s + trimEdge e := by ring
-      exact Nat.lt_of_mul_lt_mul_left (a := trimEdge e) (by omega)
-    have hnot : ¬(decimalExponent e = 0 ∧ s = 10 * 2 ^ 60) := by
-      rintro ⟨hk, heq⟩
-      have hzero := u0_err_dropU_k_zero f e hr hk
-      rw [heq] at hid
-      omega
-    rw [ite_eq_right (by omega), ite_eq_right hnot]
-    simp only [decide_eq_true_eq]
-    split_ifs <;> omega
-  -- More than one edge below it, so even `s + 1` falls short and no test fires.
-  · have hlt : s + 1 < 10 * 2 ^ 60 := by
-      have hexp : trimEdge e * (s + 1) = trimEdge e * s + trimEdge e := by ring
-      exact Nat.lt_of_mul_lt_mul_left (a := trimEdge e) (by omega)
-    rw [ite_eq_right (by omega), ite_eq_right (by omega)]
-    simp only [decide_eq_true_eq]
-    split_ifs <;> omega
-
-/-- `roundU0` fires exactly when the trim-up candidate round-trips. Its
-    distance `trimGap - trimScale` is signed: the flag is the lower end of the
-    round-trip interval, and the upper end is free because the gap never
-    reaches a coarse step plus half a ULP. -/
-theorem round_u0_iff_roundtrips (f : ℕ) (e : ℤ) (hr : Regular f e) :
-    (toDecimalCandidates f e).roundU0 = true
-      ↔ Roundtrips f e ((sigTen f e + 10 : ℕ) * 10 ^ decimalExponent e) := by
-  have hroom := trim_gap_lt_scale_add f e hr
-  rw [round_u0_iff_gap f e hr, roundtrips_iff_dist f e hr.range
-    (dec_ten_up_scaled f e (exponent_shift_lt_four e hr.range))]
-  split_ifs <;> omega
-
-/-! ## yy's coarse and fine outputs
-
+The two output theorems read the three equivalences and nothing beneath them.
 On the coarse path, yy emits a multiple of ten, and whichever flag selected it
 says it round-trips. On the fine path, it emits `decOne`, whose half-step bound
 already implies that it round-trips because the grid step at `decimalExponent e`
 is at most one ULP.
+
+`coarse_candidate_cases` is the one thing here that goes back to the arithmetic,
+and it asks something else of it: that the rounding interval is too narrow to
+hold a multiple of ten besides yy's two is a fact about the interval, not about
+a decision, so no equivalence could supply it.
 -/
 
 /-- On the coarse path, yy emits a multiple of ten that round-trips. Which of
@@ -1868,7 +1833,7 @@ theorem fine_output_nearest (f : ℕ) (e : ℤ) (hr : Regular f e) :
     rfl]
   exact dec_one_nearest f e hr
 
-/-! ## Completeness of the trim decision
+/-! ### yy trims whenever it can
 
 The exact method takes the coarse case exactly when the rounding interval
 contains a multiple of ten, that is, when a digit can be dropped. yy makes the
@@ -1934,8 +1899,8 @@ candidate, not to any exact comparison.
 -/
 
 /-- yy implements the exact method: it trims exactly when an exact coarse
-    candidate exists. One direction is completeness, `trim_of_coarse_roundtrip`;
-    the other holds because trimmed output is itself a multiple of ten that
+    candidate exists. One direction is `trim_of_coarse_roundtrip`; the other
+    holds because trimmed output is itself a multiple of ten that
     round-trips. -/
 theorem yy_exact_candidate (f : ℕ) (e : ℤ) (hr : Regular f e) :
     let (d, k) := toDecimal f e
