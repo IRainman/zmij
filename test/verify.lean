@@ -73,16 +73,16 @@ The modeled algorithm and its power-of-ten significand:
 
 The trim path, from packed comparisons to exact inequalities:
 
-    ## The packed trim window
+    ## The packed trim comparison
     ## Trim bounds in exact arithmetic
     ## Refuting the trim windows
-    ## From window counts to trim bounds
+    ## From packed comparisons to trim bounds
     ## From integer bounds to half-ULP bounds
 
 The unit-step path, following the same route for `decOne`:
 
     ## The unit-step candidate
-    ## Correct rounding of the unit-step candidate
+    ## Correct rounding at the unit step
     ### Refuting the unit-step windows
     ### Nearest at the unit step
 
@@ -90,7 +90,7 @@ The two paths are then assembled into the exact-method obligations:
 
     ## The multiple-of-ten candidates
     ## yy's coarse and fine outputs
-    ## Completeness of the trim flags
+    ## Completeness of the trim decision
     ## yy refines the exact method
 
 ### 4. Proof dependencies
@@ -318,7 +318,7 @@ theorem decimal_shift_align (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
   unfold decimalShift power10Exponent
   omega
 
-/-! ## The packed trim window
+/-! ## The packed trim comparison
 
 yy's `roundD0` and `roundU0` compare the packed value `c` (the last decimal
 digit of the integral part, followed by the top 60 bits of `sigLo`) with
@@ -764,7 +764,7 @@ theorem trim_two_edge_lt_num (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
   have hden := trim_den_pos e
   omega
 
-/-! ## From window counts to trim bounds
+/-! ## From packed comparisons to trim bounds
 
 Truncating to blocks of `U` is what the packed comparisons do, so each trim
 bound has to turn a comparison of block counts back into one of the untruncated
@@ -1511,7 +1511,7 @@ theorem sig_hi_scaled_error (f : ℕ) (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971)
   scaled_error_of_nat f e he
     (sig_hi_add_one_gap f e (decimal_shift_lt_four e he))
 
-/-! ## Correct rounding of the unit-step candidate
+/-! ## Correct rounding at the unit step
 
 On the grid at `decimalExponent e`, one decimal step is one `trimMul`.
 `sigHi` lies `oneGap` below the scaled value, so rounding to the nearest grid
@@ -2152,7 +2152,7 @@ theorem fine_output_nearest (f : ℕ) (e : ℤ) (h : Regular f e)
     rfl]
   exact dec_one_nearest f e h
 
-/-! ## Completeness of the trim flags
+/-! ## Completeness of the trim decision
 
 `decOne` lies on the fine decimal grid, while the two multiple-of-ten
 candidates lie on the grid one decimal digit coarser. yy trims exactly when a
