@@ -122,13 +122,14 @@ around the two packed comparisons and the unit step:
 
     fine_output_nearest
       ← dec_one_nearest
-          ← one_gap_far_or_mid
+          ← round_u1_iff_gap
               ← ModWindows
 
-Each of those three dichotomies says the same thing about its boundary: either
-the packed comparison is far enough from it that the truncation error cannot
-matter, or the value sits in a narrow window that a finite modular certificate
-either refutes or identifies as a genuine tie that yy resolves the exact way.
+All three comparisons are characterized the same way, as `flag = true ↔ exact
+bound`, and each rests on the same dichotomy about its boundary: either the
+packed comparison is far enough from it that the truncation error cannot matter,
+or the value sits in a narrow window that a finite modular certificate either
+refutes or identifies as a genuine tie that yy resolves the exact way.
 -/
 
 /-- Whether f·2^e is a regularly spaced positive binary64 value: a normal that
@@ -1269,15 +1270,18 @@ theorem sig_lo_eq_residue_div (f : ℕ) (e : ℤ) (hsh : exponentShift e < 4) :
     Nat.mul_mod_mul_left, pow_shift_split e 64 (by omega),
     Nat.mul_div_mul_left _ _ (by positivity)]
 
-/-- What `roundU1` says about the remainder: yy compares the discarded word with
-    half its range, so the test is on the remainder against half a unit step,
-    `2^(127-h)`, blind only to the `2^(64-h)` bits below `sigLo`. -/
+/-- What `roundU1` decides about the remainder. yy compares the discarded word
+    with half its range, which is the remainder against half a unit step,
+    `2^(127-h)`, blind to the `2^(64-h)` bits below `sigLo`. Half a step divides
+    down to exactly `2^63`, so the whole band `[half, half + 2^(64-h))` reads as
+    a packed tie, which yy resolves by the parity of `sigHi`: an odd one rounds
+    up from the band, an even one waits until the remainder has left it. -/
 theorem one_round_half (f : ℕ) (e : ℤ) (hsh : exponentShift e < 4) :
-    ((toDecimalCandidates f e).roundU1 = true →
-        2 ^ (127 - exponentShift e) ≤ oneResidue f e) ∧
-      ((toDecimalCandidates f e).roundU1 = false →
-        oneResidue f e
-          < 2 ^ (127 - exponentShift e) + 2 ^ (64 - exponentShift e)) := by
+    (toDecimalCandidates f e).roundU1 = true
+      ↔ if sigHi f e % 2 = 0
+        then 2 ^ (127 - exponentShift e) + 2 ^ (64 - exponentShift e)
+          ≤ oneResidue f e
+        else 2 ^ (127 - exponentShift e) ≤ oneResidue f e := by
   have hpos : (0 : ℕ) < 2 ^ (64 - exponentShift e) := by positivity
   have hlo := sig_lo_eq_residue_div f e hsh
   have hpow : (2 : ℕ) ^ 63 * 2 ^ (64 - exponentShift e)
@@ -1288,26 +1292,26 @@ theorem one_round_half (f : ℕ) (e : ℤ) (hsh : exponentShift e < 4) :
   have hround : (toDecimalCandidates f e).roundU1
       = if sigLo f e = 2 ^ 63 then decide (sigHi f e % 2 = 1)
         else decide (2 ^ 63 < sigLo f e) := rfl
-  constructor
-  · intro hu1
-    have h63 : 2 ^ 63 ≤ sigLo f e := by
-      rw [hround] at hu1
-      split at hu1
-      · rename_i heq; exact heq.ge
-      · exact (of_decide_eq_true hu1).le
-    rwa [hlo, Nat.le_div_iff_mul_le hpos, hpow] at h63
-  · intro hu1
-    have h63 : sigLo f e ≤ 2 ^ 63 := by
-      rw [hround] at hu1
-      split at hu1
-      · rename_i heq; exact heq.le
-      · exact not_lt.mp (of_decide_eq_false hu1)
-    rw [hlo] at h63
-    calc oneResidue f e
-        < (2 ^ 63 + 1) * 2 ^ (64 - exponentShift e) :=
-          (Nat.div_lt_iff_lt_mul hpos).mp (Nat.lt_succ_of_le h63)
-      _ = 2 ^ (127 - exponentShift e) + 2 ^ (64 - exponentShift e) := by
-          rw [add_mul, one_mul, hpow]
+  -- Reaching half a step is `sigLo ≥ 2^63`, and leaving the tie band is
+  -- `sigLo > 2^63`; both are the same division.
+  have hhalf : 2 ^ (127 - exponentShift e) ≤ oneResidue f e
+      ↔ 2 ^ 63 ≤ sigLo f e := by
+    rw [hlo, Nat.le_div_iff_mul_le hpos, hpow]
+  have hpast : 2 ^ (127 - exponentShift e) + 2 ^ (64 - exponentShift e)
+      ≤ oneResidue f e ↔ 2 ^ 63 < sigLo f e := by
+    rw [Nat.lt_iff_add_one_le, hlo, Nat.le_div_iff_mul_le hpos, add_mul, one_mul,
+      hpow]
+  rw [hround, hhalf, hpast]
+  rcases lt_trichotomy (sigLo f e) (2 ^ 63) with hs | hs | hs
+  · rw [ite_eq_right (by omega)]
+    simp only [decide_eq_true_eq]
+    split_ifs <;> omega
+  · rw [ite_eq_left hs]
+    simp only [decide_eq_true_eq]
+    split_ifs <;> omega
+  · rw [ite_eq_right (by omega)]
+    simp only [decide_eq_true_eq]
+    split_ifs <;> omega
 
 /-- `sigHi` sits exactly `oneGap` below the scaled value. -/
 theorem sig_hi_scaled (f : ℕ) (e : ℤ) (hsh : exponentShift e < 4) :
@@ -1318,8 +1322,9 @@ theorem sig_hi_scaled (f : ℕ) (e : ℤ) (hsh : exponentShift e < 4) :
 
 On the grid at `decimalExponent e`, one decimal step is one `trimMul`.
 `sigHi` lies `oneGap` below the scaled value, so rounding to the nearest grid
-point is determined by comparing `2 * oneGap` with `trimMul`; equality is the
-exact midpoint case.
+point compares `2 * oneGap` with `trimMul`, and a midpoint goes up only from an
+odd `sigHi`. That is one bound per parity, which is what `round_u1_iff_gap`
+states and the only thing the fine path needs.
 
 Rounding up needs no additional separation: when `roundU1` fires, the packed
 remainder has reached half a unit step, hence the exact gap has reached at
@@ -1330,8 +1335,7 @@ remainder only down to `2^(64-h)`, while the exact gap also contains the
 truncation term `2·f·(num % den)`. Thus the packed comparison alone cannot
 exclude a gap just past half a step or guarantee that an exact midpoint appears
 as a packed midpoint. `one_residue_below_half` and `one_tie_band_even` are the
-certificates that close those two windows, one window family per exponent, and
-`one_gap_far_or_mid` assembles them into the decision itself.
+certificates that close those two windows, one window family per exponent.
 -/
 
 /-- The unit-step gap is the denominator-cleared remainder plus the
@@ -1341,15 +1345,18 @@ theorem one_gap_split (f : ℕ) (e : ℤ) :
       = trimDen e * oneResidue f e + 2 * f * (trimNum e % trimDen e) := by
   rw [oneGap, stepGap, ← oneResidue]
 
-/-- The gap exceeds a whole step only by the power-of-ten truncation error. -/
-theorem one_gap_lt_mul_add (f : ℕ) (e : ℤ) (hr : Regular f e) :
-    oneGap f e < trimMul e + 2 ^ 54 * trimDen e := by
+/-- The gap exceeds a whole step only by the power-of-ten truncation error,
+    which is under half a step, so rounding up always lands within one and a
+    half steps of the value. -/
+theorem one_gap_lt_step_and_half (f : ℕ) (e : ℤ) (hr : Regular f e)
+    (hsh : exponentShift e < 4) : 2 * oneGap f e < 3 * trimMul e := by
   have hres : trimDen e * oneResidue f e < trimMul e := by
     rw [trimMul, Nat.mul_comm (2 ^ (128 - exponentShift e)) (trimDen e)]
     exact mul_lt_mul_of_pos_left
       (by rw [oneResidue, stepResidue]; exact Nat.mod_lt _ (by positivity))
       (trim_den_pos e)
   have htrunc := trim_trunc_lt f e hr
+  have hhalf := trim_two_trunc_le_mul e hsh
   rw [one_gap_split]
   omega
 
@@ -1394,27 +1401,6 @@ theorem one_parity_residue_split (f : ℕ) (e : ℤ) (hsh : exponentShift e < 4)
   conv_lhs => rw [← Nat.div_add_mod (oneParityResidue f e)
     (2 ^ (128 - exponentShift e))]
   rw [hhi, hlo]
-
-/-- Once the remainder has reached half a unit step, `roundU1` can be false
-    only through yy's tie branch, which declines exactly for an even `sigHi`. -/
-theorem one_even_of_not_round_up (f : ℕ) (e : ℤ) (hsh : exponentShift e < 4)
-    (hu1 : (toDecimalCandidates f e).roundU1 = false)
-    (hres : 2 ^ (127 - exponentShift e) ≤ oneResidue f e) :
-    sigHi f e % 2 = 0 := by
-  have hpow : (2 : ℕ) ^ 63 * 2 ^ (64 - exponentShift e)
-      = 2 ^ (127 - exponentShift e) := by
-    rw [← pow_add]; congr 1; omega
-  have hunit : (0 : ℕ) < 2 ^ (64 - exponentShift e) := by positivity
-  have h63 : 2 ^ 63 ≤ sigLo f e := by
-    rw [sig_lo_eq_residue_div f e hsh, Nat.le_div_iff_mul_le hunit, hpow]
-    exact hres
-  have hround : (toDecimalCandidates f e).roundU1
-      = if sigLo f e = 2 ^ 63 then decide (sigHi f e % 2 = 1)
-        else decide (2 ^ 63 < sigLo f e) := rfl
-  rw [hround] at hu1
-  -- The tie branch declines for an even `sigHi`; the other branch cannot
-  -- decline at all, the remainder having passed half a unit step.
-  split at hu1 <;> (have := of_decide_eq_false hu1; omega)
 
 /-- The undecided bands as windows on the doubled residue. The truncation error
     is below `2^54·den`, so `2^54` bounds its reach in remainder units. -/
@@ -1581,81 +1567,55 @@ theorem one_below_half (f : ℕ) (e : ℤ) (hr : Regular f e)
         = trimDen e * oneResidue f e + 2 ^ 54 * trimDen e := by ring
     omega
 
-/-- yy's unit-step decision is the exact one. Either it rounds down and the gap
-    is strictly below half a step, or it rounds up and the gap is strictly above
-    it but within one and a half steps, or the gap is exactly half a step, a
-    genuine exact midpoint that the packed comparison sees as a midpoint too. -/
-theorem one_gap_far_or_mid (f : ℕ) (e : ℤ) (hr : Regular f e) :
-    ((toDecimalCandidates f e).roundU1 = false ∧ 2 * oneGap f e < trimMul e)
-      ∨ ((toDecimalCandidates f e).roundU1 = true
-          ∧ trimMul e < 2 * oneGap f e ∧ 2 * oneGap f e < 3 * trimMul e)
-      ∨ (oneResidue f e = 2 ^ (127 - exponentShift e)
-          ∧ 2 * oneGap f e = trimMul e) := by
+/-- yy's unit-step decision is the exact one: it rounds up exactly when the gap
+    has passed half a step, with an exact midpoint going up only from an odd
+    `sigHi`. The remainder reaching half a step is what carries the gap there,
+    the truncation error being too small to close the distance on its own; the
+    tie band above it is where the two could disagree, and the certificate
+    leaves only the genuine midpoint, which both sides resolve to even. -/
+theorem round_u1_iff_gap (f : ℕ) (e : ℤ) (hr : Regular f e) :
+    (toDecimalCandidates f e).roundU1 = true
+      ↔ if sigHi f e % 2 = 0 then trimMul e < 2 * oneGap f e
+        else trimMul e ≤ 2 * oneGap f e := by
   have hsh := exponent_shift_lt_four e hr.range
   have hden := trim_den_pos e
   have hgap := one_gap_split f e
   have hstep := trim_mul_eq_two_half e hsh
-  have hround := one_round_half f e hsh
-  -- The gap exceeds a step only by the truncation error, which is less than
-  -- half a step, so rounding up always lands within one and a half steps.
-  have hwide : 2 * oneGap f e < 3 * trimMul e := by
-    have := one_gap_lt_mul_add f e hr
-    have := trim_two_trunc_le_mul e hsh
-    omega
-  rcases Nat.lt_or_ge (oneResidue f e) (2 ^ (127 - exponentShift e)) with
-    hlt | hge
-  -- Below the packed midpoint: yy rounds down and so does the exact
-  -- comparison.
-  · refine .inl ⟨?_, one_below_half f e hr hlt⟩
-    rcases Bool.eq_false_or_eq_true (toDecimalCandidates f e).roundU1 with h | h
-    · exact absurd (hround.1 h) (by omega)
-    · exact h
-  · rcases Bool.eq_false_or_eq_true (toDecimalCandidates f e).roundU1 with
-      hu1 | hu1
-    · rcases Nat.eq_or_lt_of_le hge with heq | hgt
-      -- At the packed midpoint the gap is half a step exactly when the power of
-      -- ten is exact; otherwise the truncation error carries it past.
-      · by_cases hτ : trimNum e % trimDen e = 0
-        · refine .inr (.inr ⟨heq.symm, ?_⟩)
-          rw [hgap, ← heq, hτ]
-          omega
-        · refine .inr (.inl ⟨hu1, ?_, hwide⟩)
-          have hpos : 0 < 2 * f * (trimNum e % trimDen e) :=
-            Nat.mul_pos (by have := hr.pos; omega) (Nat.pos_of_ne_zero hτ)
-          rw [hgap, ← heq]
-          omega
-      -- Above it the remainder alone has passed half a step.
-      · refine .inr (.inl ⟨hu1, ?_, hwide⟩)
-        have hmono : trimDen e * (2 ^ (127 - exponentShift e) + 1)
-            ≤ trimDen e * oneResidue f e := Nat.mul_le_mul_left _ (by omega)
-        have hexp : trimDen e * (2 ^ (127 - exponentShift e) + 1)
-            = trimDen e * 2 ^ (127 - exponentShift e) + trimDen e := by ring
-        omega
-    -- yy declined in the packed tie band, so this is a genuine exact midpoint.
-    · obtain ⟨hres, hτ⟩ := one_tie_band_even f e hr
-        (one_even_of_not_round_up f e hsh hu1 hge) hge (hround.2 hu1)
-      refine .inr (.inr ⟨hres, ?_⟩)
-      rw [hgap, hres, hτ]
+  -- One remainder unit is worth `trimDen` of the cleared gap, so a remainder at
+  -- or past half a step puts the gap at or past half a step too.
+  have hmono (n : ℕ) (h : n ≤ oneResidue f e) :
+      trimDen e * n ≤ trimDen e * oneResidue f e := Nat.mul_le_mul_left _ h
+  rw [one_round_half f e hsh]
+  split_ifs with hpar
+  -- Even `sigHi`: yy waits for the remainder to leave the tie band, and below
+  -- the band the certificate leaves only the genuine midpoint, where the gap is
+  -- half a step exactly and the strict comparison declines as yy does.
+  · refine ⟨fun hres => ?_, fun hlt => ?_⟩
+    · have hb : (0 : ℕ) < 2 ^ (64 - exponentShift e) := by positivity
+      have hexp : trimDen e
+          * (2 ^ (127 - exponentShift e) + 2 ^ (64 - exponentShift e))
+          = trimDen e * 2 ^ (127 - exponentShift e)
+            + trimDen e * 2 ^ (64 - exponentShift e) := by ring
+      have := hmono _ hres
+      have : 0 < trimDen e * 2 ^ (64 - exponentShift e) := by positivity
       omega
-
-/-- At a packed midpoint yy takes its tie branch and rounds the significand
-    to even. -/
-theorem dec_one_even_of_packed_midpoint (f : ℕ) (e : ℤ)
-    (hsh : exponentShift e < 4)
-    (hres : oneResidue f e = 2 ^ (127 - exponentShift e)) :
-    (toDecimalCandidates f e).decOne % 2 = 0 := by
-  set c := toDecimalCandidates f e
-  have hlo : sigLo f e = 2 ^ 63 := by
-    rw [sig_lo_eq_residue_div f e hsh, hres,
-      Nat.pow_div (by omega) (by norm_num),
-      show 127 - exponentShift e - (64 - exponentShift e) = 63 from by omega]
-  have hround : c.roundU1 = decide (sigHi f e % 2 = 1) := by
-    show (if sigLo f e = 2 ^ 63 then decide (sigHi f e % 2 = 1)
-      else decide (2 ^ 63 < sigLo f e)) = _
-    simp [hlo]
-  -- Odd increments, even stays put, and both land on an even significand.
-  show (sigHi f e + if c.roundU1 then 1 else 0) % 2 = 0
-  by_cases hpar : sigHi f e % 2 = 1 <;> simp [hround, hpar] <;> omega
+    · by_contra hcon
+      rcases Nat.lt_or_ge (oneResidue f e) (2 ^ (127 - exponentShift e)) with
+        hlo | hlo
+      · have := one_below_half f e hr hlo
+        omega
+      · obtain ⟨hres, hτ⟩ :=
+          one_tie_band_even f e hr hpar hlo (by omega)
+        rw [hgap, hres, hτ] at hlt
+        omega
+  -- Odd `sigHi`: yy rounds up from the tie band, and the non-strict comparison
+  -- accepts it, so only the remainder short of half a step has to be excluded.
+  · refine ⟨fun hres => ?_, fun hle => ?_⟩
+    · have := hmono _ hres
+      omega
+    · by_contra hcon
+      have := one_below_half f e hr (by omega)
+      omega
 
 /-- `decOne` sits `oneGap` below the scaled value, less one whole step when it
     rounds up. -/
@@ -1671,8 +1631,9 @@ theorem dec_one_scaled (f : ℕ) (e : ℤ) (hsh : exponentShift e < 4) :
     push_cast <;> linarith
 
 /-- `decOne` is a nearest value on the grid at `decimalExponent e`, ties to
-    even. Half a step is one `trimMul` over two of them, so each case of
-    `one_gap_far_or_mid` reads off as an integer interval. -/
+    even. Half a step is one `trimMul` over two of them, so `round_u1_iff_gap`
+    bounds the distance either way, and it is a bound on the same parity of
+    `sigHi` that decides which way `decOne` went, so a tie lands on even. -/
 theorem dec_one_nearest (f : ℕ) (e : ℤ) (hr : Regular f e) :
     let c := toDecimalCandidates f e
     let x := value f e * 10 ^ (-decimalExponent e)
@@ -1680,24 +1641,32 @@ theorem dec_one_nearest (f : ℕ) (e : ℤ) (hr : Regular f e) :
       (|(c.decOne : ℚ) - x| = 1 / 2 → c.decOne % 2 = 0) := by
   intro c x
   have hsh := exponent_shift_lt_four e hr.range
+  have hmul := trim_mul_pos e
   obtain ⟨hle, -, heq⟩ := scaled_cmp_of_int_eq (a := 2) (b := trimMul e)
     (thr := 1 / 2) (trim_mul_pos e) two_pos (trim_value_scaled f e hr.range)
     (by push_cast; ring) (dec_one_scaled f e hsh)
+  have hwide := one_gap_lt_step_and_half f e hr hsh
+  have hflag := round_u1_iff_gap f e hr
   rw [hle, heq]
-  rcases one_gap_far_or_mid f e hr with ⟨hu1, hlt⟩ | ⟨hu1, hgt, hwide⟩ |
-    ⟨hres, hmid⟩
-  -- Rounding down, strictly inside half a step: no tie to resolve.
-  · rw [show c.roundU1 = false from hu1, ite_eq_right (by simp)]
-    omega
-  -- Rounding up, strictly inside half a step on the other side.
-  · rw [show c.roundU1 = true from hu1, ite_eq_left (by simp)]
-    omega
-  -- A genuine exact midpoint, which yy resolves to even whichever way it went.
-  · have heven : c.decOne % 2 = 0 :=
-      dec_one_even_of_packed_midpoint f e hsh hres
-    cases c.roundU1
-    · rw [ite_eq_right (by simp)]; omega
-    · rw [ite_eq_left (by simp)]; omega
+  cases hu1 : c.roundU1
+  -- yy stayed put, so the gap is within half a step, and a tie there is
+  -- reachable only from an even `sigHi`, which `decOne` inherits.
+  · have hone : c.decOne = sigHi f e := by
+      show (sigHi f e + if c.roundU1 then 1 else 0) = _
+      rw [hu1]; simp
+    rw [hu1] at hflag
+    simp only [Bool.false_eq_true, false_iff] at hflag
+    rw [ite_eq_right (by simp)]
+    split_ifs at hflag <;> omega
+  -- yy stepped up, so the gap had passed half a step, and a tie there is
+  -- reachable only from an odd `sigHi`, which the step makes even.
+  · have hone : c.decOne = sigHi f e + 1 := by
+      show (sigHi f e + if c.roundU1 then 1 else 0) = _
+      rw [hu1]; simp
+    rw [hu1] at hflag
+    simp only [true_iff] at hflag
+    rw [ite_eq_left (by simp)]
+    split_ifs at hflag <;> omega
 
 /-! ## The multiple-of-ten candidates
 
