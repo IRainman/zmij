@@ -20,7 +20,7 @@ decisions agree with the exact ones; only that its output does.
 Throughout this file:
 * `f`, `e`: binary significand and exponent, denoting `f·2^e`;
 * `d`, `k`: decimal significand and exponent, denoting `d·10^k`;
-* `h`: the shift `decimalShift e`, aligning `f·2^e` with `10^k`.
+* `h`: the shift `exponentShift e`, aligning `f·2^e` with `10^k`.
 
 ## Proof structure
 
@@ -230,13 +230,13 @@ def decimalExponent (e : ℤ) : ℤ :=
   e * 315_653 / 2 ^ 20
 
 /-- Shift chosen to align the binary exponent with the power of ten. -/
-def decimalShift (e : ℤ) : ℕ :=
+def exponentShift (e : ℤ) : ℕ :=
   Int.toNat (e + (-decimalExponent e * 217_707) / 2 ^ 16)
 
 /-- The 128-bit decimal significand ⌊f·2^(h+1)·⌊10^(-k)·2^128⌋ / 2^64⌋. -/
 def scaledSignificand (f : ℕ) (e : ℤ) : ℕ :=
   let k := decimalExponent e
-  let h := decimalShift e
+  let h := exponentShift e
   let p10 := power10Significand (-k)
   f * 2 ^ (h + 1) * p10 / 2 ^ 64
 
@@ -264,7 +264,7 @@ structure DecimalCandidates where
 
 def toDecimalCandidates (f : ℕ) (e : ℤ) : DecimalCandidates :=
   let k := decimalExponent e
-  let h := decimalShift e
+  let h := exponentShift e
 
   let p10 := power10Significand (-k)
   let p10Hi := p10 / 2 ^ 64
@@ -318,9 +318,9 @@ def toDecimal (f : ℕ) (e : ℤ) : ℕ × ℤ :=
 /-! ## Exponent alignment -/
 
 /-- The shift used by yy's regular path is less than 4. -/
-theorem decimal_shift_lt_four (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
-    decimalShift e < 4 := by
-  unfold decimalShift decimalExponent
+theorem exponent_shift_lt_four (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
+    exponentShift e < 4 := by
+  unfold exponentShift decimalExponent
   omega
 
 /-- The shift is nonnegative, so `Int.toNat` does not clamp it. The two
@@ -329,7 +329,7 @@ theorem decimal_shift_lt_four (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
     shift of `-1`. Ruling it out is a Diophantine fact about the constants
     rather than a magnitude bound, so it is checked; all the arithmetic here is
     small. -/
-theorem decimal_shift_nonneg :
+theorem exponent_shift_nonneg :
     ∀ e ∈ Finset.Icc (-1074 : ℤ) 971,
       0 ≤ e + (-decimalExponent e * 217_707) / 2 ^ 16 := by
   decide +kernel
@@ -337,10 +337,10 @@ theorem decimal_shift_nonneg :
 /-- The shift undoes the power-of-ten exponent: `h + 1 - pe = e`. Both sides
     scale the same fixed-point quotient, so once the shift is known not to have
     been clamped this is arithmetic, whatever the decimal exponent is. -/
-theorem decimal_shift_align (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
-    (decimalShift e : ℤ) + 1 - power10Exponent (-decimalExponent e) = e := by
-  have hnonneg := decimal_shift_nonneg e (by simpa [Finset.mem_Icc] using he)
-  unfold decimalShift power10Exponent
+theorem exponent_shift_align (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
+    (exponentShift e : ℤ) + 1 - power10Exponent (-decimalExponent e) = e := by
+  have hnonneg := exponent_shift_nonneg e (by simpa [Finset.mem_Icc] using he)
+  unfold exponentShift power10Exponent
   omega
 
 /-! ## The packed trim comparison
@@ -349,7 +349,7 @@ yy's `roundD0` and `roundU0` compare the packed value `c` (the last decimal
 digit of the integral part, followed by the top 60 bits of `sigLo`) with
 `halfUlp`. Both sides are truncated at the same window unit `U`. With
 
-    h = decimalShift e,   p10 = trimSig e,
+    h = exponentShift e,   p10 = trimSig e,
     N = 10·2^(128-h),     U = 2^(68-h),   W = 2·f·p10 % N
 
 one has `c = W / U`, `halfUlp = p10 / U`, `10·2^60 = N / U`, and
@@ -384,10 +384,10 @@ theorem trim_sig_bounds (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
   power10_significand_bounds _ (by unfold decimalExponent; omega)
 
 /-- Modulus of the packed comparison: the window wraps every 10·2^(128-h). -/
-def trimModulus (e : ℤ) : ℕ := 10 * 2 ^ (128 - decimalShift e)
+def trimModulus (e : ℤ) : ℕ := 10 * 2 ^ (128 - exponentShift e)
 
 /-- One unit in the last place of the packed comparison. -/
-def trimUnit (e : ℤ) : ℕ := 2 ^ (68 - decimalShift e)
+def trimUnit (e : ℤ) : ℕ := 2 ^ (68 - exponentShift e)
 
 /--
 yy produces two candidates from the same product `2·f·p10`, differing only in
@@ -405,28 +405,28 @@ def trimResidue (f : ℕ) (e : ℤ) : ℕ := stepResidue (trimModulus e) f e
 /-- `scaledSignificand` is the shifted product with the low 64 bits dropped. -/
 theorem scaled_significand_eq (f : ℕ) (e : ℤ) :
     scaledSignificand f e =
-      2 ^ decimalShift e * (2 * f * trimSig e) / 2 ^ 64 := by
-  show f * 2 ^ (decimalShift e + 1) * trimSig e / 2 ^ 64 = _
+      2 ^ exponentShift e * (2 * f * trimSig e) / 2 ^ 64 := by
+  show f * 2 ^ (exponentShift e + 1) * trimSig e / 2 ^ 64 = _
   congr 1
   rw [pow_succ]
   ring
 
 /-- `sigHi` is the top 64 bits of the shifted 192-bit product. -/
 theorem sig_hi_eq (f : ℕ) (e : ℤ) :
-    sigHi f e = 2 ^ decimalShift e * (2 * f * trimSig e) / 2 ^ 128 := by
+    sigHi f e = 2 ^ exponentShift e * (2 * f * trimSig e) / 2 ^ 128 := by
   show scaledSignificand f e / 2 ^ 64 = _
   rw [scaled_significand_eq, Nat.div_div_eq_div_mul, ← pow_add]
 
 /-- `sigLo` is bits 64–127 of the shifted 192-bit product. -/
 theorem sig_lo_eq (f : ℕ) (e : ℤ) :
     sigLo f e
-      = 2 ^ decimalShift e * (2 * f * trimSig e) % 2 ^ 128 / 2 ^ 64 := by
+      = 2 ^ exponentShift e * (2 * f * trimSig e) % 2 ^ 128 / 2 ^ 64 := by
   show scaledSignificand f e % 2 ^ 64 = _
   rw [scaled_significand_eq, ← Nat.mod_mul_right_div_self, ← pow_add]
 
 /-- A power of two splits into the shift and what is left of the window. -/
-theorem pow_shift_split (e : ℤ) (n : ℕ) (hn : decimalShift e ≤ n) :
-    (2 : ℕ) ^ n = 2 ^ decimalShift e * 2 ^ (n - decimalShift e) := by
+theorem pow_shift_split (e : ℤ) (n : ℕ) (hn : exponentShift e ≤ n) :
+    (2 : ℕ) ^ n = 2 ^ exponentShift e * 2 ^ (n - exponentShift e) := by
   rw [← pow_add]
   congr 1
   omega
@@ -441,17 +441,17 @@ theorem div_window (r : ℕ) :
   ring
 
 /-- `halfUlp` is the power-of-ten significand truncated to the window unit. -/
-theorem trim_half_ulp_eq (e : ℤ) (hsh : decimalShift e < 4) :
-    trimSig e / 2 ^ 64 / 2 ^ (4 - decimalShift e)
+theorem trim_half_ulp_eq (e : ℤ) (hsh : exponentShift e < 4) :
+    trimSig e / 2 ^ 64 / 2 ^ (4 - exponentShift e)
       = trimSig e / trimUnit e := by
   rw [Nat.div_div_eq_div_mul, ← pow_add, trimUnit,
-    show 64 + (4 - decimalShift e) = 68 - decimalShift e from by omega]
+    show 64 + (4 - exponentShift e) = 68 - exponentShift e from by omega]
 
 /-- `c` is the window residue truncated to the window unit. -/
-theorem trim_c_eq (f : ℕ) (e : ℤ) (hsh : decimalShift e < 4) :
+theorem trim_c_eq (f : ℕ) (e : ℤ) (hsh : exponentShift e < 4) :
     sigHi f e % 10 * 2 ^ 60 + sigLo f e / 2 ^ 4
       = trimResidue f e / trimUnit e := by
-  set h := decimalShift e with hh
+  set h := exponentShift e with hh
   set z := 2 * f * trimSig e
   set r := 2 ^ h * z % (2 ^ 128 * 10) with hr
   have hpos : 0 < (2 : ℕ) ^ h := by positivity
@@ -477,28 +477,28 @@ theorem trim_c_eq (f : ℕ) (e : ℤ) (hsh : decimalShift e < 4) :
 
 /-- `sigHi` is the quotient at the unit step. The multiple-of-ten candidate uses
     the coarse step, which is ten unit steps. -/
-theorem sig_hi_quotient (f : ℕ) (e : ℤ) (hsh : decimalShift e < 4) :
-    sigHi f e = 2 * f * trimSig e / 2 ^ (128 - decimalShift e) := by
+theorem sig_hi_quotient (f : ℕ) (e : ℤ) (hsh : exponentShift e < 4) :
+    sigHi f e = 2 * f * trimSig e / 2 ^ (128 - exponentShift e) := by
   rw [sig_hi_eq, pow_shift_split e 128 (by omega),
     Nat.mul_div_mul_left _ _ (by positivity)]
 
-theorem sig_hi_ten_quotient (f : ℕ) (e : ℤ) (hsh : decimalShift e < 4) :
+theorem sig_hi_ten_quotient (f : ℕ) (e : ℤ) (hsh : exponentShift e < 4) :
     sigTen f e = 10 * (2 * f * trimSig e / trimModulus e) := by
   rw [sigTen]
   -- Dividing the unit-step quotient by ten is dividing by the coarse step.
   have hdiv : sigHi f e / 10 = 2 * f * trimSig e / trimModulus e := by
     rw [sig_hi_quotient f e hsh, Nat.div_div_eq_div_mul,
-      show 2 ^ (128 - decimalShift e) * 10 = trimModulus e from by
+      show 2 ^ (128 - exponentShift e) * 10 = trimModulus e from by
         rw [trimModulus]; ring]
   have hmod := Nat.div_add_mod (sigHi f e) 10
   rw [← hdiv]
   omega
 
 /-- The window modulus is a whole number of window units. -/
-theorem trim_modulus_eq (e : ℤ) (hsh : decimalShift e < 4) :
+theorem trim_modulus_eq (e : ℤ) (hsh : exponentShift e < 4) :
     trimModulus e = trimUnit e * (10 * 2 ^ 60) := by
   rw [trimModulus, trimUnit,
-    show 128 - decimalShift e = (68 - decimalShift e) + 60 from by omega,
+    show 128 - exponentShift e = (68 - exponentShift e) + 60 from by omega,
     pow_add]
   ring
 
@@ -757,7 +757,7 @@ private theorem trim_no_window_hit {lo hi q : ℤ} (f : ℕ) (e : ℤ)
     `den·(p10 + U)` has not wrapped. -/
 theorem trim_bnd_le_scale (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
     trimBnd e ≤ trimScale e := by
-  have hsh : decimalShift e < 4 := decimal_shift_lt_four e he
+  have hsh : exponentShift e < 4 := exponent_shift_lt_four e he
   rw [trimBnd, ← trim_sig_nat]
   have hu_le : trimUnit e ≤ 2 ^ 68 := by
     rw [trimUnit]; exact Nat.pow_le_pow_right (by norm_num) (by omega)
@@ -1085,7 +1085,7 @@ theorem trim_gap_num_eq_scale_of_k_zero (f : ℕ) (e : ℤ) (hr : Regular f e)
     (htie : trimResidue f e / trimUnit e + trimSig e / trimUnit e
       = 10 * 2 ^ 60) :
     trimGap f e + trimNum e = trimScale e := by
-  have hsh : decimalShift e < 4 := decimal_shift_lt_four e hr.range
+  have hsh : exponentShift e < 4 := exponent_shift_lt_four e hr.range
   obtain ⟨hnum, hsig⟩ := trim_power_of_k_zero e hk
   have hunit : trimUnit e ∣ trimSig e := by
     rw [hsig, trimUnit]
@@ -1114,7 +1114,7 @@ theorem trim_scale_lt (f : ℕ) (e : ℤ) (hr : Regular f e)
     (hne : ¬(decimalExponent e = 0 ∧ trimResidue f e / trimUnit e
       + trimSig e / trimUnit e = 10 * 2 ^ 60)) :
     trimScale e < trimGap f e + trimNum e := by
-  have hsh : decimalShift e < 4 := decimal_shift_lt_four e hr.range
+  have hsh : exponentShift e < 4 := exponent_shift_lt_four e hr.range
   have hu_pos := trim_unit_pos e
   have hmodeq : trimModulus e = trimUnit e * (10 * 2 ^ 60) :=
     trim_modulus_eq e hsh
@@ -1158,7 +1158,7 @@ theorem trim_packed_room (f : ℕ) (e : ℤ) (hr : Regular f e) (n : ℕ)
     trimGap f e + trimNum e + n * trimEdge e
       ≤ trimScale e + trimResidue f e % trimUnit e * trimDen e
         + trimEdge e := by
-  have hsh : decimalShift e < 4 := decimal_shift_lt_four e hr.range
+  have hsh : exponentShift e < 4 := exponent_shift_lt_four e hr.range
   -- Scaled back up, the packed sum leaves `n` whole window units of room.
   have hroom : trimResidue f e + trimSig e + n * trimUnit e
       ≤ trimModulus e + trimResidue f e % trimUnit e
@@ -1267,7 +1267,7 @@ candidate bound `|cand - x| ≤ u/2` is a comparison of `trimGap` with `trimNum`
 -/
 
 /-- The unit step, cleared. The coarse step is ten of them. -/
-def trimMul (e : ℤ) : ℕ := 2 ^ (128 - decimalShift e) * trimDen e
+def trimMul (e : ℤ) : ℕ := 2 ^ (128 - exponentShift e) * trimDen e
 
 /-- The candidate scale factor is positive. -/
 theorem trim_mul_pos (e : ℤ) : (0 : ℚ) < (trimMul e : ℚ) :=
@@ -1280,16 +1280,16 @@ theorem trim_scale_eq_ten_mul (e : ℤ) : trimScale e = 10 * trimMul e := by
 
 /-- Twice the bound on the power-of-ten truncation error fits inside one grid
     step: `trimMul ≥ 2^125·den`, while the doubled bound is `2^55·den`. -/
-theorem trim_two_trunc_le_mul (e : ℤ) (hsh : decimalShift e < 4) :
+theorem trim_two_trunc_le_mul (e : ℤ) (hsh : exponentShift e < 4) :
     2 ^ 55 * trimDen e ≤ trimMul e := by
   rw [trimMul]
   exact Nat.mul_le_mul_right _ (Nat.pow_le_pow_right (by norm_num) (by omega))
 
 /-- Half a grid step, cleared: half a unit step times `den`. -/
-theorem trim_mul_eq_two_half (e : ℤ) (hsh : decimalShift e < 4) :
-    trimMul e = 2 * (trimDen e * 2 ^ (127 - decimalShift e)) := by
-  rw [trimMul, show (2 : ℕ) ^ (128 - decimalShift e)
-      = 2 * 2 ^ (127 - decimalShift e) from by
+theorem trim_mul_eq_two_half (e : ℤ) (hsh : exponentShift e < 4) :
+    trimMul e = 2 * (trimDen e * 2 ^ (127 - exponentShift e)) := by
+  rw [trimMul, show (2 : ℕ) ^ (128 - exponentShift e)
+      = 2 * 2 ^ (127 - exponentShift e) from by
     rw [← pow_succ']; congr 1; omega]
   ring
 
@@ -1308,18 +1308,19 @@ theorem trim_mul_eq (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
   -- The inverse scale `s = 2^(1-e)·10^k` turns the power-of-ten factor into
   -- `2^(128-h)`, which is where the shift alignment is spent.
   have hscale : (10 : ℚ) ^ (-k) * 2 ^ (128 - pe) * (2 ^ (1 - e) * 10 ^ k)
-      = 2 ^ (128 - decimalShift e) := by
+      = 2 ^ (128 - exponentShift e) := by
     have h10 : (10 : ℚ) ^ (-k) * 10 ^ k = 1 := by
       rw [← zpow_add₀ (by norm_num : (10 : ℚ) ≠ 0)]; simp
-    have halign : (decimalShift e : ℤ) + 1 - pe = e := decimal_shift_align e he
-    have hsh : decimalShift e < 4 := decimal_shift_lt_four e he
+    have halign : (exponentShift e : ℤ) + 1 - pe = e :=
+      exponent_shift_align e he
+    have hsh : exponentShift e < 4 := exponent_shift_lt_four e he
     calc (10 : ℚ) ^ (-k) * 2 ^ (128 - pe) * (2 ^ (1 - e) * 10 ^ k)
         = (10 ^ (-k) * 10 ^ k) * (2 ^ (128 - pe) * 2 ^ (1 - e)) := by
           ring
       _ = (2 : ℚ) ^ ((128 - pe) + (1 - e)) := by
           rw [h10, one_mul, ← zpow_add₀ (by norm_num : (2 : ℚ) ≠ 0)]
-      _ = 2 ^ (128 - decimalShift e) := by
-          rw [show (128 - pe) + (1 - e) = ((128 - decimalShift e : ℕ) : ℤ)
+      _ = 2 ^ (128 - exponentShift e) := by
+          rw [show (128 - pe) + (1 - e) = ((128 - exponentShift e : ℕ) : ℤ)
                 from by omega, zpow_natCast]
   rw [trimMul]
   push_cast
@@ -1368,7 +1369,7 @@ theorem dec_ten_down_scaled_error (f : ℕ) (e : ℤ) (he : -1074 ≤ e ∧ e �
   scaled_error_of_nat f e he <| by
     calc sigTen f e * trimMul e + trimGap f e
         = 2 * f * trimSig e / trimModulus e * trimScale e + trimGap f e := by
-          rw [sig_hi_ten_quotient f e (decimal_shift_lt_four e he),
+          rw [sig_hi_ten_quotient f e (exponent_shift_lt_four e he),
             trim_scale_eq_ten_mul]
           ring
       _ = 2 * f * trimNum e := step_quotient_add_gap _ f e
@@ -1430,7 +1431,7 @@ theorem half_step_iff_scaled_error {cand dist : ℚ} (f : ℕ) (e : ℤ)
 theorem ulp_scaled_bounds (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
     1 ≤ ulp e * 10 ^ (-decimalExponent e) ∧
       ulp e * 10 ^ (-decimalExponent e) < 10 := by
-  have hsh := decimal_shift_lt_four e he
+  have hsh := exponent_shift_lt_four e he
   have hpos := trim_mul_pos e
   have hstep : (ulp e * 10 ^ (-decimalExponent e)) * (trimMul e : ℚ)
       = 2 * (trimNum e : ℚ) := by
@@ -1468,22 +1469,22 @@ comparison of `2·oneGap` with `trimMul`.
 /-- The residue at the unit step: `sigHi·2^(128-h) + oneResidue` is the
     product `2·f·p10`. -/
 def oneResidue (f : ℕ) (e : ℤ) : ℕ :=
-  stepResidue (2 ^ (128 - decimalShift e)) f e
+  stepResidue (2 ^ (128 - exponentShift e)) f e
 
 /-- The gap at the unit step, the distance from `sigHi` to the scaled value once
     the denominator is cleared. -/
-def oneGap (f : ℕ) (e : ℤ) : ℕ := stepGap (2 ^ (128 - decimalShift e)) f e
+def oneGap (f : ℕ) (e : ℤ) : ℕ := stepGap (2 ^ (128 - exponentShift e)) f e
 
 /-- `sigHi` scaled up, plus the gap, is the scaled value `2·f·num`. -/
-theorem sig_hi_add_one_gap (f : ℕ) (e : ℤ) (hsh : decimalShift e < 4) :
+theorem sig_hi_add_one_gap (f : ℕ) (e : ℤ) (hsh : exponentShift e < 4) :
     sigHi f e * trimMul e + oneGap f e = 2 * f * trimNum e := by
   rw [sig_hi_quotient f e hsh]
   exact step_quotient_add_gap _ f e
 
 /-- `sigLo` is the unit-step remainder with its low `64 - h` bits discarded, so
     the packed test sees the remainder only in units of `2^(64-h)`. -/
-theorem sig_lo_eq_residue_div (f : ℕ) (e : ℤ) (hsh : decimalShift e < 4) :
-    sigLo f e = oneResidue f e / 2 ^ (64 - decimalShift e) := by
+theorem sig_lo_eq_residue_div (f : ℕ) (e : ℤ) (hsh : exponentShift e < 4) :
+    sigLo f e = oneResidue f e / 2 ^ (64 - exponentShift e) := by
   rw [sig_lo_eq, oneResidue, stepResidue, pow_shift_split e 128 (by omega),
     Nat.mul_mod_mul_left, pow_shift_split e 64 (by omega),
     Nat.mul_div_mul_left _ _ (by positivity)]
@@ -1491,16 +1492,16 @@ theorem sig_lo_eq_residue_div (f : ℕ) (e : ℤ) (hsh : decimalShift e < 4) :
 /-- What `roundU1` says about the remainder: yy compares the discarded word with
     half its range, so the test is on the remainder against half a unit step,
     `2^(127-h)`, blind only to the `2^(64-h)` bits below `sigLo`. -/
-theorem one_round_half (f : ℕ) (e : ℤ) (hsh : decimalShift e < 4) :
+theorem one_round_half (f : ℕ) (e : ℤ) (hsh : exponentShift e < 4) :
     ((toDecimalCandidates f e).roundU1 = true →
-        2 ^ (127 - decimalShift e) ≤ oneResidue f e) ∧
+        2 ^ (127 - exponentShift e) ≤ oneResidue f e) ∧
       ((toDecimalCandidates f e).roundU1 = false →
         oneResidue f e
-          < 2 ^ (127 - decimalShift e) + 2 ^ (64 - decimalShift e)) := by
-  have hpos : (0 : ℕ) < 2 ^ (64 - decimalShift e) := by positivity
+          < 2 ^ (127 - exponentShift e) + 2 ^ (64 - exponentShift e)) := by
+  have hpos : (0 : ℕ) < 2 ^ (64 - exponentShift e) := by positivity
   have hlo := sig_lo_eq_residue_div f e hsh
-  have hpow : (2 : ℕ) ^ 63 * 2 ^ (64 - decimalShift e)
-      = 2 ^ (127 - decimalShift e) := by
+  have hpow : (2 : ℕ) ^ 63 * 2 ^ (64 - exponentShift e)
+      = 2 ^ (127 - exponentShift e) := by
     rw [← pow_add]
     congr 1
     omega
@@ -1523,9 +1524,9 @@ theorem one_round_half (f : ℕ) (e : ℤ) (hsh : decimalShift e < 4) :
       · exact not_lt.mp (of_decide_eq_false hu1)
     rw [hlo] at h63
     calc oneResidue f e
-        < (2 ^ 63 + 1) * 2 ^ (64 - decimalShift e) :=
+        < (2 ^ 63 + 1) * 2 ^ (64 - exponentShift e) :=
           (Nat.div_lt_iff_lt_mul hpos).mp (Nat.lt_succ_of_le h63)
-      _ = 2 ^ (127 - decimalShift e) + 2 ^ (64 - decimalShift e) := by
+      _ = 2 ^ (127 - exponentShift e) + 2 ^ (64 - exponentShift e) := by
           rw [add_mul, one_mul, hpow]
 
 /-- `sigHi` sits exactly `oneGap` below the scaled value. -/
@@ -1534,7 +1535,7 @@ theorem sig_hi_scaled_error (f : ℕ) (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971)
         * (trimMul e : ℚ)
       = -(oneGap f e : ℚ) :=
   scaled_error_of_nat f e he
-    (sig_hi_add_one_gap f e (decimal_shift_lt_four e he))
+    (sig_hi_add_one_gap f e (exponent_shift_lt_four e he))
 
 /-! ## Correct rounding at the unit step
 
@@ -1566,7 +1567,7 @@ theorem one_gap_split (f : ℕ) (e : ℤ) :
 theorem one_gap_lt_mul_add (f : ℕ) (e : ℤ) (hr : Regular f e) :
     oneGap f e < trimMul e + 2 ^ 54 * trimDen e := by
   have hres : trimDen e * oneResidue f e < trimMul e := by
-    rw [trimMul, Nat.mul_comm (2 ^ (128 - decimalShift e)) (trimDen e)]
+    rw [trimMul, Nat.mul_comm (2 ^ (128 - exponentShift e)) (trimDen e)]
     exact mul_lt_mul_of_pos_left
       (by rw [oneResidue, stepResidue]; exact Nat.mod_lt _ (by positivity))
       (trim_den_pos e)
@@ -1580,7 +1581,7 @@ theorem one_gap_lt_mul_add (f : ℕ) (e : ℤ) (hr : Regular f e) :
 theorem one_half_step_le_gap (f : ℕ) (e : ℤ) (hr : Regular f e)
     (hu1 : (toDecimalCandidates f e).roundU1 = true) :
     trimMul e ≤ 2 * oneGap f e := by
-  have hsh := decimal_shift_lt_four e hr.range
+  have hsh := exponent_shift_lt_four e hr.range
   have hres :=
     Nat.mul_le_mul_left (trimDen e) ((one_round_half f e hsh).1 hu1)
   have hhalf := trim_mul_eq_two_half e hsh
@@ -1600,7 +1601,7 @@ structure OneMidpointSeparated (f : ℕ) (e : ℤ) : Prop where
   -- An exact midpoint is visible as a packed midpoint too.
   packedMidpoint :
     2 * oneGap f e = trimMul e →
-      oneResidue f e = 2 ^ (127 - decimalShift e)
+      oneResidue f e = 2 ^ (127 - exponentShift e)
 
 /-! ### Refuting the unit-step windows
 
@@ -1622,38 +1623,38 @@ Those exponents refute the band above the midpoint only.
 
 /-- The residue in the doubled modulus, one bit wider than the unit step. -/
 def oneParityResidue (f : ℕ) (e : ℤ) : ℕ :=
-  stepResidue (2 ^ (129 - decimalShift e)) f e
+  stepResidue (2 ^ (129 - exponentShift e)) f e
 
 /-- That bit, split off: the doubled residue carries one whole unit step above
     the remainder exactly when `sigHi` is odd. -/
-theorem one_parity_residue_split (f : ℕ) (e : ℤ) (hsh : decimalShift e < 4) :
+theorem one_parity_residue_split (f : ℕ) (e : ℤ) (hsh : exponentShift e < 4) :
     oneParityResidue f e
-      = 2 ^ (128 - decimalShift e) * (sigHi f e % 2) + oneResidue f e := by
-  have hw : (2 : ℕ) ^ (129 - decimalShift e)
-      = 2 ^ (128 - decimalShift e) * 2 := by
+      = 2 ^ (128 - exponentShift e) * (sigHi f e % 2) + oneResidue f e := by
+  have hw : (2 : ℕ) ^ (129 - exponentShift e)
+      = 2 ^ (128 - exponentShift e) * 2 := by
     rw [← pow_succ]; congr 1; omega
-  have hhi : oneParityResidue f e / 2 ^ (128 - decimalShift e)
+  have hhi : oneParityResidue f e / 2 ^ (128 - exponentShift e)
       = sigHi f e % 2 := by
     rw [oneParityResidue, stepResidue, hw, Nat.mod_mul_right_div_self,
       ← sig_hi_quotient f e hsh]
-  have hlo : oneParityResidue f e % 2 ^ (128 - decimalShift e)
+  have hlo : oneParityResidue f e % 2 ^ (128 - exponentShift e)
       = oneResidue f e := by
     rw [oneParityResidue, stepResidue, Nat.mod_mod_of_dvd _ ⟨2, hw⟩, oneResidue,
       stepResidue]
   conv_lhs => rw [← Nat.div_add_mod (oneParityResidue f e)
-    (2 ^ (128 - decimalShift e))]
+    (2 ^ (128 - exponentShift e))]
   rw [hhi, hlo]
 
 /-- Once the remainder has reached half a unit step, `roundU1` can be false
     only through yy's tie branch, which declines exactly for an even `sigHi`. -/
-theorem one_even_of_not_round_up (f : ℕ) (e : ℤ) (hsh : decimalShift e < 4)
+theorem one_even_of_not_round_up (f : ℕ) (e : ℤ) (hsh : exponentShift e < 4)
     (hu1 : (toDecimalCandidates f e).roundU1 = false)
-    (hres : 2 ^ (127 - decimalShift e) ≤ oneResidue f e) :
+    (hres : 2 ^ (127 - exponentShift e) ≤ oneResidue f e) :
     sigHi f e % 2 = 0 := by
-  have hpow : (2 : ℕ) ^ 63 * 2 ^ (64 - decimalShift e)
-      = 2 ^ (127 - decimalShift e) := by
+  have hpow : (2 : ℕ) ^ 63 * 2 ^ (64 - exponentShift e)
+      = 2 ^ (127 - exponentShift e) := by
     rw [← pow_add]; congr 1; omega
-  have hunit : (0 : ℕ) < 2 ^ (64 - decimalShift e) := by positivity
+  have hunit : (0 : ℕ) < 2 ^ (64 - exponentShift e) := by positivity
   have h63 : 2 ^ 63 ≤ sigLo f e := by
     rw [sig_lo_eq_residue_div f e hsh, Nat.le_div_iff_mul_le hunit, hpow]
     exact hres
@@ -1669,13 +1670,13 @@ theorem one_even_of_not_round_up (f : ℕ) (e : ℤ) (hsh : decimalShift e < 4)
     is below `2^54·den`, so `2^54` bounds its reach in remainder units. -/
 private def oneWindows (e : ℤ) : ModWindows where
   g := 2 * trimSig e
-  modulus := 2 ^ (129 - decimalShift e)
+  modulus := 2 ^ (129 - exponentShift e)
   f0 := 1
   f1 := 2 ^ 53 - 1
   windows :=
-    let half : ℤ := 2 ^ (127 - decimalShift e)
-    let band : ℤ := 2 ^ (64 - decimalShift e)
-    let w : ℤ := 2 ^ (128 - decimalShift e)
+    let half : ℤ := 2 ^ (127 - exponentShift e)
+    let band : ℤ := 2 ^ (64 - exponentShift e)
+    let w : ℤ := 2 ^ (128 - exponentShift e)
     -- The packed tie band above the midpoint, for an even `sigHi`.
     (half + 1, half + band - 1) ::
       if trimNum e % trimDen e = 0 then []
@@ -1713,10 +1714,10 @@ private theorem one_no_window_hit {lo hi q : ℤ} (f : ℕ) (e : ℤ)
     error's reach below it, one for each parity of `sigHi`. -/
 private theorem one_windows_truncated (e : ℤ)
     (hτ : trimNum e % trimDen e ≠ 0) :
-    ((2 : ℤ) ^ (127 - decimalShift e) - 2 ^ 54,
-        (2 : ℤ) ^ (127 - decimalShift e)) ∈ (oneWindows e).windows ∧
-      ((2 : ℤ) ^ (128 - decimalShift e) + 2 ^ (127 - decimalShift e) - 2 ^ 54,
-          (2 : ℤ) ^ (128 - decimalShift e) + 2 ^ (127 - decimalShift e) - 1)
+    ((2 : ℤ) ^ (127 - exponentShift e) - 2 ^ 54,
+        (2 : ℤ) ^ (127 - exponentShift e)) ∈ (oneWindows e).windows ∧
+      ((2 : ℤ) ^ (128 - exponentShift e) + 2 ^ (127 - exponentShift e) - 2 ^ 54,
+          (2 : ℤ) ^ (128 - exponentShift e) + 2 ^ (127 - exponentShift e) - 1)
         ∈ (oneWindows e).windows := by
   simp only [oneWindows, ite_eq_right hτ]
   exact ⟨.tail _ (.head _), .tail _ (.tail _ (.head _))⟩
@@ -1725,20 +1726,20 @@ private theorem one_windows_truncated (e : ℤ)
     of half a unit step is short of it by more than `2^54`. -/
 theorem one_residue_below_half (f : ℕ) (e : ℤ) (hr : Regular f e)
     (hτ : trimNum e % trimDen e ≠ 0)
-    (hres : oneResidue f e < 2 ^ (127 - decimalShift e)) :
-    oneResidue f e + 2 ^ 54 < 2 ^ (127 - decimalShift e) := by
+    (hres : oneResidue f e < 2 ^ (127 - exponentShift e)) :
+    oneResidue f e + 2 ^ 54 < 2 ^ (127 - exponentShift e) := by
   by_contra hcon
-  have hsh := decimal_shift_lt_four e hr.range
+  have hsh := exponent_shift_lt_four e hr.range
   obtain ⟨q, hcert⟩ := one_windows_refuted e hr.range
   obtain ⟨hbelow, habove⟩ := one_windows_truncated e hτ
   -- The remainder is in the last `2^54` below the midpoint; the parity of
   -- `sigHi` decides which of the two windows holds it.
-  have hlo : (2 : ℤ) ^ (127 - decimalShift e)
+  have hlo : (2 : ℤ) ^ (127 - exponentShift e)
       ≤ (oneResidue f e : ℤ) + 2 ^ 54 := by
     exact_mod_cast
-      (show 2 ^ (127 - decimalShift e) ≤ oneResidue f e + 2 ^ 54 from by omega)
+      (show 2 ^ (127 - exponentShift e) ≤ oneResidue f e + 2 ^ 54 from by omega)
   have hhi : (oneResidue f e : ℤ) + 1
-      ≤ (2 : ℤ) ^ (127 - decimalShift e) := by
+      ≤ (2 : ℤ) ^ (127 - exponentShift e) := by
     exact_mod_cast hres
   have hsplit := one_parity_residue_split f e hsh
   rcases Nat.mod_two_eq_zero_or_one (sigHi f e) with hpar | hpar
@@ -1749,7 +1750,7 @@ theorem one_residue_below_half (f : ℕ) (e : ℤ) (hr : Regular f e)
       (by rw [hp]; linarith)
   -- Odd `sigHi`: one whole window above it.
   · have hp : (oneParityResidue f e : ℤ)
-        = (2 : ℤ) ^ (128 - decimalShift e) + (oneResidue f e : ℤ) := by
+        = (2 : ℤ) ^ (128 - exponentShift e) + (oneResidue f e : ℤ) := by
       rw [hsplit, hpar]; push_cast; ring
     exact one_no_window_hit f e hr hcert habove (by rw [hp]; linarith)
       (by rw [hp]; linarith)
@@ -1760,35 +1761,35 @@ theorem one_residue_below_half (f : ℕ) (e : ℤ) (hr : Regular f e)
     to even. -/
 theorem one_tie_band_even (f : ℕ) (e : ℤ) (hr : Regular f e)
     (hpar : sigHi f e % 2 = 0)
-    (hlo : 2 ^ (127 - decimalShift e) ≤ oneResidue f e)
+    (hlo : 2 ^ (127 - exponentShift e) ≤ oneResidue f e)
     (hhi : oneResidue f e
-      < 2 ^ (127 - decimalShift e) + 2 ^ (64 - decimalShift e)) :
-    oneResidue f e = 2 ^ (127 - decimalShift e)
+      < 2 ^ (127 - exponentShift e) + 2 ^ (64 - exponentShift e)) :
+    oneResidue f e = 2 ^ (127 - exponentShift e)
       ∧ trimNum e % trimDen e = 0 := by
-  have hsh := decimal_shift_lt_four e hr.range
+  have hsh := exponent_shift_lt_four e hr.range
   obtain ⟨q, hcert⟩ := one_windows_refuted e hr.range
   have hp : (oneParityResidue f e : ℤ) = (oneResidue f e : ℤ) := by
     rw [one_parity_residue_split f e hsh, hpar]; push_cast; ring
   -- The two ends of the band above the midpoint, which both window shapes
   -- share.
   have hup : (oneParityResidue f e : ℤ)
-      ≤ (2 : ℤ) ^ (127 - decimalShift e) + 2 ^ (64 - decimalShift e) - 1 := by
+      ≤ (2 : ℤ) ^ (127 - exponentShift e) + 2 ^ (64 - exponentShift e) - 1 := by
     rw [hp]
     have hz : (oneResidue f e : ℤ) + 1
-        ≤ (2 : ℤ) ^ (127 - decimalShift e) + 2 ^ (64 - decimalShift e) := by
+        ≤ (2 : ℤ) ^ (127 - exponentShift e) + 2 ^ (64 - exponentShift e) := by
       exact_mod_cast (show oneResidue f e + 1
-        ≤ 2 ^ (127 - decimalShift e) + 2 ^ (64 - decimalShift e) from hhi)
+        ≤ 2 ^ (127 - exponentShift e) + 2 ^ (64 - exponentShift e) from hhi)
     linarith
-  have hdown (hgt : 2 ^ (127 - decimalShift e) < oneResidue f e) :
-      (2 : ℤ) ^ (127 - decimalShift e) + 1 ≤ (oneParityResidue f e : ℤ) := by
+  have hdown (hgt : 2 ^ (127 - exponentShift e) < oneResidue f e) :
+      (2 : ℤ) ^ (127 - exponentShift e) + 1 ≤ (oneParityResidue f e : ℤ) := by
     rw [hp]
     exact_mod_cast
-      (show 2 ^ (127 - decimalShift e) + 1 ≤ oneResidue f e from hgt)
+      (show 2 ^ (127 - exponentShift e) + 1 ≤ oneResidue f e from hgt)
   -- The band above the midpoint is refuted at every exponent, leaving the
   -- midpoint itself.
-  have hband (hgt : 2 ^ (127 - decimalShift e) < oneResidue f e) : False :=
+  have hband (hgt : 2 ^ (127 - exponentShift e) < oneResidue f e) : False :=
     one_no_window_hit f e hr hcert (.head _) (hdown hgt) hup
-  have hmid : oneResidue f e = 2 ^ (127 - decimalShift e) := by
+  have hmid : oneResidue f e = 2 ^ (127 - exponentShift e) := by
     rcases Nat.eq_or_lt_of_le hlo with heq | hgt
     · exact heq.symm
     · exact (hband hgt).elim
@@ -1797,7 +1798,7 @@ theorem one_tie_band_even (f : ℕ) (e : ℤ) (hr : Regular f e)
   refine ⟨hmid, ?_⟩
   by_contra hτ
   obtain ⟨hwin, -⟩ := one_windows_truncated e hτ
-  have hz : (oneParityResidue f e : ℤ) = (2 : ℤ) ^ (127 - decimalShift e) := by
+  have hz : (oneParityResidue f e : ℤ) = (2 : ℤ) ^ (127 - exponentShift e) := by
     rw [hp, hmid]; push_cast; ring
   exact one_no_window_hit f e hr hcert hwin
     (by rw [hz]; exact sub_le_self _ (by positivity)) (by rw [hz])
@@ -1808,7 +1809,7 @@ theorem one_tie_band_even (f : ℕ) (e : ℤ) (hr : Regular f e)
     these two implications. -/
 theorem one_midpoint_separated (f : ℕ) (e : ℤ) (hr : Regular f e) :
     OneMidpointSeparated f e := by
-  have hsh := decimal_shift_lt_four e hr.range
+  have hsh := exponent_shift_lt_four e hr.range
   have hden := trim_den_pos e
   have htrunc := trim_trunc_lt f e hr
   have hstep := trim_mul_eq_two_half e hsh
@@ -1816,11 +1817,11 @@ theorem one_midpoint_separated (f : ℕ) (e : ℤ) (hr : Regular f e) :
   -- Below the midpoint the gap stays strictly inside half a step: the
   -- remainder is a whole `den` short, or `2^54·den` short with the truncation
   -- error to spend.
-  have hbelow (hlt : oneResidue f e < 2 ^ (127 - decimalShift e)) :
+  have hbelow (hlt : oneResidue f e < 2 ^ (127 - exponentShift e)) :
       2 * oneGap f e < trimMul e := by
     by_cases hτ : trimNum e % trimDen e = 0
     · have hmono : trimDen e * (oneResidue f e + 1)
-          ≤ trimDen e * 2 ^ (127 - decimalShift e) :=
+          ≤ trimDen e * 2 ^ (127 - exponentShift e) :=
         Nat.mul_le_mul_left _ (by omega)
       have hexp : trimDen e * (oneResidue f e + 1)
           = trimDen e * oneResidue f e + trimDen e := by ring
@@ -1828,14 +1829,14 @@ theorem one_midpoint_separated (f : ℕ) (e : ℤ) (hr : Regular f e) :
       omega
     · have hroom := one_residue_below_half f e hr hτ hlt
       have hmono : trimDen e * (oneResidue f e + 2 ^ 54)
-          ≤ trimDen e * 2 ^ (127 - decimalShift e) :=
+          ≤ trimDen e * 2 ^ (127 - exponentShift e) :=
         Nat.mul_le_mul_left _ (by omega)
       have hexp : trimDen e * (oneResidue f e + 2 ^ 54)
           = trimDen e * oneResidue f e + 2 ^ 54 * trimDen e := by ring
       omega
   refine ⟨?_, ?_⟩
   · intro hu1
-    rcases Nat.lt_or_ge (oneResidue f e) (2 ^ (127 - decimalShift e)) with
+    rcases Nat.lt_or_ge (oneResidue f e) (2 ^ (127 - exponentShift e)) with
       hlt | hge
     · exact (hbelow hlt).le
     -- At the midpoint yy declined only for an even `sigHi`, and then the
@@ -1846,17 +1847,17 @@ theorem one_midpoint_separated (f : ℕ) (e : ℤ) (hr : Regular f e) :
       rw [hgap, hres, hτ]
       omega
   · intro hmid
-    rcases Nat.lt_or_ge (oneResidue f e) (2 ^ (127 - decimalShift e)) with
+    rcases Nat.lt_or_ge (oneResidue f e) (2 ^ (127 - exponentShift e)) with
       hlt | hge
     · exact absurd hmid (by have := hbelow hlt; omega)
     · rcases Nat.eq_or_lt_of_le hge with heq | hgt
       · exact heq.symm
       -- Above the midpoint the gap has already passed half a step.
       · exfalso
-        have hmono : trimDen e * (2 ^ (127 - decimalShift e) + 1)
+        have hmono : trimDen e * (2 ^ (127 - exponentShift e) + 1)
             ≤ trimDen e * oneResidue f e := Nat.mul_le_mul_left _ (by omega)
-        have hexp : trimDen e * (2 ^ (127 - decimalShift e) + 1)
-            = trimDen e * 2 ^ (127 - decimalShift e) + trimDen e := by ring
+        have hexp : trimDen e * (2 ^ (127 - exponentShift e) + 1)
+            = trimDen e * 2 ^ (127 - exponentShift e) + trimDen e := by ring
         omega
 
 /-! ### Nearest at the unit step -/
@@ -1864,14 +1865,14 @@ theorem one_midpoint_separated (f : ℕ) (e : ℤ) (hr : Regular f e) :
 /-- At a packed midpoint the remainder is exactly half a unit step, so yy takes
     its tie branch and rounds the significand to even. -/
 theorem dec_one_even_of_packed_midpoint (f : ℕ) (e : ℤ)
-    (hsh : decimalShift e < 4)
-    (hres : oneResidue f e = 2 ^ (127 - decimalShift e)) :
+    (hsh : exponentShift e < 4)
+    (hres : oneResidue f e = 2 ^ (127 - exponentShift e)) :
     (toDecimalCandidates f e).decOne % 2 = 0 := by
   set c := toDecimalCandidates f e
   have hlo : sigLo f e = 2 ^ 63 := by
     rw [sig_lo_eq_residue_div f e hsh, hres,
       Nat.pow_div (by omega) (by norm_num),
-      show 127 - decimalShift e - (64 - decimalShift e) = 63 from by omega]
+      show 127 - exponentShift e - (64 - exponentShift e) = 63 from by omega]
   have hround : c.roundU1 = decide (sigHi f e % 2 = 1) := by
     show (if sigLo f e = 2 ^ 63 then decide (sigHi f e % 2 = 1)
       else decide (2 ^ 63 < sigLo f e)) = _
@@ -1888,7 +1889,7 @@ theorem dec_one_nearest (f : ℕ) (e : ℤ) (hr : Regular f e) :
     |((toDecimalCandidates f e).decOne : ℚ) - x| ≤ 1 / 2 ∧
       (|((toDecimalCandidates f e).decOne : ℚ) - x| = 1 / 2 →
         (toDecimalCandidates f e).decOne % 2 = 0) := by
-  have hsh := decimal_shift_lt_four e hr.range
+  have hsh := exponent_shift_lt_four e hr.range
   have hsep := one_midpoint_separated f e hr
   set c := toDecimalCandidates f e
   by_cases hu1 : c.roundU1 = true
@@ -1976,7 +1977,7 @@ theorem round_d0_iff_gap (f : ℕ) (e : ℤ) (hr : Regular f e) :
     (toDecimalCandidates f e).roundD0 = true
       ↔ if f % 2 = 0 then trimGap f e ≤ trimNum e
         else trimGap f e < trimNum e := by
-  have hsh : decimalShift e < 4 := decimal_shift_lt_four e hr.range
+  have hsh : exponentShift e < 4 := exponent_shift_lt_four e hr.range
   set c := trimResidue f e / trimUnit e with hc
   set p := trimSig e / trimUnit e with hp
   -- yy's test, in the window quantities it actually compares.
@@ -2044,7 +2045,7 @@ theorem round_u0_iff_gap (f : ℕ) (e : ℤ) (hr : Regular f e) :
     (toDecimalCandidates f e).roundU0 = true
       ↔ if f % 2 = 0 then trimScale e ≤ trimGap f e + trimNum e
         else trimScale e < trimGap f e + trimNum e := by
-  have hsh : decimalShift e < 4 := decimal_shift_lt_four e hr.range
+  have hsh : exponentShift e < 4 := exponent_shift_lt_four e hr.range
   set c := trimResidue f e / trimUnit e with hc
   set p := trimSig e / trimUnit e with hp
   -- Lift a packed sum reaching the modulus to the untruncated bound.
