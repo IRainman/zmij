@@ -18,12 +18,14 @@ produces a shortest, correctly rounded decimal for any positive value, given
 only that the decimal grid is no coarser than one ULP and strictly coarser than
 a tenth of one.
 
-The second part relates lossy comparisons to exact arithmetic. An implementation
-of any such method observes its exact quantities through comparisons it can only
-afford to make approximately. Away from a decision boundary the loss cannot
-change the answer, which is `comparison_stable_of_far`; near one the observation
-is ambiguous, and the ambiguity is a Diophantine question about a modular
-progression, which `ModWindows` answers by kernel-checked certificate.
+The second part relates an implementation's arithmetic to that rule. It works in
+integers, so `scaled_cmp_of_int_eq` reads a comparison against the exact value
+off an integer identity; and it observes those quantities through comparisons it
+can only afford to make approximately. Away from a decision boundary the loss
+cannot change the answer, which is `comparison_stable_of_far`; near one the
+observation is ambiguous, and the
+ambiguity is a Diophantine question about a modular progression, which
+`ModWindows` answers by kernel-checked certificate.
 
 Neither part knows an implementation. The conversion results ask only for bounds
 on the decimal grid, never for a binary format or for the rule that chose the
@@ -35,7 +37,7 @@ Throughout this file:
 * `d`, `k`: decimal significand and exponent, denoting `d·10^k`.
 -/
 
-/-! ## The specification -/
+/-! ## Decimal conversion specification -/
 
 /-- Exact rational value represented by binary significand `f`
     and exponent `e`. -/
@@ -69,7 +71,26 @@ def CorrectlyRounded (f : ℕ) (e : ℤ) (d : ℕ) (k : ℤ) : Prop :=
   (∀ d' : ℕ, |r - v| ≤ |(d' : ℚ) * 10 ^ k - v|) ∧
    ∀ d' : ℕ, |r - v| = |(d' : ℚ) * 10 ^ k - v| → d' = d ∨ d % 2 = 0
 
-/-! ## Nearest values on a decimal grid
+/-! ## The exact reference method
+
+This is the exact selection rule underlying Schubfach, stated at a decimal
+exponent `k` and read in the scaled domain: prefer a multiple of ten that
+round-trips, and settle for a nearest integer, ties to even, when there is none.
+A multiple of ten round-trips exactly when a digit can be dropped,
+`coarse_roundtrip_iff_next_grid`, so the first case is where the shortest
+representation is coarser than the grid at `k`.
+
+Only two properties of `k` are used. The grid must be fine enough that a
+nearest grid point round-trips, `1 ≤ u`, and coarse enough that the round-trip
+interval, one ULP wide, cannot hold two multiples of ten, `u < 10`.
+
+`coarse_roundtrip_adjacent` comes last, after the correctness theorem, because
+it is not part of it. That second bound also pins down where the one multiple of
+ten can be, which is how an implementation gets away with testing two
+candidates.
+-/
+
+/-! ### Nearest values on a decimal grid
 
 Scaled by `10^(-k)`, the grid at `k` becomes the integers, so correct rounding
 means choosing a nearest integer to the scaled value, with ties resolved to
@@ -147,7 +168,7 @@ private theorem correctly_rounded_of_le_half (f : ℕ) (e : ℤ) (d : ℕ) (k : 
   · exact Or.inl (eq_of_abs_sub_eq_of_lt_half hlt hd')
   · exact Or.inr (heven heq)
 
-/-! ## Round-trips in the scaled domain
+/-! ### Round-trips in the scaled domain
 
 Scaled by `10^(-k)`, the grid at `k` becomes the integers, the exact value
 becomes `x` and one ULP becomes `u = ulp e · 10^(-k)` grid steps. A round-trip
@@ -176,52 +197,6 @@ theorem roundtrips_iff_scaled (f : ℕ) (e k : ℤ) (d : ℕ) :
   split_ifs
   · rw [← hdist, ← hhalf]; exact mul_le_mul_iff_of_pos_right hp
   · rw [← hdist, ← hhalf]; exact mul_lt_mul_iff_of_pos_right hp
-
-/-! ### Candidate distances as integers
-
-An implementation works in integers, and the scale `m` that clears the grid also
-sends the scaled value to an integer `t`. A candidate `c` then sits at a signed
-integer distance `dist` from it, fixed by `c·m + dist = t`, and a threshold `thr`
-worth `b` over `a` copies of `m` is met exactly when `a·dist` lies in `[-b, b]`.
-
-These two are the whole crossing into `ℚ`. Below them an implementation states
-one identity per candidate and reasons in `ℤ`; above them nothing mentions the
-scale. The interval form is deliberate: the conclusions are what `omega` reads.
--/
-
-/-- The scaled distance from the exact value, read off the integer identity. -/
-theorem scaled_dist_eq {c m : ℕ} {t dist : ℤ} {x : ℚ} (hx : x * m = t)
-    (hnat : (c : ℤ) * m + dist = t) :
-    ((c : ℚ) - x) * m = -(dist : ℚ) := by
-  have hcast : (c : ℚ) * m + (dist : ℚ) = t := by exact_mod_cast hnat
-  rw [sub_mul, hx]
-  linarith
-
-/-- Every comparison of a candidate against the exact value, as an integer
-    interval condition on its signed distance. -/
-theorem scaled_cmp_of_int_eq {c m a b : ℕ} {t dist : ℤ} {x thr : ℚ}
-    (hm : 0 < m) (ha : 0 < a) (hx : x * m = t) (hthr : thr * (a * m) = b)
-    (hnat : (c : ℤ) * m + dist = t) :
-    (|(c : ℚ) - x| ≤ thr ↔ -(b : ℤ) ≤ a * dist ∧ a * dist ≤ b) ∧
-      (|(c : ℚ) - x| < thr ↔ -(b : ℤ) < a * dist ∧ a * dist < b) ∧
-      (|(c : ℚ) - x| = thr ↔ a * dist = b ∨ a * dist = -(b : ℤ)) := by
-  have hmq : (0 : ℚ) < m := by exact_mod_cast hm
-  have haq : (0 : ℚ) < a := by exact_mod_cast ha
-  have hp : (0 : ℚ) < (a : ℚ) * m := by positivity
-  -- The scale comes out of the absolute value, leaving one integer magnitude.
-  have habs : |(c : ℚ) - x| * ((a : ℚ) * m) = |(((a : ℤ) * dist : ℤ) : ℚ)| := by
-    rw [show ((a : ℚ) * m) = |(m : ℚ)| * |(a : ℚ)| from by
-        rw [abs_of_pos hmq, abs_of_pos haq]; ring,
-      ← mul_assoc, ← abs_mul, scaled_dist_eq hx hnat, abs_neg, ← abs_mul]
-    push_cast
-    rw [mul_comm]
-  refine ⟨?_, ?_, ?_⟩
-  · rw [← mul_le_mul_iff_of_pos_right hp, hthr, habs, abs_le]
-    constructor <;> intro h <;> exact_mod_cast h
-  · rw [← mul_lt_mul_iff_of_pos_right hp, hthr, habs, abs_lt]
-    constructor <;> intro h <;> exact_mod_cast h
-  · rw [← mul_left_inj' (ne_of_gt hp), hthr, habs, abs_eq (by positivity)]
-    constructor <;> intro h <;> exact_mod_cast h
 
 /-- Either parity of a round-trip bounds the scaled distance by half a ULP. -/
 private theorem abs_sub_le_half_ulp (f : ℕ) (e k : ℤ) {d : ℕ}
@@ -277,7 +252,28 @@ private theorem roundtrips_of_le_half (f : ℕ) (e k : ℤ) (d : ℕ)
     split_ifs <;> norm_num
   · split_ifs <;> linarith
 
-/-! ## Decimal reduction -/
+/-! ### The method
+
+Both cases are now sayable: a multiple of ten that round-trips, or, when there is
+none, a nearest point in the scaled domain. Everything after this subsection is
+machinery for `exact_candidate_correct`.
+-/
+
+/-- Whether some multiple of ten round-trips on the grid at `k`. -/
+def CoarseRoundtrip (f : ℕ) (e k : ℤ) : Prop :=
+  ∃ c : ℕ, c % 10 = 0 ∧ Roundtrips f e (c * 10 ^ k)
+
+/-- The exact method: a multiple of ten that round-trips if one exists, and
+    otherwise a nearest value on the grid at `k`, ties to even. The second case
+    says what the computation establishes, a half-step bound and evenness at an
+    exact midpoint, rather than the correct rounding those two imply. -/
+def ExactCandidate (f : ℕ) (e k : ℤ) (d : ℕ) : Prop :=
+  let x := value f e * 10 ^ (-k)
+  (d % 10 = 0 ∧ Roundtrips f e (d * 10 ^ k)) ∨
+    (¬CoarseRoundtrip f e k ∧ |(d : ℚ) - x| ≤ 1 / 2 ∧
+      (|(d : ℚ) - x| = 1 / 2 → d % 2 = 0))
+
+/-! ### Decimal reduction -/
 
 /-- Removes trailing zeros from a decimal significand, shifting the exponent to
     preserve the represented value. -/
@@ -327,26 +323,7 @@ private theorem ten_pow_succ_shift (d : ℕ) (k : ℤ) :
   rw [show d * 10 = d * 10 ^ 1 from by ring, ten_pow_shift d 1]
   norm_num
 
-/-! ## The exact reference method
-
-This is the exact selection rule underlying Schubfach, stated at a decimal
-exponent `k` and read in the scaled domain: prefer a multiple of ten that
-round-trips, and settle for a nearest integer, ties to even, when there is none.
-A multiple of ten round-trips exactly when a digit can be dropped,
-`coarse_roundtrip_iff_next_grid`, so the first case is where the shortest
-representation is coarser than the grid at `k`.
-
-Only two properties of `k` are used. The grid must be fine enough that a
-nearest grid point round-trips, `1 ≤ u`, and coarse enough that the round-trip
-interval, one ULP wide, cannot hold two multiples of ten, `u < 10`. That second
-bound also pins down where the one multiple of ten can be,
-`coarse_roundtrip_adjacent`, which is how an implementation gets away with
-testing two candidates.
--/
-
-/-- Whether some multiple of ten round-trips on the grid at `k`. -/
-def CoarseRoundtrip (f : ℕ) (e k : ℤ) : Prop :=
-  ∃ c : ℕ, c % 10 = 0 ∧ Roundtrips f e (c * 10 ^ k)
+/-! ### Uniqueness on the coarse grid -/
 
 /-- The multiples of ten on the grid at `k` are exactly the values on the grid
     at `k + 1`, the two descriptions differing only by a factor of ten in the
@@ -361,16 +338,6 @@ private theorem coarse_roundtrip_iff_next_grid (f : ℕ) (e k : ℤ) :
     exact hc
   · rintro ⟨d, hd⟩
     exact ⟨d * 10, Nat.mul_mod_left d 10, by rw [ten_pow_succ_shift]; exact hd⟩
-
-/-- The exact method: a multiple of ten that round-trips if one exists, and
-    otherwise a nearest value on the grid at `k`, ties to even. The second case
-    says what the computation establishes, a half-step bound and evenness at an
-    exact midpoint, rather than the correct rounding those two imply. -/
-def ExactCandidate (f : ℕ) (e k : ℤ) (d : ℕ) : Prop :=
-  let x := value f e * 10 ^ (-k)
-  (d % 10 = 0 ∧ Roundtrips f e (d * 10 ^ k)) ∨
-    (¬CoarseRoundtrip f e k ∧ |(d : ℚ) - x| ≤ 1 / 2 ∧
-      (|(d : ℚ) - x| = 1 / 2 → d % 2 = 0))
 
 /-- At most one multiple of ten round-trips: two distinct ones are ten grid
     steps apart, while the round-trip interval is `u < 10` steps wide. -/
@@ -395,26 +362,7 @@ private theorem coarse_roundtrip_unique (f : ℕ) (e k : ℤ)
     exact_mod_cast (show (c₂ : ℚ) < (c₁ : ℚ) + 10 by linarith)
   omega
 
-/-- Where to look for it. Take a multiple of ten `c` bracketing the scaled value
-    from below, to within half a ULP and less than one coarse step. Then a
-    multiple of ten that round-trips is `c` or the next one up: the round-trip
-    reaches half a ULP either side of the value too, which confines it to
-    `(c - 10, c + 20)`, where the only multiples of ten are `c` and `c + 10`.
-    The tolerance is the round-trip's own radius, so an implementation has two
-    candidates to test from any bracket it locates the value to that well. -/
-theorem coarse_roundtrip_adjacent (f : ℕ) (e k : ℤ)
-    (hcoarse : ulp e * 10 ^ (-k) < 10) {c d : ℕ}
-    (hc : c % 10 = 0) (hd : d % 10 = 0)
-    (hlo : (c : ℚ) - ulp e * 10 ^ (-k) / 2 ≤ value f e * 10 ^ (-k))
-    (hhi : value f e * 10 ^ (-k) < (c : ℚ) + 10 + ulp e * 10 ^ (-k) / 2)
-    (hround : Roundtrips f e (d * 10 ^ k)) :
-    d = c ∨ d = c + 10 := by
-  obtain ⟨hlo', hhi'⟩ := abs_le.mp (abs_sub_le_half_ulp f e k hround)
-  have h10 : c < d + 10 := by
-    exact_mod_cast (show (c : ℚ) < (d : ℚ) + 10 by linarith)
-  have h20 : d < c + 20 := by
-    exact_mod_cast (show (d : ℚ) < (c : ℚ) + 20 by linarith)
-  omega
+/-! ### Correctness -/
 
 /--
 Correctness of the exact method. In the coarse case the candidate carries
@@ -498,18 +446,91 @@ theorem exact_candidate_correct (f : ℕ) (e k : ℤ) {d : ℕ} (hf0 : 0 < f)
         hnone ((coarse_roundtrip_iff_next_grid f e k).mpr ⟨c, hc⟩)⟩,
       correctly_rounded_of_le_half f e d k hle heven⟩
 
+/-! ### Locating the coarse candidate -/
+
+/-- Where to look for it. Take a multiple of ten `c` bracketing the scaled value
+    from below, to within half a ULP and less than one coarse step. Then a
+    multiple of ten that round-trips is `c` or the next one up: the round-trip
+    reaches half a ULP either side of the value too, which confines it to
+    `(c - 10, c + 20)`, where the only multiples of ten are `c` and `c + 10`.
+    The tolerance is the round-trip's own radius, so an implementation has two
+    candidates to test from any bracket it locates the value to that well. -/
+theorem coarse_roundtrip_adjacent (f : ℕ) (e k : ℤ)
+    (hcoarse : ulp e * 10 ^ (-k) < 10) {c d : ℕ}
+    (hc : c % 10 = 0) (hd : d % 10 = 0)
+    (hlo : (c : ℚ) - ulp e * 10 ^ (-k) / 2 ≤ value f e * 10 ^ (-k))
+    (hhi : value f e * 10 ^ (-k) < (c : ℚ) + 10 + ulp e * 10 ^ (-k) / 2)
+    (hround : Roundtrips f e (d * 10 ^ k)) :
+    d = c ∨ d = c + 10 := by
+  obtain ⟨hlo', hhi'⟩ := abs_le.mp (abs_sub_le_half_ulp f e k hround)
+  have h10 : c < d + 10 := by
+    exact_mod_cast (show (c : ℚ) < (d : ℚ) + 10 by linarith)
+  have h20 : d < c + 20 := by
+    exact_mod_cast (show (d : ℚ) < (c : ℚ) + 20 by linarith)
+  omega
+
 /-! ## Certified exact comparisons
 
-An implementation reads its exact quantities through lossy comparisons, so every
-decision it makes splits in two. Away from the boundary the loss cannot matter,
-and one arithmetic fact settles all such cases at once. Near the boundary the
-comparison is genuinely ambiguous, and only there is an argument needed.
+An implementation reads the exact quantities off an integer identity, and the
+comparisons it can afford against them are lossy, so every decision it makes
+splits in two. Away from the boundary the loss cannot matter, and one arithmetic
+fact settles all such cases at once. Near the boundary the comparison is
+genuinely ambiguous, and only there is an argument needed.
 
-Both halves are stated without reference to any particular implementation:
-`comparison_stable_of_far` for the first, `ModWindows` for the second. What an
-implementation supplies is the identification of its own quantities with exact
-ones plus errors, and a bound on those errors.
+None of this knows an implementation: `scaled_cmp_of_int_eq` for the crossing
+into `ℚ`, `comparison_stable_of_far` away from a boundary, `ModWindows` near
+one. What an implementation supplies is one identity per candidate, the
+identification of its own quantities with exact ones plus errors, and a bound on
+those errors.
 -/
+
+/-! ### Integer comparison identities
+
+An implementation works in integers, and the scale `m` that clears the grid also
+sends the scaled value to an integer `t`. A candidate `c` then sits at a signed
+integer distance `dist` from it, fixed by `c·m + dist = t`, and a threshold `thr`
+worth `b` over `a` copies of `m` is met exactly when `a·dist` lies in `[-b, b]`.
+
+These two are the whole crossing into `ℚ`. Below them an implementation states
+one identity per candidate and reasons in `ℤ`; above them nothing mentions the
+scale. The interval form is deliberate: the conclusions are what `omega` reads.
+-/
+
+/-- The scaled distance from the exact value, read off the integer identity. -/
+theorem scaled_dist_eq {c m : ℕ} {t dist : ℤ} {x : ℚ} (hx : x * m = t)
+    (hnat : (c : ℤ) * m + dist = t) :
+    ((c : ℚ) - x) * m = -(dist : ℚ) := by
+  have hcast : (c : ℚ) * m + (dist : ℚ) = t := by exact_mod_cast hnat
+  rw [sub_mul, hx]
+  linarith
+
+/-- Every comparison of a candidate against the exact value, as an integer
+    interval condition on its signed distance. -/
+theorem scaled_cmp_of_int_eq {c m a b : ℕ} {t dist : ℤ} {x thr : ℚ}
+    (hm : 0 < m) (ha : 0 < a) (hx : x * m = t) (hthr : thr * (a * m) = b)
+    (hnat : (c : ℤ) * m + dist = t) :
+    (|(c : ℚ) - x| ≤ thr ↔ -(b : ℤ) ≤ a * dist ∧ a * dist ≤ b) ∧
+      (|(c : ℚ) - x| < thr ↔ -(b : ℤ) < a * dist ∧ a * dist < b) ∧
+      (|(c : ℚ) - x| = thr ↔ a * dist = b ∨ a * dist = -(b : ℤ)) := by
+  have hmq : (0 : ℚ) < m := by exact_mod_cast hm
+  have haq : (0 : ℚ) < a := by exact_mod_cast ha
+  have hp : (0 : ℚ) < (a : ℚ) * m := by positivity
+  -- The scale comes out of the absolute value, leaving one integer magnitude.
+  have habs : |(c : ℚ) - x| * ((a : ℚ) * m) = |(((a : ℤ) * dist : ℤ) : ℚ)| := by
+    rw [show ((a : ℚ) * m) = |(m : ℚ)| * |(a : ℚ)| from by
+        rw [abs_of_pos hmq, abs_of_pos haq]; ring,
+      ← mul_assoc, ← abs_mul, scaled_dist_eq hx hnat, abs_neg, ← abs_mul]
+    push_cast
+    rw [mul_comm]
+  refine ⟨?_, ?_, ?_⟩
+  · rw [← mul_le_mul_iff_of_pos_right hp, hthr, habs, abs_le]
+    constructor <;> intro h <;> exact_mod_cast h
+  · rw [← mul_lt_mul_iff_of_pos_right hp, hthr, habs, abs_lt]
+    constructor <;> intro h <;> exact_mod_cast h
+  · rw [← mul_left_inj' (ne_of_gt hp), hthr, habs, abs_eq (by positivity)]
+    constructor <;> intro h <;> exact_mod_cast h
+
+/-! ### Stability away from a boundary -/
 
 /-- Far from the boundary a bounded approximation error cannot change a
     comparison. `x` is the exact value and `y` the exact boundary; a lossy test
@@ -521,7 +542,7 @@ theorem comparison_stable_of_far {x y l r w : ℕ} (hl : l ≤ r + w)
     ((x + l < y + r) ↔ x ≤ y) ∧ ((x + l < y + r) ↔ x < y) := by
   omega
 
-/-! ### Modular windows
+/-! ### Modular window certificates
 
 The ambiguity is a narrow window of residues, and closing such a window is a
 Diophantine question: can `g·f mod modulus` land in `[lo, hi]` for some
@@ -539,11 +560,9 @@ throughout the box `f ∈ [f0, f1]`, `y ∈ [lo, hi]`, no `f` can put the residu
 the window. Convergent denominators of `g/modulus` make `r` small enough that
 such a `q` is easy to find.
 
-The multiplier is a witness, not an assumption. `ModWindows.search` runs during
-elaboration, outside the proof term, and `modCertTactic` quotes what it returns
-as a literal for the kernel to check against `ModWindows.refutedBy`. A bad
-multiplier is a failed proof rather than an unsound one, so no theorem here
-depends on how the search works.
+Everything in this subsection is proof-producing and checked by the kernel. The
+multiplier it takes is a witness, not an assumption, so where the witness comes
+from is a separate question, answered below.
 -/
 
 /-- A modular window problem: the progression `g·f mod modulus`, the range
@@ -647,6 +666,15 @@ theorem ModWindows.not_hit (w : ModWindows) (f : ℕ) (hmodulus : 0 < w.modulus)
   rw [hy]
   push_cast at hz ⊢
   linarith
+
+/-! ### Certificate search
+
+Nothing below is trusted. `ModWindows.search` runs during elaboration, outside
+the proof term, and `modCertTactic` quotes what it returns as a literal for the
+kernel to check against `ModWindows.refutedBy`. A bad multiplier is a failed
+proof rather than an unsound one, so no theorem above depends on how the search
+works, or on whether it terminates with a useful answer at all.
+-/
 
 /--
 The multiplier is searched for rather than tabulated, by the elaborator rather
