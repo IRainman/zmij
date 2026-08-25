@@ -79,7 +79,7 @@ The trim path, from packed comparisons to exact inequalities:
     ## From packed comparisons to trim bounds
     ## From integer bounds to half-ULP bounds
 
-The unit-step path, following the same route for `decOne`:
+The unit-step path, following an analogous route:
 
     ## The unit-step candidate
     ## Correct rounding at the unit step
