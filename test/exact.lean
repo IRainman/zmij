@@ -29,10 +29,9 @@ on the decimal grid, never for a binary format or for the rule that chose the
 grid; the certificate machinery knows only modular arithmetic, and never what a
 residue means.
 
-Throughout:
-
-* `f`, `e`: binary significand and exponent, representing `f·2^e`;
-* `d`, `k`: decimal significand and exponent, representing `d·10^k`.
+Throughout this file:
+* `f`, `e`: binary significand and exponent, denoting `f·2^e`;
+* `d`, `k`: decimal significand and exponent, denoting `d·10^k`.
 -/
 
 /-! ## The specification -/
@@ -179,18 +178,18 @@ theorem roundtrips_iff_scaled (f : ℕ) (e k : ℤ) (d : ℕ) :
 
 /-- Either parity of a round-trip bounds the scaled distance by half a ULP. -/
 private theorem abs_sub_le_half_ulp (f : ℕ) (e k : ℤ) {d : ℕ}
-    (hr : Roundtrips f e (d * 10 ^ k)) :
+    (hround : Roundtrips f e (d * 10 ^ k)) :
     |(d : ℚ) - value f e * 10 ^ (-k)| ≤ ulp e * 10 ^ (-k) / 2 := by
-  have hs := (roundtrips_iff_scaled f e k d).mp hr
+  have hs := (roundtrips_iff_scaled f e k d).mp hround
   split_ifs at hs <;> linarith
 
 /-- Whether a value round-trips depends only on its distance to the exact value,
     so anything no farther away than one that round-trips does too. -/
 private theorem roundtrips_of_abs_le (f : ℕ) (e : ℤ) {r r' : ℚ}
-    (hr : Roundtrips f e r) (hle : |r' - value f e| ≤ |r - value f e|) :
+    (hround : Roundtrips f e r) (hle : |r' - value f e| ≤ |r - value f e|) :
     Roundtrips f e r' := by
-  simp only [Roundtrips] at hr ⊢
-  split_ifs at hr ⊢ <;> linarith
+  simp only [Roundtrips] at hround ⊢
+  split_ifs at hround ⊢ <;> linarith
 
 /-- A positive value is at least a whole ULP away from zero, so the zero
     significand never round-trips. -/
@@ -331,11 +330,12 @@ def ExactCandidate (f : ℕ) (e k : ℤ) (d : ℕ) : Prop :=
 private theorem coarse_roundtrip_unique (f : ℕ) (e k : ℤ)
     (hcoarse : ulp e * 10 ^ (-k) < 10) {c₁ c₂ : ℕ}
     (h₁ : c₁ % 10 = 0) (h₂ : c₂ % 10 = 0)
-    (hr₁ : Roundtrips f e (c₁ * 10 ^ k)) (hr₂ : Roundtrips f e (c₂ * 10 ^ k)) :
+    (hround₁ : Roundtrips f e (c₁ * 10 ^ k))
+    (hround₂ : Roundtrips f e (c₂ * 10 ^ k)) :
     c₁ = c₂ := by
   let x := value f e * 10 ^ (-k)
-  have hd₁ := abs_sub_le_half_ulp f e k hr₁
-  have hd₂ := abs_sub_le_half_ulp f e k hr₂
+  have hd₁ := abs_sub_le_half_ulp f e k hround₁
+  have hd₂ := abs_sub_le_half_ulp f e k hround₂
   have hsum : |(c₁ : ℚ) - (c₂ : ℚ)| < 10 :=
     calc |(c₁ : ℚ) - (c₂ : ℚ)| ≤ |(c₁ : ℚ) - x| + |x - (c₂ : ℚ)| :=
           abs_sub_le _ _ _
@@ -360,9 +360,9 @@ theorem coarse_roundtrip_adjacent (f : ℕ) (e k : ℤ)
     (hc : c % 10 = 0) (hd : d % 10 = 0)
     (hlo : (c : ℚ) - ulp e * 10 ^ (-k) / 2 ≤ value f e * 10 ^ (-k))
     (hhi : value f e * 10 ^ (-k) < (c : ℚ) + 10 + ulp e * 10 ^ (-k) / 2)
-    (hr : Roundtrips f e (d * 10 ^ k)) :
+    (hround : Roundtrips f e (d * 10 ^ k)) :
     d = c ∨ d = c + 10 := by
-  obtain ⟨hlo', hhi'⟩ := abs_le.mp (abs_sub_le_half_ulp f e k hr)
+  obtain ⟨hlo', hhi'⟩ := abs_le.mp (abs_sub_le_half_ulp f e k hround)
   have h10 : c < d + 10 := by
     exact_mod_cast (show (c : ℚ) < (d : ℚ) + 10 by linarith)
   have h20 : d < c + 20 := by
