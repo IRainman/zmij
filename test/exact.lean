@@ -13,10 +13,10 @@ conversion.
 
 The first part specifies the problem and states the exact Schubfach-like
 selection rule: prefer a multiple of ten that round-trips, and settle for a
-nearest grid point otherwise. `exact_candidate_correct` proves that method is
-shortest and correctly rounded for any positive value, given only that the
-decimal grid is no coarser than one ULP and strictly coarser than one tenth of
-an ULP.
+nearest grid point otherwise. `exact_candidate_correct` proves that the method
+produces a shortest, correctly rounded decimal for any positive value, given
+only that the decimal grid is no coarser than one ULP and strictly coarser than
+a tenth of one.
 
 The second part relates lossy comparisons to exact arithmetic. An implementation
 of any such method observes its exact quantities through comparisons it can only
