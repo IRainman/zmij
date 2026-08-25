@@ -8,13 +8,14 @@ import exact
 /-! # Correctness of yy
 
 `exact.lean` proves that the exact, Schubfach-like method produces a shortest,
-correctly rounded decimal under two bounds on the decimal grid step, and refutes
-narrow modular windows on demand. Everything specific to yy is here: the
-truncated power-of-ten significand, the packed comparisons, and the windows
-those comparisons leave ambiguous, which together show that yy's output is a
-candidate of that method, `yy_exact_candidate`. No claim is made that yy's
-packed decisions agree with the exact ones; only that its output does.
-`yy_correct` composes the two.
+correctly rounded decimal whenever the decimal grid step is at most one ULP and
+strictly greater than a tenth of a ULP, and refutes narrow modular windows on
+demand. Everything specific to yy is here: the truncated power-of-ten
+significand, the packed comparisons, and the windows those comparisons leave
+ambiguous, which together show that yy's output is a candidate of that method,
+`yy_exact_candidate`. Composing that with the grid bounds at yy's exponent,
+`ulp_scaled_bounds`, gives `yy_correct`. No claim is made that yy's packed
+decisions agree with the exact ones; only that its output does.
 
 ## Proof structure
 
