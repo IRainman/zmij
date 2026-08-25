@@ -21,7 +21,7 @@ decisions agree with the exact ones; only that its output does.
 
 The proof is layered, each layer exposing a small interface to the one above
 it. This section gives those interfaces, then where in the file each part of
-the argument lives, then what rests on what.
+the argument lives, then the dependencies between them.
 
 ### 1. Exact specification (`exact.lean`)
 
@@ -63,7 +63,7 @@ round-trips, yy takes the coarse path.
 
 These three facts are assembled by `yy_exact_candidate`.
 
-### 3. The file, in order
+### 3. File organization
 
 The modeled algorithm and its power-of-ten significand:
 
@@ -93,7 +93,7 @@ The two paths are then assembled into the exact-method obligations:
     ## Completeness of the trim flags
     ## yy refines the exact method
 
-### 4. What rests on what
+### 4. Proof dependencies
 
 The main correctness argument has the following structure:
 
