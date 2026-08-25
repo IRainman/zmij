@@ -566,16 +566,12 @@ def stepGap (m f : ℕ) (e : ℤ) : ℕ :=
     the same denominator cleared. -/
 def trimGap (f : ℕ) (e : ℤ) : ℕ := stepGap (trimModulus e) f e
 
-/-- The residue with that same denominator cleared: the share of the gap the
-    truncated power of ten accounts for, before its truncation error. `omega`
-    reads this and its unfolding as two atoms, so a proof folds it throughout
-    and unfolds only where a product has to be distributed. -/
-def trimResidueScaled (f : ℕ) (e : ℤ) : ℕ := trimDen e * trimResidue f e
+/-- The power-of-ten truncation error carried by the gap, `2·f·τ`. -/
+def trimErr (f : ℕ) (e : ℤ) : ℕ := 2 * f * (trimNum e % trimDen e)
 
-/-- The gap is the scaled residue plus the power-of-ten truncation error. -/
-theorem trim_gap_split (f : ℕ) (e : ℤ) :
-    trimGap f e
-      = trimResidueScaled f e + 2 * f * (trimNum e % trimDen e) := rfl
+/-- The gap is `den` times the residue plus the truncation error. -/
+theorem trim_gap_eq (f : ℕ) (e : ℤ) :
+    trimGap f e = trimDen e * trimResidue f e + trimErr f e := rfl
 
 def trimScale (e : ℤ) : ℕ := trimModulus e * trimDen e
 
@@ -787,18 +783,17 @@ theorem trim_power_of_k_zero (e : ℤ) (hk : decimalExponent e = 0) :
     This is the side of the trim-up bound that needs no flag hypothesis. -/
 theorem trim_gap_lt_scale_add (f : ℕ) (e : ℤ) (hr : Regular f e) :
     trimGap f e < trimScale e + trimNum e := by
-  have hres : trimResidueScaled f e < trimScale e := by
-    rw [trimResidueScaled, trimResidue, stepResidue, trimScale,
-      Nat.mul_comm (trimModulus e)]
+  have hres : trimDen e * trimResidue f e < trimScale e := by
+    rw [trimResidue, stepResidue, trimScale, Nat.mul_comm (trimModulus e)]
     exact mul_lt_mul_of_pos_left
       (Nat.mod_lt _ (by rw [trimModulus]; positivity)) (trim_den_pos e)
-  have hlow := trim_trunc_lt f e hr
+  have hlow : trimErr f e < 2 ^ 54 * trimDen e := trim_trunc_lt f e hr
   have htrunc : 2 ^ 54 * trimDen e ≤ trimNum e :=
     le_trans
       (Nat.mul_le_mul_right _
         (Nat.pow_le_pow_right (by norm_num) (by norm_num)))
       (trim_num_lower e hr.range)
-  rw [trim_gap_split]
+  rw [trim_gap_eq]
   omega
 
 /-! ## From integer bounds to half-ULP bounds
@@ -812,9 +807,6 @@ candidate bound `|cand - x| ≤ u/2` is a comparison of `trimGap` with `trimNum`
 
 /-! ## What the packed comparisons discard -/
 
-/-- The power-of-ten truncation error carried by the gap, `2·f·τ`. -/
-def trimErr (f : ℕ) (e : ℤ) : ℕ := 2 * f * (trimNum e % trimDen e)
-
 /-- What the trim-down comparison throws away, with the denominator cleared: the
     bits of `p10` below the window unit, plus the remainder `τ` that truncating
     the power of ten dropped in the first place. -/
@@ -825,10 +817,6 @@ def trimDrop (e : ℤ) : ℕ :=
     residue, which that comparison truncates as well. -/
 def trimDropU (f : ℕ) (e : ℤ) : ℕ :=
   trimDrop e + trimResidue f e % trimUnit e * trimDen e
-
-/-- The gap is `den` times the residue plus the truncation error. -/
-theorem trim_gap_eq (f : ℕ) (e : ℤ) :
-    trimGap f e = trimDen e * trimResidue f e + trimErr f e := rfl
 
 /-- Splitting two values at the window unit. -/
 private theorem sum_split (den u w p : ℕ) :
