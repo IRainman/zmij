@@ -2282,8 +2282,7 @@ theorem yy_exact_candidate (f : ℕ) (e : ℤ) (h : Regular f e) :
     rw [trim_of_coarse_roundtrip f e h c h10 hc] at htrim
     exact Bool.noConfusion htrim
 
-/-- yy is correct on regularly spaced positive binary64 values, normal and
-    subnormal, powers of two above the minimum exponent excluded: after removing
+/-- yy is correct on regularly spaced positive binary64 values: after removing
     trailing zeros its output is a shortest decimal representation that
     round-trips, and it is correctly rounded on its own decimal grid. -/
 theorem yy_correct (f : ℕ) (e : ℤ) (h : Regular f e) :
