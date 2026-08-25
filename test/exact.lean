@@ -20,9 +20,10 @@ a tenth of one.
 
 The second part relates lossy comparisons to exact arithmetic. An implementation
 of any such method observes its exact quantities through comparisons it can only
-afford to make approximately, and where an observation is ambiguous the
-ambiguity is a Diophantine question about a modular progression. `ModWindows`
-answers those questions by kernel-checked certificate.
+afford to make approximately. Away from a decision boundary the loss cannot
+change the answer, which is `comparison_stable_of_far`; near one the observation
+is ambiguous, and the ambiguity is a Diophantine question about a modular
+progression, which `ModWindows` answers by kernel-checked certificate.
 
 Neither part knows an implementation. The conversion results ask only for bounds
 on the decimal grid, never for a binary format or for the rule that chose the
@@ -453,11 +454,33 @@ theorem exact_candidate_correct (f : ℕ) (e k : ℤ) {d : ℕ} (hf0 : 0 < f)
 
 /-! ## Certified exact comparisons
 
-An implementation reads its exact quantities through lossy comparisons, and only
-the ambiguous ones need an argument. The ambiguity is a narrow window of
-residues, and closing such a window is a Diophantine question: can
-`g·f mod modulus` land in `[lo, hi]` for some significand `f` in `[f0, f1]`?
-`ModWindows` poses that question, knowing nothing about what the residue means.
+An implementation reads its exact quantities through lossy comparisons, so every
+decision it makes splits in two. Away from the boundary the loss cannot matter,
+and one arithmetic fact settles all such cases at once. Near the boundary the
+comparison is genuinely ambiguous, and only there is an argument needed.
+
+Both halves are stated without reference to any particular implementation:
+`comparison_stable_of_far` for the first, `ModWindows` for the second. What an
+implementation supplies is the identification of its own quantities with exact
+ones plus errors, and a bound on those errors.
+-/
+
+/-- Far from the boundary a bounded approximation error cannot change a
+    comparison. `x` is the exact value and `y` the exact boundary; a lossy test
+    compares `x + l` with `y + r`, the two offsets differing by at most `w`.
+    Once `x` is more than `w` from `y`, the lossy test agrees with both exact
+    tests, which there agree with each other. -/
+theorem comparison_stable_of_far {x y l r w : ℕ} (hl : l ≤ r + w)
+    (hr : r ≤ l + w) (hfar : y + w < x ∨ x + w < y) :
+    ((x + l < y + r) ↔ x ≤ y) ∧ ((x + l < y + r) ↔ x < y) := by
+  omega
+
+/-! ### Modular windows
+
+The ambiguity is a narrow window of residues, and closing such a window is a
+Diophantine question: can `g·f mod modulus` land in `[lo, hi]` for some
+significand `f` in `[f0, f1]`? `ModWindows` poses that question, knowing nothing
+about what the residue means.
 
 One multiplier `q` answers the question. Write `y = g·f - modulus·j` for the
 residue and `r = g·q - modulus·p` for the error of an approximation
