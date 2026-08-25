@@ -796,13 +796,19 @@ theorem trim_gap_lt_scale_add (f : ℕ) (e : ℤ) (hr : Regular f e) :
   rw [trim_gap_eq]
   omega
 
-/-! ## From integer bounds to half-ULP bounds
+/-! ## Crossing into ℚ
 
-In the scale `trimMul` the two multiple-of-ten candidates have scaled errors
-`-trimGap` and `trimScale - trimGap`, and half a scaled ULP is exactly
-`trimNum`. The power of ten enters only through `trim_mul_eq`, which expresses
-`trimMul` as `trimNum` times the inverse scale `s = 2^(1-e)·10^k`. Thus each
-candidate bound `|cand - x| ≤ u/2` is a comparison of `trimGap` with `trimNum`.
+Everything above is integer arithmetic and everything below is a claim about
+the exact value; `scaled_cmp_of_int_eq` is the one crossing, and it asks for
+two things. `trim_value_scaled` says that the scale `trimMul` sends the scaled
+value to the integer `2·f·num`, so each candidate sits a signed integer
+distance from it: `-trimGap` for the trim-down candidate, `trimScale - trimGap`
+for the trim-up one, and `-oneGap` for `sigHi`. The power of ten enters only
+here, through `trim_mul_eq`, which expresses `trimMul` as `trimNum` times the
+inverse scale `s = 2^(1-e)·10^k`. The other is what a threshold is worth in
+that scale: half a ULP is `trimNum`, and half a grid step is `trimMul` over two
+copies of it. Every candidate bound is then an interval condition on that
+integer distance, and the consumers below never leave `ℤ`.
 -/
 
 /-! ## What the packed comparisons discard -/
@@ -1068,9 +1074,9 @@ theorem u0_tie_k_zero (f : ℕ) (e : ℤ) (hr : Regular f e)
 def trimMul (e : ℤ) : ℕ := 2 ^ (128 - exponentShift e) * trimDen e
 
 /-- The candidate scale factor is positive. -/
-theorem trim_mul_pos (e : ℤ) : (0 : ℚ) < (trimMul e : ℚ) :=
-  Nat.cast_pos.mpr
-    (by rw [trimMul]; exact Nat.mul_pos (by positivity) (trim_den_pos e))
+theorem trim_mul_pos (e : ℤ) : 0 < trimMul e := by
+  rw [trimMul]
+  exact Nat.mul_pos (by positivity) (trim_den_pos e)
 
 theorem trim_scale_eq_ten_mul (e : ℤ) : trimScale e = 10 * trimMul e := by
   simp only [trimScale, trimMul, trimModulus]
@@ -1141,87 +1147,47 @@ theorem trim_mul_half_ulp (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
           show -k + k = 0 from by ring, zpow_zero]
         ring
 
-/-- Both candidates reach ℚ the same way: in the scale `trimMul`, a candidate
-    accounting for the whole product except its gap sits exactly that gap below
-    the scaled value. -/
-theorem scaled_error_of_nat {cand gap : ℕ} (f : ℕ) (e : ℤ)
-    (he : -1074 ≤ e ∧ e ≤ 971)
-    (hnat : cand * trimMul e + gap = 2 * f * trimNum e) :
-    ((cand : ℚ) - value f e * 10 ^ (-decimalExponent e)) * (trimMul e : ℚ)
-      = -(gap : ℚ) := by
-  have hcast : (cand : ℚ) * trimMul e + gap = 2 * f * trimNum e := by
-    exact_mod_cast hnat
-  -- The same scale sends the scaled value to `2·f·num`.
-  have hvalue : value f e * 10 ^ (-decimalExponent e) * (trimMul e : ℚ)
-      = 2 * f * (trimNum e : ℚ) := by
-    rw [← trim_mul_half_ulp e he, value, ulp]
-    ring
-  linear_combination hcast - hvalue
+/-- The one yy-specific fact the generic bridge needs: `trimMul` sends the
+    scaled value to the integer `2·f·num`, so every candidate distance is an
+    integer. -/
+theorem trim_value_scaled (f : ℕ) (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
+    value f e * 10 ^ (-decimalExponent e) * (trimMul e : ℚ)
+      = ((2 * f * trimNum e : ℤ) : ℚ) := by
+  push_cast
+  rw [← trim_mul_half_ulp e he, value, ulp]
+  ring
 
-/-- The trim-down candidate sits exactly `trimGap` below the scaled value: it is
-    the quotient at the coarse step, which is ten unit steps. -/
-theorem dec_ten_down_scaled_error (f : ℕ) (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
-    ((sigTen f e : ℚ)
-        - value f e * 10 ^ (-decimalExponent e)) * (trimMul e : ℚ)
-      = -(trimGap f e : ℚ) :=
-  scaled_error_of_nat f e he <| by
+/-- Half a ULP is worth `trimNum` in one copy of the scale: the threshold the
+    bridge takes for both multiple-of-ten candidates. -/
+theorem trim_half_ulp_scaled (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
+    ulp e * 10 ^ (-decimalExponent e) / 2 * ((1 : ℕ) * (trimMul e : ℚ))
+      = ((trimNum e : ℕ) : ℚ) := by
+  rw [Nat.cast_one, one_mul]
+  exact trim_mul_half_ulp e he
+
+/-- The trim-down candidate sits `trimGap` below the scaled value: it is the
+    quotient at the coarse step, which is ten unit steps. -/
+theorem dec_ten_down_scaled (f : ℕ) (e : ℤ) (hsh : exponentShift e < 4) :
+    (sigTen f e : ℤ) * trimMul e + trimGap f e = 2 * f * trimNum e := by
+  have h : sigTen f e * trimMul e + trimGap f e = 2 * f * trimNum e :=
     calc sigTen f e * trimMul e + trimGap f e
         = 2 * f * trimSig e / trimModulus e * trimScale e + trimGap f e := by
-          rw [sig_hi_ten_quotient f e (exponent_shift_lt_four e he),
-            trim_scale_eq_ten_mul]
+          rw [sig_hi_ten_quotient f e hsh, trim_scale_eq_ten_mul]
           ring
       _ = 2 * f * trimNum e := step_quotient_add_gap _ f e
+  exact_mod_cast h
 
-/-- The trim-up candidate sits `trimScale - trimGap` above the scaled value,
-    since the scale sends a decimal step of `10` to the window modulus. -/
-theorem dec_ten_up_scaled_error (f : ℕ) (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
-    ((sigTen f e : ℚ) + 10
-        - value f e * 10 ^ (-decimalExponent e)) * (trimMul e : ℚ)
-      = (trimScale e : ℚ) - (trimGap f e : ℚ) := by
-  have hten : (10 : ℚ) * (trimMul e : ℚ) = (trimScale e : ℚ) := by
-    exact_mod_cast (trim_scale_eq_ten_mul e).symm
-  linear_combination dec_ten_down_scaled_error f e he + hten
-
-/-- Scaling by `trimMul` loses nothing: a candidate with scaled error `dist` is
-    within half a ULP exactly when `|dist|` is at most `trimNum`. -/
-theorem half_ulp_iff_scaled_error {cand dist : ℚ} (f : ℕ) (e : ℤ)
-    (he : -1074 ≤ e ∧ e ≤ 971)
-    (hscale : (cand - value f e * 10 ^ (-decimalExponent e)) * (trimMul e : ℚ)
-      = dist) :
-    let k := decimalExponent e
-    let x := value f e * 10 ^ (-k)
-    let u := ulp e * 10 ^ (-k)
-    (|cand - x| ≤ u / 2 ↔ |dist| ≤ (trimNum e : ℚ)) ∧
-      (|cand - x| < u / 2 ↔ |dist| < (trimNum e : ℚ)) := by
-  intro k x u
-  have hpos := trim_mul_pos e
-  have hdist : |cand - x| * (trimMul e : ℚ) = |dist| := by
-    rw [← hscale, abs_mul, abs_of_pos hpos]
-  exact ⟨by rw [← mul_le_mul_iff_of_pos_right hpos, hdist,
-      trim_mul_half_ulp e he],
-    by rw [← mul_lt_mul_iff_of_pos_right hpos, hdist, trim_mul_half_ulp e he]⟩
-
-/-- The same for half a grid step: the scale sends one step of the grid at `k`
-    to one `trimMul`, so a candidate with scaled error `dist` is within half a
-    step exactly when `2·|dist|` is at most `trimMul`, and sits at a midpoint
-    exactly when they are equal. -/
-theorem half_step_iff_scaled_error {cand dist : ℚ} (f : ℕ) (e : ℤ)
-    (hscale : (cand - value f e * 10 ^ (-decimalExponent e)) * (trimMul e : ℚ)
-      = dist) :
-    let x := value f e * 10 ^ (-decimalExponent e)
-    (|cand - x| ≤ 1 / 2 ↔ 2 * |dist| ≤ (trimMul e : ℚ)) ∧
-      (|cand - x| = 1 / 2 ↔ 2 * |dist| = (trimMul e : ℚ)) := by
-  intro x
-  have hpos := trim_mul_pos e
-  have hval : |cand - x| = |dist| / (trimMul e : ℚ) := by
-    rw [← hscale, abs_mul, abs_of_pos hpos, mul_div_assoc,
-      div_self (ne_of_gt hpos), mul_one]
-  rw [hval]
-  refine ⟨?_, ?_⟩
-  · rw [div_le_iff₀ hpos]
-    constructor <;> intro hq <;> linarith
-  · rw [div_eq_iff (ne_of_gt hpos)]
-    constructor <;> intro hq <;> linarith
+/-- The trim-up candidate sits `trimScale - trimGap` above it, the coarse step
+    being ten unit steps. Its distance is signed, and the sign is why the
+    identity is stated in `ℤ`. -/
+theorem dec_ten_up_scaled (f : ℕ) (e : ℤ) (hsh : exponentShift e < 4) :
+    ((sigTen f e + 10 : ℕ) : ℤ) * trimMul e
+        + ((trimGap f e : ℤ) - trimScale e)
+      = 2 * f * trimNum e := by
+  have hten : (trimScale e : ℤ) = 10 * trimMul e := by
+    exact_mod_cast trim_scale_eq_ten_mul e
+  push_cast
+  linear_combination dec_ten_down_scaled f e hsh - hten
 
 /-- One ULP spans `[1, 10)` grid steps at yy's exponent. One grid step is
     `2^(128-h)·den` while half a ULP is `num ≥ 2^127·den`, which gives the first
@@ -1230,7 +1196,7 @@ theorem ulp_scaled_bounds (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
     1 ≤ ulp e * 10 ^ (-decimalExponent e) ∧
       ulp e * 10 ^ (-decimalExponent e) < 10 := by
   have hsh := exponent_shift_lt_four e he
-  have hpos := trim_mul_pos e
+  have hpos : (0 : ℚ) < (trimMul e : ℚ) := by exact_mod_cast trim_mul_pos e
   have hstep : (ulp e * 10 ^ (-decimalExponent e)) * (trimMul e : ℚ)
       = 2 * (trimNum e : ℚ) := by
     linear_combination 2 * trim_mul_half_ulp e he
@@ -1328,12 +1294,9 @@ theorem one_round_half (f : ℕ) (e : ℤ) (hsh : exponentShift e < 4) :
           rw [add_mul, one_mul, hpow]
 
 /-- `sigHi` sits exactly `oneGap` below the scaled value. -/
-theorem sig_hi_scaled_error (f : ℕ) (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
-    ((sigHi f e : ℚ) - value f e * 10 ^ (-decimalExponent e))
-        * (trimMul e : ℚ)
-      = -(oneGap f e : ℚ) :=
-  scaled_error_of_nat f e he
-    (sig_hi_add_one_gap f e (exponent_shift_lt_four e he))
+theorem sig_hi_scaled (f : ℕ) (e : ℤ) (hsh : exponentShift e < 4) :
+    (sigHi f e : ℤ) * trimMul e + oneGap f e = 2 * f * trimNum e := by
+  exact_mod_cast sig_hi_add_one_gap f e hsh
 
 /-! ## Correct rounding at the unit step
 
@@ -1678,8 +1641,22 @@ theorem dec_one_even_of_packed_midpoint (f : ℕ) (e : ℤ)
   show (sigHi f e + if c.roundU1 then 1 else 0) % 2 = 0
   by_cases hpar : sigHi f e % 2 = 1 <;> simp [hround, hpar] <;> omega
 
+/-- `decOne` sits `oneGap` below the scaled value, less one whole step when it
+    rounds up. -/
+theorem dec_one_scaled (f : ℕ) (e : ℤ) (hsh : exponentShift e < 4) :
+    let c := toDecimalCandidates f e
+    (c.decOne : ℤ) * trimMul e
+        + ((oneGap f e : ℤ) - if c.roundU1 = true then (trimMul e : ℤ) else 0)
+      = 2 * f * trimNum e := by
+  intro c
+  have h := sig_hi_scaled f e hsh
+  show ((sigHi f e + if c.roundU1 then 1 else 0 : ℕ) : ℤ) * _ + _ = _
+  cases c.roundU1 <;> simp only [Bool.false_eq_true, ite_false, ite_true] <;>
+    push_cast <;> linarith
+
 /-- `decOne` is a nearest value on the grid at `decimalExponent e`, ties to
-    even. Each case of `one_gap_far_or_mid` gives the bracket directly. -/
+    even. Half a step is one `trimMul` over two of them, so each case of
+    `one_gap_far_or_mid` reads off as an integer interval. -/
 theorem dec_one_nearest (f : ℕ) (e : ℤ) (hr : Regular f e) :
     let c := toDecimalCandidates f e
     let x := value f e * 10 ^ (-decimalExponent e)
@@ -1687,42 +1664,24 @@ theorem dec_one_nearest (f : ℕ) (e : ℤ) (hr : Regular f e) :
       (|(c.decOne : ℚ) - x| = 1 / 2 → c.decOne % 2 = 0) := by
   intro c x
   have hsh := exponent_shift_lt_four e hr.range
-  -- yy's scaled error is `sigHi`'s, moved up one whole step when it steps.
-  have hscaled : ((c.decOne : ℚ) - x) * (trimMul e : ℚ)
-      = (if c.roundU1 = true then (trimMul e : ℚ) else 0)
-        - (oneGap f e : ℚ) := by
-    show (((sigHi f e + if c.roundU1 then 1 else 0 : ℕ) : ℚ) - x) * _ = _
-    cases c.roundU1 <;> simp <;>
-      linear_combination sig_hi_scaled_error f e hr.range
-  -- Half a step in scaled units, so each case of the trichotomy reads off.
-  obtain ⟨hle, heq⟩ := half_step_iff_scaled_error f e hscaled
+  obtain ⟨hle, -, heq⟩ := scaled_cmp_of_int_eq (a := 2) (b := trimMul e)
+    (thr := 1 / 2) (trim_mul_pos e) two_pos (trim_value_scaled f e hr.range)
+    (by push_cast; ring) (dec_one_scaled f e hsh)
   rw [hle, heq]
-  have hg : (0 : ℚ) ≤ (oneGap f e : ℚ) := Nat.cast_nonneg _
   rcases one_gap_far_or_mid f e hr with ⟨hu1, hlt⟩ | ⟨hu1, hgt, hwide⟩ |
     ⟨hres, hmid⟩
   -- Rounding down, strictly inside half a step: no tie to resolve.
-  · have hq : 2 * (oneGap f e : ℚ) < (trimMul e : ℚ) := by exact_mod_cast hlt
-    rw [show c.roundU1 = false from hu1, ite_eq_right (by simp), zero_sub, abs_neg,
-      abs_of_nonneg hg]
-    exact ⟨by linarith, fun h => by linarith⟩
+  · rw [show c.roundU1 = false from hu1, ite_eq_right (by simp)]
+    omega
   -- Rounding up, strictly inside half a step on the other side.
-  · have h1 : (trimMul e : ℚ) < 2 * (oneGap f e : ℚ) := by exact_mod_cast hgt
-    have h2 : 2 * (oneGap f e : ℚ) < 3 * (trimMul e : ℚ) := by
-      exact_mod_cast hwide
-    have hb : |(trimMul e : ℚ) - (oneGap f e : ℚ)| < (trimMul e : ℚ) / 2 :=
-      abs_lt.mpr ⟨by linarith, by linarith⟩
-    rw [show c.roundU1 = true from hu1, ite_eq_left (by simp)]
-    exact ⟨by linarith, fun h => by linarith⟩
+  · rw [show c.roundU1 = true from hu1, ite_eq_left (by simp)]
+    omega
   -- A genuine exact midpoint, which yy resolves to even whichever way it went.
-  · have hq : 2 * (oneGap f e : ℚ) = (trimMul e : ℚ) := by exact_mod_cast hmid
-    have heven := dec_one_even_of_packed_midpoint f e hsh hres
-    have habs : |(if c.roundU1 = true then (trimMul e : ℚ) else 0)
-        - (oneGap f e : ℚ)| = (oneGap f e : ℚ) := by
-      cases c.roundU1
-      · rw [ite_eq_right (by simp), zero_sub, abs_neg, abs_of_nonneg hg]
-      · rw [ite_eq_left (by simp), abs_of_nonneg (by linarith)]; linarith
-    rw [habs]
-    exact ⟨by linarith, fun _ => heven⟩
+  · have heven : c.decOne % 2 = 0 :=
+      dec_one_even_of_packed_midpoint f e hsh hres
+    cases c.roundU1
+    · rw [ite_eq_right (by simp)]; omega
+    · rw [ite_eq_left (by simp)]; omega
 
 /-! ## The multiple-of-ten candidates
 
@@ -1784,15 +1743,13 @@ theorem dec_ten_down (f : ℕ) (e : ℤ) (hr : Regular f e)
     else
       |(sigTen f e : ℚ) - x| < u / 2 := by
   intro k x u
-  obtain ⟨hle, hlt⟩ :=
-    half_ulp_iff_scaled_error f e hr.range
-      (dec_ten_down_scaled_error f e hr.range)
-  have habs : |(-(trimGap f e : ℚ))| = (trimGap f e : ℚ) := by
-    rw [abs_neg]; exact abs_of_nonneg (Nat.cast_nonneg _)
+  obtain ⟨hle, hlt, -⟩ := scaled_cmp_of_int_eq (trim_mul_pos e) one_pos
+    (trim_value_scaled f e hr.range) (trim_half_ulp_scaled e hr.range)
+    (dec_ten_down_scaled f e (exponent_shift_lt_four e hr.range))
   have hgap := (round_d0_iff_gap f e hr).mp hd0
   split_ifs at hgap ⊢
-  · exact hle.mpr (by rw [habs]; exact_mod_cast hgap)
-  · exact hlt.mpr (by rw [habs]; exact_mod_cast hgap)
+  · exact hle.mpr (by omega)
+  · exact hlt.mpr (by omega)
 
 /-- What `roundU0` decides. The packed sum `s` counts window edges below
     `gap + num`, and the coarse step is `10·2^60` of them, so the dichotomy
@@ -1862,35 +1819,27 @@ theorem round_u0_iff_gap (f : ℕ) (e : ℤ) (hr : Regular f e) :
     simp only [decide_eq_true_eq]
     split_ifs <;> omega
 
-/-- If `roundU0` fires, the trim-up candidate lies in the rounding interval. -/
+/-- If `roundU0` fires, the trim-up candidate lies in the rounding interval.
+    The flag supplies the lower end of the signed interval and the truncation
+    bound the upper one, since the candidate overshoots. -/
 theorem dec_ten_up (f : ℕ) (e : ℤ) (hr : Regular f e)
     (hu0 : (toDecimalCandidates f e).roundU0 = true) :
     let k := decimalExponent e
     let x := value f e * 10 ^ (-k)
     let u := ulp e * 10 ^ (-k)
     if f % 2 = 0 then
-      |(sigTen f e : ℚ) + 10 - x| ≤ u / 2
+      |((sigTen f e + 10 : ℕ) : ℚ) - x| ≤ u / 2
     else
-      |(sigTen f e : ℚ) + 10 - x| < u / 2 := by
+      |((sigTen f e + 10 : ℕ) : ℚ) - x| < u / 2 := by
   intro k x u
-  obtain ⟨hle, hlt⟩ :=
-    half_ulp_iff_scaled_error f e hr.range
-      (dec_ten_up_scaled_error f e hr.range)
-  -- The lower half-ULP bound is strict for both parities.
-  have hlower : -(trimNum e : ℚ) < (trimScale e : ℚ) - (trimGap f e : ℚ) := by
-    have hz : (trimGap f e : ℚ) < (trimScale e : ℚ) + (trimNum e : ℚ) := by
-      exact_mod_cast trim_gap_lt_scale_add f e hr
-    linarith
+  obtain ⟨hle, hlt, -⟩ := scaled_cmp_of_int_eq (trim_mul_pos e) one_pos
+    (trim_value_scaled f e hr.range) (trim_half_ulp_scaled e hr.range)
+    (dec_ten_up_scaled f e (exponent_shift_lt_four e hr.range))
+  have hroom := trim_gap_lt_scale_add f e hr
   have hbound := (round_u0_iff_gap f e hr).mp hu0
   split_ifs at hbound ⊢
-  · refine hle.mpr (abs_le.mpr ⟨hlower.le, ?_⟩)
-    have hz : (trimScale e : ℚ) ≤ (trimGap f e : ℚ) + (trimNum e : ℚ) := by
-      exact_mod_cast hbound
-    linarith
-  · refine hlt.mpr (abs_lt.mpr ⟨hlower, ?_⟩)
-    have hz : (trimScale e : ℚ) < (trimGap f e : ℚ) + (trimNum e : ℚ) := by
-      exact_mod_cast hbound
-    linarith
+  · exact hle.mpr (by omega)
+  · exact hlt.mpr (by omega)
 
 /-! ## yy's coarse and fine outputs
 
@@ -1977,8 +1926,12 @@ theorem coarse_candidate_cases (f : ℕ) (e : ℤ) (hr : Regular f e) (d : ℕ)
     (h10 : d % 10 = 0)
     (hround : Roundtrips f e (d * 10 ^ decimalExponent e)) :
     d = sigTen f e ∨ d = sigTen f e + 10 := by
-  have hmul := trim_mul_pos e
-  have hdown := dec_ten_down_scaled_error f e hr.range
+  -- The bracket is one-sided each way rather than an absolute value, so this
+  -- consumer takes the distance identity and not the interval bridge.
+  have hmul : (0 : ℚ) < (trimMul e : ℚ) := by exact_mod_cast trim_mul_pos e
+  have hdown := scaled_dist_eq (trim_value_scaled f e hr.range)
+    (dec_ten_down_scaled f e (exponent_shift_lt_four e hr.range))
+  push_cast at hdown
   have hhalf := trim_mul_half_ulp e hr.range
   have hgap0 : (0 : ℚ) ≤ (trimGap f e : ℚ) := by positivity
   have hnum0 : (0 : ℚ) ≤ (trimNum e : ℚ) := by positivity
@@ -1995,39 +1948,30 @@ theorem coarse_candidate_cases (f : ℕ) (e : ℤ) (hr : Regular f e) (d : ℕ)
 theorem round_d0_of_ten_down_roundtrips (f : ℕ) (e : ℤ) (hr : Regular f e)
     (hround : Roundtrips f e (sigTen f e * 10 ^ decimalExponent e)) :
     (toDecimalCandidates f e).roundD0 = true := by
-  obtain ⟨hle, hlt⟩ :=
-    half_ulp_iff_scaled_error f e hr.range
-      (dec_ten_down_scaled_error f e hr.range)
+  obtain ⟨hle, hlt, -⟩ := scaled_cmp_of_int_eq (trim_mul_pos e) one_pos
+    (trim_value_scaled f e hr.range) (trim_half_ulp_scaled e hr.range)
+    (dec_ten_down_scaled f e (exponent_shift_lt_four e hr.range))
   have hs := (roundtrips_iff_scaled f e (decimalExponent e) _).mp hround
   refine (round_d0_iff_gap f e hr).mpr ?_
   -- Split on parity: both bounds allow ties iff `f` is even.
   split_ifs at hs ⊢
-  · have hq := hle.mp hs
-    rw [abs_neg, abs_of_nonneg (Nat.cast_nonneg _)] at hq
-    exact_mod_cast hq
-  · have hq := hlt.mp hs
-    rw [abs_neg, abs_of_nonneg (Nat.cast_nonneg _)] at hq
-    exact_mod_cast hq
+  · have := hle.mp hs; omega
+  · have := hlt.mp hs; omega
 
 /-- Completeness: if the trim-up candidate round-trips, `roundU0` fires. -/
 theorem round_u0_of_ten_up_roundtrips (f : ℕ) (e : ℤ) (hr : Regular f e)
     (hround :
       Roundtrips f e ((sigTen f e + 10 : ℕ) * 10 ^ decimalExponent e)) :
     (toDecimalCandidates f e).roundU0 = true := by
-  obtain ⟨hle, hlt⟩ :=
-    half_ulp_iff_scaled_error f e hr.range
-      (dec_ten_up_scaled_error f e hr.range)
+  obtain ⟨hle, hlt, -⟩ := scaled_cmp_of_int_eq (trim_mul_pos e) one_pos
+    (trim_value_scaled f e hr.range) (trim_half_ulp_scaled e hr.range)
+    (dec_ten_up_scaled f e (exponent_shift_lt_four e hr.range))
   have hs := (roundtrips_iff_scaled f e (decimalExponent e) _).mp hround
-  push_cast at hs
   refine (round_u0_iff_gap f e hr).mpr ?_
   -- Split on parity: both bounds allow ties iff `f` is even.
   split_ifs at hs ⊢
-  · have hq := (abs_le.mp (hle.mp hs)).2
-    exact_mod_cast (by linarith :
-      (trimScale e : ℚ) ≤ (trimGap f e : ℚ) + (trimNum e : ℚ))
-  · have hq := (abs_lt.mp (hlt.mp hs)).2
-    exact_mod_cast (by linarith :
-      (trimScale e : ℚ) < (trimGap f e : ℚ) + (trimNum e : ℚ))
+  · have := hle.mp hs; omega
+  · have := hlt.mp hs; omega
 
 /-- If the rounding interval contains a multiple of ten, yy trims. -/
 theorem trim_of_coarse_roundtrip (f : ℕ) (e : ℤ) (hr : Regular f e) (d : ℕ)

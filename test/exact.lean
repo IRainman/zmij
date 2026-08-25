@@ -177,6 +177,52 @@ theorem roundtrips_iff_scaled (f : ℕ) (e k : ℤ) (d : ℕ) :
   · rw [← hdist, ← hhalf]; exact mul_le_mul_iff_of_pos_right hp
   · rw [← hdist, ← hhalf]; exact mul_lt_mul_iff_of_pos_right hp
 
+/-! ### Candidate distances as integers
+
+An implementation works in integers, and the scale `m` that clears the grid also
+sends the scaled value to an integer `t`. A candidate `c` then sits at a signed
+integer distance `dist` from it, fixed by `c·m + dist = t`, and a threshold `thr`
+worth `b` over `a` copies of `m` is met exactly when `a·dist` lies in `[-b, b]`.
+
+These two are the whole crossing into `ℚ`. Below them an implementation states
+one identity per candidate and reasons in `ℤ`; above them nothing mentions the
+scale. The interval form is deliberate: the conclusions are what `omega` reads.
+-/
+
+/-- The scaled distance from the exact value, read off the integer identity. -/
+theorem scaled_dist_eq {c m : ℕ} {t dist : ℤ} {x : ℚ} (hx : x * m = t)
+    (hnat : (c : ℤ) * m + dist = t) :
+    ((c : ℚ) - x) * m = -(dist : ℚ) := by
+  have hcast : (c : ℚ) * m + (dist : ℚ) = t := by exact_mod_cast hnat
+  rw [sub_mul, hx]
+  linarith
+
+/-- Every comparison of a candidate against the exact value, as an integer
+    interval condition on its signed distance. -/
+theorem scaled_cmp_of_int_eq {c m a b : ℕ} {t dist : ℤ} {x thr : ℚ}
+    (hm : 0 < m) (ha : 0 < a) (hx : x * m = t) (hthr : thr * (a * m) = b)
+    (hnat : (c : ℤ) * m + dist = t) :
+    (|(c : ℚ) - x| ≤ thr ↔ -(b : ℤ) ≤ a * dist ∧ a * dist ≤ b) ∧
+      (|(c : ℚ) - x| < thr ↔ -(b : ℤ) < a * dist ∧ a * dist < b) ∧
+      (|(c : ℚ) - x| = thr ↔ a * dist = b ∨ a * dist = -(b : ℤ)) := by
+  have hmq : (0 : ℚ) < m := by exact_mod_cast hm
+  have haq : (0 : ℚ) < a := by exact_mod_cast ha
+  have hp : (0 : ℚ) < (a : ℚ) * m := by positivity
+  -- The scale comes out of the absolute value, leaving one integer magnitude.
+  have habs : |(c : ℚ) - x| * ((a : ℚ) * m) = |(((a : ℤ) * dist : ℤ) : ℚ)| := by
+    rw [show ((a : ℚ) * m) = |(m : ℚ)| * |(a : ℚ)| from by
+        rw [abs_of_pos hmq, abs_of_pos haq]; ring,
+      ← mul_assoc, ← abs_mul, scaled_dist_eq hx hnat, abs_neg, ← abs_mul]
+    push_cast
+    rw [mul_comm]
+  refine ⟨?_, ?_, ?_⟩
+  · rw [← mul_le_mul_iff_of_pos_right hp, hthr, habs, abs_le]
+    constructor <;> intro h <;> exact_mod_cast h
+  · rw [← mul_lt_mul_iff_of_pos_right hp, hthr, habs, abs_lt]
+    constructor <;> intro h <;> exact_mod_cast h
+  · rw [← mul_left_inj' (ne_of_gt hp), hthr, habs, abs_eq (by positivity)]
+    constructor <;> intro h <;> exact_mod_cast h
+
 /-- Either parity of a round-trip bounds the scaled distance by half a ULP. -/
 private theorem abs_sub_le_half_ulp (f : ℕ) (e k : ℤ) {d : ℕ}
     (hround : Roundtrips f e (d * 10 ^ k)) :
