@@ -2137,12 +2137,12 @@ half-step bound already implies that it round-trips because the grid step at
 /-- On the coarse path, yy emits a multiple of ten that round-trips. Which of
     the two multiple-of-ten candidates `decTen` denotes is decided by `roundU0`;
     whether both trim flags fire is irrelevant. -/
-theorem coarse_output_roundtrips (f : ℕ) (e : ℤ) (hr : Regular f e)
-    (htrim : ((toDecimalCandidates f e).roundD0
-      || (toDecimalCandidates f e).roundU0) = true) :
+theorem coarse_output_roundtrips (f : ℕ) (e : ℤ) (hr : Regular f e) :
+    let c := toDecimalCandidates f e
+    (c.roundD0 || c.roundU0) = true →
     (toDecimal f e).1 % 10 = 0 ∧
       Roundtrips f e (((toDecimal f e).1 : ℚ) * 10 ^ decimalExponent e) := by
-  set c := toDecimalCandidates f e
+  intro c htrim
   have hy : (toDecimal f e).1 = c.decTen := by
     show (if c.roundD0 || c.roundU0 then c.decTen else c.decOne) = _
     rw [htrim]
@@ -2162,15 +2162,15 @@ theorem coarse_output_roundtrips (f : ℕ) (e : ℤ) (hr : Regular f e)
     simpa using dec_ten_up f e hr hu0
 
 /-- On the fine path, yy emits `decOne`, a nearest value on its own grid. -/
-theorem fine_output_nearest (f : ℕ) (e : ℤ) (hr : Regular f e)
-    (htrim : ((toDecimalCandidates f e).roundD0
-      || (toDecimalCandidates f e).roundU0) = false) :
+theorem fine_output_nearest (f : ℕ) (e : ℤ) (hr : Regular f e) :
+    let c := toDecimalCandidates f e
+    (c.roundD0 || c.roundU0) = false →
     let x := value f e * 10 ^ (-decimalExponent e)
     |((toDecimal f e).1 : ℚ) - x| ≤ 1 / 2 ∧
       (|((toDecimal f e).1 : ℚ) - x| = 1 / 2 → (toDecimal f e).1 % 2 = 0) := by
-  rw [show (toDecimal f e).1 = (toDecimalCandidates f e).decOne from by
-    show (if (toDecimalCandidates f e).roundD0
-      || (toDecimalCandidates f e).roundU0 then _ else _) = _
+  intro c htrim
+  rw [show (toDecimal f e).1 = c.decOne from by
+    show (if c.roundD0 || c.roundU0 then _ else _) = _
     rw [htrim]
     rfl]
   exact dec_one_nearest f e hr
