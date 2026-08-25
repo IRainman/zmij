@@ -579,7 +579,6 @@ theorem trim_gap_split (f : ℕ) (e : ℤ) :
 
 def trimScale (e : ℤ) : ℕ := trimModulus e * trimDen e
 
-
 /-- One window unit with the denominator cleared: the resolution of the packed
     comparison and the scale of the narrow windows refuted below. -/
 def trimEdge (e : ℤ) : ℕ := trimUnit e * trimDen e
@@ -667,9 +666,6 @@ The direct modular-window formulation below matches yy more closely and is
 substantially simpler.
 -/
 
-
-
-
 /-- Scaling the window residue by `den` and adding back the truncation error
     `2·f·τ` preserves the residue modulo `n·den`, provided the sum has not
     wrapped. -/
@@ -695,8 +691,6 @@ theorem trim_gap_mod (f : ℕ) (e : ℤ) (hlt : trimGap f e < trimScale e) :
       = 2 * (trimNum e / trimDen e * trimDen e + trimNum e % trimDen e) * f
       from by rw [Nat.div_add_mod']]
   exact trim_mod_shift _ _ _ _ _ hlt
-
-
 
 /-- `p10Exact ≥ 2^127`, with the denominator cleared. -/
 theorem trim_num_lower (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
@@ -726,9 +720,6 @@ discarded low bits are worth less than one block; the third says that truncating
 a sum never overshoots it. All three are stated for a generic block size `u` and
 always instantiated with `U`.
 -/
-
-
-
 
 theorem trim_unit_pos (e : ℤ) : 0 < trimUnit e := by
   rw [trimUnit]; positivity
@@ -782,18 +773,6 @@ theorem trim_trunc_lt (f : ℕ) (e : ℤ) (hr : Regular f e) :
   lt_of_le_of_lt (Nat.mul_le_mul_right _ (by have := hr.sig_lt; omega))
     (mul_lt_mul_of_pos_left (Nat.mod_lt _ (trim_den_pos e)) (by positivity))
 
-
-
-
-
-
-
-
-
-
-
-
-
 /-- At `k = 0` the power-of-ten significand is exactly `2^127`, so it has no
     low bits for the truncation to drop. -/
 theorem trim_power_of_k_zero (e : ℤ) (hk : decimalExponent e = 0) :
@@ -802,12 +781,6 @@ theorem trim_power_of_k_zero (e : ℤ) (hk : decimalExponent e = 0) :
     rw [trimNum, trimDen, hk]
     decide
   exact ⟨heq, by rw [trim_sig_nat, heq, Nat.mul_div_cancel _ (trim_den_pos e)]⟩
-
-
-
-
-
-
 
 /-- The gap can overshoot the coarse step, but by less than `num`: the residue
     stays below the step and `num ≥ 2^127·den` absorbs the truncation error.
@@ -1413,8 +1386,6 @@ theorem one_gap_lt_mul_add (f : ℕ) (e : ℤ) (hr : Regular f e) :
   rw [one_gap_split]
   omega
 
-
-
 /-! ### Refuting the unit-step windows
 
 Two bands of the remainder are left undecided, both at the midpoint
@@ -1614,7 +1585,6 @@ theorem one_tie_band_even (f : ℕ) (e : ℤ) (hr : Regular f e)
   exact one_no_window_hit f e hr hcert hwin
     (by rw [hz]; exact sub_le_self _ (by positivity)) (by rw [hz])
 
-
 /-! ### Nearest at the unit step -/
 
 /-- Strictly below the packed midpoint the exact gap is strictly below half a
@@ -1765,7 +1735,6 @@ theorem dec_one_nearest (f : ℕ) (e : ℤ) (hr : Regular f e) :
       · rw [ite_eq_left (by simp), abs_of_nonneg (by linarith)]; linarith
     rw [habs]
     exact ⟨by linarith, fun _ => heven⟩
-
 
 /-! ## The multiple-of-ten candidates
 
