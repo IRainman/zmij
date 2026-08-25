@@ -1971,8 +1971,8 @@ unfired one are then directions of the same equivalence, and neither has to look
 at a packed comparison again.
 -/
 
-/-- What `roundD0` decides: the trim-down gap is within half a ULP, with the
-    boundary itself allowed only for even `f`. -/
+/-- What `roundD0` decides: the trim-down candidate is within half a ULP, with
+    the boundary allowed only for even `f`. -/
 theorem round_d0_iff_gap (f : ℕ) (e : ℤ) (hr : Regular f e) :
     (toDecimalCandidates f e).roundD0 = true
       ↔ if f % 2 = 0 then trimGap f e ≤ trimNum e
@@ -2037,10 +2037,12 @@ theorem dec_ten_down (f : ℕ) (e : ℤ) (hr : Regular f e)
   · exact hle.mpr (by rw [habs]; exact_mod_cast hgap)
   · exact hlt.mpr (by rw [habs]; exact_mod_cast hgap)
 
-/-- What `roundU0` decides: the trim-up gap is within half a ULP, with the
-    boundary itself allowed only for even `f`. All three yy branches leave the
-    packed sum within one window unit of the modulus; only the final `t0 ≤ t1`
-    branch can fire for odd `f`, and there the bound is strict. -/
+/-- What `roundU0` decides: the trim-up candidate is within half a ULP, with
+    the boundary allowed only for even `f`. None of yy's three packed tests
+    succeeds more than one window unit short of a full coarse step, so the
+    same argument converts all three to the exact bound; only the final
+    `t0 ≤ t1` test can succeed for odd `f`, and then the trim-up candidate is
+    strictly within half a ULP. -/
 theorem round_u0_iff_gap (f : ℕ) (e : ℤ) (hr : Regular f e) :
     (toDecimalCandidates f e).roundU0 = true
       ↔ if f % 2 = 0 then trimScale e ≤ trimGap f e + trimNum e
