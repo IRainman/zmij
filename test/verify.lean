@@ -1755,10 +1755,10 @@ theorem one_residue_below_half (f : ℕ) (e : ℤ) (hr : Regular f e)
     exact one_no_window_hit f e hr hcert habove (by rw [hp]; linarith)
       (by rw [hp]; linarith)
 
-/-- In the packed tie band an even `sigHi` occurs only at a genuine midpoint:
-    the remainder is exactly half a unit step and the power-of-ten
-    approximation is exact, so the exact value is a tie too, and yy resolves it
-    to even. -/
+/-- In the packed tie band, an even `sigHi` occurs only at a genuine midpoint:
+    the remainder is exactly at the unit-step midpoint and the power-of-ten
+    approximation is exact. Hence the exact value is a tie too, which yy
+    resolves to even. -/
 theorem one_tie_band_even (f : ℕ) (e : ℤ) (hr : Regular f e)
     (hpar : sigHi f e % 2 = 0)
     (hlo : 2 ^ (127 - exponentShift e) ≤ oneResidue f e)
@@ -1770,8 +1770,7 @@ theorem one_tie_band_even (f : ℕ) (e : ℤ) (hr : Regular f e)
   obtain ⟨q, hcert⟩ := one_windows_refuted e hr.range
   have hp : (oneParityResidue f e : ℤ) = (oneResidue f e : ℤ) := by
     rw [one_parity_residue_split f e hsh, hpar]; push_cast; ring
-  -- The two ends of the band above the midpoint, which both window shapes
-  -- share.
+  -- Bounds for the part of the tie band strictly above the midpoint.
   have hup : (oneParityResidue f e : ℤ)
       ≤ (2 : ℤ) ^ (127 - exponentShift e) + 2 ^ (64 - exponentShift e) - 1 := by
     rw [hp]
@@ -1785,8 +1784,8 @@ theorem one_tie_band_even (f : ℕ) (e : ℤ) (hr : Regular f e)
     rw [hp]
     exact_mod_cast
       (show 2 ^ (127 - exponentShift e) + 1 ≤ oneResidue f e from hgt)
-  -- The band above the midpoint is refuted at every exponent, leaving the
-  -- midpoint itself.
+  -- The region strictly above the midpoint is refuted, leaving only
+  -- the midpoint.
   have hband (hgt : 2 ^ (127 - exponentShift e) < oneResidue f e) : False :=
     one_no_window_hit f e hr hcert (.head _) (hdown hgt) hup
   have hmid : oneResidue f e = 2 ^ (127 - exponentShift e) := by
@@ -1803,10 +1802,10 @@ theorem one_tie_band_even (f : ℕ) (e : ℤ) (hr : Regular f e)
   exact one_no_window_hit f e hr hcert hwin
     (by rw [hz]; exact sub_le_self _ (by positivity)) (by rw [hz])
 
-/-- The certificates' semantic content at the unit step: the remainder never
-    lands where the packed test could round the wrong way. Below this theorem is
-    modular arithmetic of `2·f·p10`; above it the rounding argument sees only
-    these two implications. -/
+/-- What the unit-step certificates establish: the remainder never lands where
+    the packed test could round the wrong way. Below this theorem is modular
+    arithmetic of `2·f·p10`; above it the rounding argument sees only these
+    two implications. -/
 theorem one_midpoint_separated (f : ℕ) (e : ℤ) (hr : Regular f e) :
     OneMidpointSeparated f e := by
   have hsh := exponent_shift_lt_four e hr.range
@@ -1862,8 +1861,8 @@ theorem one_midpoint_separated (f : ℕ) (e : ℤ) (hr : Regular f e) :
 
 /-! ### Nearest at the unit step -/
 
-/-- At a packed midpoint the remainder is exactly half a unit step, so yy takes
-    its tie branch and rounds the significand to even. -/
+/-- At a packed midpoint yy takes its tie branch and rounds the significand
+    to even. -/
 theorem dec_one_even_of_packed_midpoint (f : ℕ) (e : ℤ)
     (hsh : exponentShift e < 4)
     (hres : oneResidue f e = 2 ^ (127 - exponentShift e)) :
@@ -1881,20 +1880,21 @@ theorem dec_one_even_of_packed_midpoint (f : ℕ) (e : ℤ)
   show (sigHi f e + if c.roundU1 then 1 else 0) % 2 = 0
   by_cases hpar : sigHi f e % 2 = 1 <;> simp [hround, hpar] <;> omega
 
-/-- `decOne` is a nearest value on the grid at `decimalExponent e`, ties to
-    even: it lies within half a step, and at an exact midpoint it is even. These
-    are the two facts the exact method asks of a fine candidate. -/
+/-- `decOne` is a nearest value on the grid at `decimalExponent e`, with ties
+    to even: it lies within half a unit step of the exact scaled value, and at
+    an exact midpoint it is even. These are the two facts the exact method
+    asks of a fine candidate. -/
 theorem dec_one_nearest (f : ℕ) (e : ℤ) (hr : Regular f e) :
+    let c := toDecimalCandidates f e
     let x := value f e * 10 ^ (-decimalExponent e)
-    |((toDecimalCandidates f e).decOne : ℚ) - x| ≤ 1 / 2 ∧
-      (|((toDecimalCandidates f e).decOne : ℚ) - x| = 1 / 2 →
-        (toDecimalCandidates f e).decOne % 2 = 0) := by
+    |(c.decOne : ℚ) - x| ≤ 1 / 2 ∧
+      (|(c.decOne : ℚ) - x| = 1 / 2 → c.decOne % 2 = 0) := by
+  intro c x
   have hsh := exponent_shift_lt_four e hr.range
   have hsep := one_midpoint_separated f e hr
-  set c := toDecimalCandidates f e
   by_cases hu1 : c.roundU1 = true
-  -- Rounding up: the candidate is `trimMul - oneGap` above the value, and the
-  -- packed test has already carried the gap past half a step.
+  -- Rounding up: the candidate is `trimMul - oneGap` above the value, and
+  -- `oneGap` is already at least half a step.
   · have hdec : (c.decOne : ℚ) = (sigHi f e : ℚ) + 1 := by
       show ((sigHi f e + if c.roundU1 then 1 else 0 : ℕ) : ℚ) = _
       simp [hu1]
@@ -1904,8 +1904,8 @@ theorem dec_one_nearest (f : ℕ) (e : ℤ) (hr : Regular f e) :
       (by linear_combination sig_hi_scaled_error f e hr.range)
     have hlow : (trimMul e : ℚ) ≤ 2 * (oneGap f e : ℚ) := by
       exact_mod_cast one_half_step_le_gap f e hr hu1
-    -- The gap can pass the step, but only by a truncation error, so it stays
-    -- clear of a step and a half.
+    -- `oneGap` can exceed one step only by the power-of-ten truncation error,
+    -- which keeps it strictly below one and a half steps.
     have hroom : (oneGap f e : ℚ) < 3 / 2 * (trimMul e : ℚ) := by
       have hbig : (2 : ℚ) ^ 55 * (trimDen e : ℚ) ≤ (trimMul e : ℚ) := by
         exact_mod_cast trim_two_trunc_le_mul e hsh
@@ -1923,8 +1923,9 @@ theorem dec_one_nearest (f : ℕ) (e : ℤ) (hr : Regular f e) :
     · intro hmid
       rw [hdec] at hmid
       have hq := heq.mp hmid
-      -- Equal distance allows `oneGap = trimMul / 2` or `3 * trimMul / 2`.
-      -- The room below a step and a half excludes the latter.
+      -- `|trimMul - oneGap| = trimMul / 2` has two solutions:
+      -- `oneGap = trimMul / 2` and `oneGap = 3 * trimMul / 2`;
+      -- `hroom` excludes the latter.
       have hnat : 2 * oneGap f e = trimMul e := by
         by_cases hcase : oneGap f e ≤ trimMul e
         · have hcast : (oneGap f e : ℚ) ≤ (trimMul e : ℚ) := by
@@ -1939,8 +1940,8 @@ theorem dec_one_nearest (f : ℕ) (e : ℤ) (hr : Regular f e) :
           rw [abs_of_nonpos (by linarith)] at hq
           linarith
       exact dec_one_even_of_packed_midpoint f e hsh (hsep.packedMidpoint hnat)
-  -- Rounding down: the candidate is `oneGap` below the value, and only the
-  -- separation says the gap has not passed half a step.
+  -- Rounding down: the candidate is `oneGap` below the value; separation
+  -- ensures that `oneGap` has not passed half a step.
   · rw [Bool.not_eq_true] at hu1
     have hdec : (c.decOne : ℚ) = (sigHi f e : ℚ) := by
       show ((sigHi f e + if c.roundU1 then 1 else 0 : ℕ) : ℚ) = _
@@ -1965,10 +1966,10 @@ theorem dec_one_nearest (f : ℕ) (e : ℤ) (hr : Regular f e) :
 
 /-! ## The multiple-of-ten candidates
 
-`roundD0` and `roundU0` are read once each, as exact comparisons of the gap with
-half a scaled ULP. Both the soundness of a fired flag and the completeness of an
-unfired one are then directions of the same equivalence, and neither has to look
-at a packed comparison again.
+`roundD0` and `roundU0` are characterized once as exact half-ULP bounds on the
+two coarse candidates. Soundness and completeness are then just the two
+directions of those equivalences, with no further reasoning about the packed
+comparisons.
 -/
 
 /-- What `roundD0` decides: the trim-down candidate is within half a ULP, with
@@ -2050,7 +2051,7 @@ theorem round_u0_iff_gap (f : ℕ) (e : ℤ) (hr : Regular f e) :
   have hsh : exponentShift e < 4 := exponent_shift_lt_four e hr.range
   set c := trimResidue f e / trimUnit e with hc
   set p := trimSig e / trimUnit e with hp
-  -- Lift a packed sum reaching the modulus to the untruncated bound.
+  -- Convert a packed sum reaching the modulus to the exact bound.
   have hpack (hb : 10 * 2 ^ 60 ≤ c + p + 1) :
       trimModulus e ≤ trimResidue f e + trimSig e + trimUnit e := by
     rw [trim_modulus_eq e hsh]
