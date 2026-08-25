@@ -1,3 +1,8 @@
+-- Lean proofs for https://github.com/vitaut/zmij/.
+--
+-- Copyright (c) 2025 - present, Victor Zverovich
+-- Distributed under the MIT license (see LICENSE).
+
 import exact
 
 /-! # Correctness of yy
