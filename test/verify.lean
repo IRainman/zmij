@@ -5,9 +5,9 @@ import exact
 `exact.lean` proves the Schubfach-like method is shortest and correctly rounded
 whenever the decimal grid step is at most one ULP and strictly greater than one
 tenth of an ULP, and refutes narrow modular windows on demand. Everything
-specific to this implementation is here: the truncated cached power of ten, the
-packed comparisons, and the windows those comparisons leave ambiguous, which
-together show that yy's output is a candidate of that method,
+specific to this implementation is here: the truncated power-of-ten
+significand, the packed comparisons, and the windows those comparisons leave
+ambiguous, which together show that yy's output is a candidate of that method,
 `yy_exact_candidate`. No claim is made that yy's packed decisions agree with the
 exact ones; only that its output does. `yy_correct` composes the two.
 
@@ -41,25 +41,25 @@ and
 
 ### 2. Semantic obligations of yy
 
-There are two possible outputs.
+There are two possible outputs, chosen by yy's trim decision.
 
-* Trimmed:
-    `trimmed_roundtrips`
+* Coarse:
+    `coarse_output_roundtrips`
   says yy emits a multiple of ten that round-trips.
 
-* Untrimmed:
-    `untrimmed_nearest`
+* Fine:
+    `fine_output_nearest`
   says yy emits a nearest point on the grid at `decimalExponent e`, ties to
   even.
 
 `trim_of_coarse_roundtrip` supplies completeness: if any multiple of ten
-round-trips, yy trims.
+round-trips, yy takes the coarse path.
 
 These three facts are assembled by `yy_exact_candidate`.
 
 ### 3. The file, in order
 
-The modeled algorithm and its cached power of ten:
+The modeled algorithm and its power-of-ten significand:
 
     ## The truncated power of ten
     ## yy's conversion
@@ -83,7 +83,7 @@ The unit-step path, following the same route for `decOne`:
 The two paths are then assembled into the exact-method obligations:
 
     ## The multiple-of-ten candidates
-    ## yy's output in the two cases
+    ## yy's coarse and fine outputs
     ## Completeness of the trim flags
     ## yy refines the exact method
 
@@ -94,19 +94,19 @@ The main correctness argument has the following structure:
     yy_correct
       ← ulp_scaled_bounds
       ← yy_exact_candidate
-          ← trimmed_roundtrips
-          ← untrimmed_nearest
+          ← coarse_output_roundtrips
+          ← fine_output_nearest
           ← trim_of_coarse_roundtrip
 
 The lower-level arithmetic establishing those interface theorems is organized
 around the two packed comparisons and the unit step:
 
-    trimmed_roundtrips, trim_of_coarse_roundtrip
+    coarse_output_roundtrips, trim_of_coarse_roundtrip
       ← round_d0_iff_gap, round_u0_iff_gap
           ← trim_gap_separated
               ← ModWindows
 
-    untrimmed_nearest
+    fine_output_nearest
       ← dec_one_nearest
           ← one_midpoint_separated
               ← ModWindows
@@ -303,7 +303,7 @@ theorem decimal_shift_nonneg :
       0 ≤ e + (-decimalExponent e * 217_707) / 2 ^ 16 := by
   decide +kernel
 
-/-- The shift undoes the cached power's exponent: `h + 1 - pe = e`. Both sides
+/-- The shift undoes the power-of-ten exponent: `h + 1 - pe = e`. Both sides
     scale the same fixed-point quotient, so once the shift is known not to have
     been clamped this is arithmetic, whatever the decimal exponent is. -/
 theorem decimal_shift_align (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
@@ -345,8 +345,9 @@ theorem trim_den_pos (e : ℤ) : 0 < trimDen e := power10_den_pos _
 theorem trim_sig_nat (e : ℤ) : trimSig e = trimNum e / trimDen e :=
   power10_significand_nat _
 
-/-- yy's truncated power of ten is normalized: the decimal exponents it asks the
-    cached table for land inside the range `power10_ratio_normalized` checks. -/
+/-- The power-of-ten significand yy uses is normalized. Only the range matters:
+    `-decimalExponent e` runs over exactly `[-292, 324]` as `e` runs over yy's
+    exponents, which is the interval `power10_ratio_normalized` enumerated. -/
 theorem trim_sig_bounds (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
     2 ^ 127 ≤ trimSig e ∧ trimSig e < 2 ^ 128 :=
   power10_significand_bounds _ (by unfold decimalExponent; omega)
@@ -557,7 +558,7 @@ def trimGap (f : ℕ) (e : ℤ) : ℕ := stepGap (trimModulus e) f e
     and unfolds only where a product has to be distributed. -/
 def trimResidueScaled (f : ℕ) (e : ℤ) : ℕ := trimDen e * trimResidue f e
 
-/-- The gap is the scaled residue plus the cached-power truncation error. -/
+/-- The gap is the scaled residue plus the power-of-ten truncation error. -/
 theorem trim_gap_split (f : ℕ) (e : ℤ) :
     trimGap f e
       = trimResidueScaled f e + 2 * f * (trimNum e % trimDen e) := rfl
@@ -599,7 +600,7 @@ theorem trim_window_margins_all :
     ∀ e ∈ Finset.Icc (-1074 : ℤ) 971, trimWindowMarginsHolds e = true := by
   decide +kernel
 
-/-- The discarded low bits `p10 % U` dominate the cached-power truncation error
+/-- The discarded low bits `p10 % U` dominate the power-of-ten truncation error
     `p10Exact - p10 = τ/den`: the margin used when a packed comparison is strict
     on the low side. Which bits of the power of ten survive truncation is not a
     magnitude property, so this is checked per exponent. -/
@@ -646,12 +647,13 @@ recomputing the power of ten.
 Those four express what packed truncation leaves undecided, and they stop one
 short of `scale - num` on either side, that residue being an exact tie rather
 than an ambiguity. The fifth window is that residue alone, and it asks the other
-question: whether an exact tie is possible at all. Where the cached power is
-exact it is possible only at `k = 0`, which `roundU0` has a branch for, so
-certifying the residue empty elsewhere is what lets `trim_scale_lt` rule out the
-rest. Both halves of the condition are needed: with an inexact power the residue
-is reachable, at 73 exponents, by significands whose packed comparison is no
-tie, and `trim_tie_gap_eq` disposes of those instead.
+question: whether an exact tie is possible at all. Where the power-of-ten
+approximation is exact it is possible only at `k = 0`, which `roundU0` has a
+branch for, so certifying the residue empty elsewhere is what lets
+`trim_scale_lt` rule out the rest. Both halves of the condition are needed:
+with an inexact power-of-ten approximation the residue is reachable, at 73
+exponents, by significands whose packed comparison is no tie, and
+`trim_tie_gap_eq` disposes of those instead.
 -/
 private def trimWindows (e : ℤ) : ModWindows where
   g := 2 * trimNum e
@@ -1013,9 +1015,9 @@ theorem trim_tie_gap_eq (f : ℕ) (e : ℤ)
   rw [trimResidueScaled, hnum, htie]
   ring
 
-/-- An exact cached power admits a tie only at `k = 0`. An exact tie leaves the
-    gap at `scale - num`, and that is the residue the fifth window refutes
-    wherever the cached power is exact and `k` is not zero. -/
+/-- An exact power-of-ten approximation admits a tie only at `k = 0`. An exact
+    tie leaves the gap at `scale - num`, and that is the residue the fifth
+    window refutes wherever the approximation is exact and `k` is not zero. -/
 theorem trim_exact_tie_k_zero (f : ℕ) (e : ℤ) (h : Regular f e)
     (hτ : trimNum e % trimDen e = 0)
     (htie : trimModulus e = trimResidue f e + trimSig e) :
@@ -1037,8 +1039,8 @@ theorem trim_exact_tie_k_zero (f : ℕ) (e : ℤ) (h : Regular f e)
     exact List.mem_singleton_self _
   exact trim_no_window_hit f e h hcert hmem (by omega) (by omega) (by omega)
 
-/-- At `k = 0` the cached power of ten is exactly `2^127`, so it has no low bits
-    for the truncation to drop. -/
+/-- At `k = 0` the power-of-ten significand is exactly `2^127`, so it has no
+    low bits for the truncation to drop. -/
 theorem trim_power_of_k_zero (e : ℤ) (hk : decimalExponent e = 0) :
     trimNum e = 2 ^ 127 * trimDen e ∧ trimSig e = 2 ^ 127 := by
   have heq : trimNum e = 2 ^ 127 * trimDen e := by
@@ -1047,7 +1049,7 @@ theorem trim_power_of_k_zero (e : ℤ) (hk : decimalExponent e = 0) :
   exact ⟨heq, by rw [trim_sig_nat, heq, Nat.mul_div_cancel _ (trim_den_pos e)]⟩
 
 /-- At `k = 0` the packed comparison is exact: both operands are whole window
-    units and the cached-power truncation error vanishes. Thus the packed tie
+    units and the power-of-ten truncation error vanishes. Thus the packed tie
     lifts to an exact tie, with `gap + num = scale`. -/
 theorem trim_gap_num_eq_scale_of_k_zero (f : ℕ) (e : ℤ) (h : Regular f e)
     (hk : decimalExponent e = 0)
@@ -1076,7 +1078,7 @@ theorem trim_gap_num_eq_scale_of_k_zero (f : ℕ) (e : ℤ) (h : Regular f e)
   rw [hgap, ← trim_scale_split e, ← hsum, hscaled_sum]
 
 /-- Strict trim-up soundness for the final `t0 ≤ t1` test. Packed equality is
-    either made strict by cached-power truncation or is an exact tie, which
+    either made strict by power-of-ten truncation or is an exact tie, which
     forces `k = 0` and belongs to the dedicated `k = 0 ∧ t1 = t0` branch. -/
 theorem trim_scale_lt (f : ℕ) (e : ℤ) (h : Regular f e)
     (hb : 10 * 2 ^ 60 ≤ trimResidue f e / trimUnit e + trimSig e / trimUnit e)
@@ -1099,9 +1101,9 @@ theorem trim_scale_lt (f : ℕ) (e : ℤ) (h : Regular f e)
       trim_num_split e
     have hsand := (trim_gap_sandwich f e h).1
     omega
-  -- Equality in the packed comparison is a genuine tie only when the cached
-  -- power is exact. Otherwise its truncation remainder is precisely the slack
-  -- that makes the exact bound strict.
+  -- Equality in the packed comparison is a genuine tie only when the
+  -- power-of-ten approximation is exact. Otherwise its truncation remainder is
+  -- precisely the slack that makes the exact bound strict.
   · by_cases hτ : trimNum e % trimDen e = 0
     · -- A tie in exact arithmetic, which only `k = 0` admits.
       exfalso
@@ -1118,7 +1120,7 @@ theorem trim_scale_lt (f : ℕ) (e : ℤ) (h : Regular f e)
 
 /-- Each packed unit of room below the modulus becomes one `trimEdge` after
     clearing the denominator. Reconstructing `gap + num` adds `(2f+1)·τ`, where
-    `τ` is the cached-power truncation remainder; `trim_high_bits` shows that
+    `τ` is the power-of-ten truncation remainder; `trim_high_bits` shows that
     this error together with the discarded low bits of `p10` fits within one
     `trimEdge`. -/
 theorem trim_packed_room (f : ℕ) (e : ℤ) (h : Regular f e) (n : ℕ)
@@ -1228,11 +1230,11 @@ theorem trim_gap_lt_scale_add (f : ℕ) (e : ℤ) (h : Regular f e) :
 
 /-! ## From integer bounds to half-ULP bounds
 
-In the scale `trimMul` the two trimmed candidates have scaled errors `-trimGap`
-and `trimScale - trimGap`, and half a scaled ULP is exactly `trimNum`. The
-power of ten enters only through `trim_mul_eq`, which expresses `trimMul` as
-`trimNum` times the inverse scale `s = 2^(1-e)·10^k`. Thus each candidate
-bound `|cand - x| ≤ u/2` is a comparison of `trimGap` with `trimNum`.
+In the scale `trimMul` the two multiple-of-ten candidates have scaled errors
+`-trimGap` and `trimScale - trimGap`, and half a scaled ULP is exactly
+`trimNum`. The power of ten enters only through `trim_mul_eq`, which expresses
+`trimMul` as `trimNum` times the inverse scale `s = 2^(1-e)·10^k`. Thus each
+candidate bound `|cand - x| ≤ u/2` is a comparison of `trimGap` with `trimNum`.
 -/
 
 /-- The unit step, cleared. The window step is ten of them. -/
@@ -1247,7 +1249,7 @@ theorem trim_scale_eq_ten_mul (e : ℤ) : trimScale e = 10 * trimMul e := by
   simp only [trimScale, trimMul, trimModulus]
   ring
 
-/-- Twice the bound on the cached-power truncation error fits inside one grid
+/-- Twice the bound on the power-of-ten truncation error fits inside one grid
     step: `trimMul ≥ 2^125·den`, while the doubled bound is `2^55·den`. -/
 theorem trim_two_trunc_le_mul (e : ℤ) (hsh : decimalShift e < 4) :
     2 ^ 55 * trimDen e ≤ trimMul e := by
@@ -1516,7 +1518,7 @@ exact midpoint case.
 
 Rounding up needs no additional separation: when `roundU1` fires, the packed
 remainder has reached half the window, hence the exact gap has reached at least
-half a step, since cached-power truncation only increases it.
+half a step, since power-of-ten truncation only increases it.
 
 Rounding down and exact midpoints are subtler. The packed test sees the
 remainder only down to `2^(64-h)`, while the exact gap also contains the
@@ -1526,14 +1528,14 @@ as a packed midpoint. Those two facts are `OneMidpointSeparated`, and finite
 certificates supply them, one window family per exponent.
 -/
 
-/-- The unit-step gap is the denominator-cleared remainder plus the cached-power
-    truncation error. -/
+/-- The unit-step gap is the denominator-cleared remainder plus the
+    power-of-ten truncation error. -/
 theorem one_gap_split (f : ℕ) (e : ℤ) :
     oneGap f e
       = trimDen e * oneResidue f e + 2 * f * (trimNum e % trimDen e) := by
   rw [oneGap, stepGap, ← oneResidue]
 
-/-- The gap exceeds a whole step only by the cached-power truncation error. -/
+/-- The gap exceeds a whole step only by the power-of-ten truncation error. -/
 theorem one_gap_lt_mul_add (f : ℕ) (e : ℤ) (h : Regular f e) :
     oneGap f e < trimMul e + 2 ^ 54 * trimDen e := by
   have hres : trimDen e * oneResidue f e < trimMul e := by
@@ -1560,7 +1562,7 @@ theorem one_half_step_le_gap (f : ℕ) (e : ℤ) (h : Regular f e)
 
 /-- What the packed `roundU1` test cannot settle by itself. Both facts concern
     where `2·f·num mod trimMul` lies relative to the midpoint `trimMul / 2`.
-    Cached-power truncation and discarded low bits leave a narrow undecided
+    Power-of-ten truncation and discarded low bits leave a narrow undecided
     window there, refuted below just as `trimWindows` are. -/
 structure OneMidpointSeparated (f : ℕ) (e : ℤ) : Prop where
   -- If `roundU1` does not fire, the exact gap is at most half a step.
@@ -1586,9 +1588,9 @@ That parity is the next bit of the same product, which the doubled modulus
 `2^(129-h)` sees: the residue stays below one window exactly when `sigHi` is
 even. Both bands are windows there, refuted per exponent as `trimWindows` are.
 
-An exact cached power has no truncation error, so the band below the midpoint
-is harmless and the midpoint is a genuine tie, resolved to even. Those
-exponents refute the band above the midpoint only.
+An exact power-of-ten approximation has no truncation error, so the band below
+the midpoint is harmless and the midpoint is a genuine tie, resolved to even.
+Those exponents refute the band above the midpoint only.
 -/
 
 /-- The residue in the doubled modulus, one bit wider than the unit step. -/
@@ -1680,8 +1682,8 @@ private theorem one_no_window_hit {lo hi q : ℤ} (f : ℕ) (e : ℤ)
   · omega
   · rw [oneParityResidue, stepResidue, Nat.mul_right_comm]
 
-/-- A truncated cached power adds the midpoint and the truncation error's reach
-    below it, one for each parity of `sigHi`. -/
+/-- A truncated power-of-ten approximation adds the midpoint and the truncation
+    error's reach below it, one for each parity of `sigHi`. -/
 private theorem one_windows_truncated (e : ℤ)
     (hτ : trimNum e % trimDen e ≠ 0) :
     ((2 : ℤ) ^ (127 - decimalShift e) - 2 ^ 54,
@@ -1726,8 +1728,8 @@ theorem one_residue_below_half (f : ℕ) (e : ℤ) (h : Regular f e)
       (by rw [hp]; linarith)
 
 /-- In the packed tie band an even `sigHi` occurs only at a genuine midpoint:
-    the remainder is exactly half the window and the cached power is exact, so
-    the exact value is a tie too, and yy resolves it to even. -/
+    the remainder is exactly half the window and the power-of-ten approximation
+    is exact, so the exact value is a tie too, and yy resolves it to even. -/
 theorem one_tie_band_even (f : ℕ) (e : ℤ) (h : Regular f e)
     (hpar : sigHi f e % 2 = 0)
     (hlo : 2 ^ (127 - decimalShift e) ≤ oneResidue f e)
@@ -1762,7 +1764,8 @@ theorem one_tie_band_even (f : ℕ) (e : ℤ) (h : Regular f e)
     rcases Nat.eq_or_lt_of_le hlo with heq | hgt
     · exact heq.symm
     · exact (hband hgt).elim
-  -- A truncated cached power refutes the midpoint too, so it is exact here.
+  -- A truncated power-of-ten approximation refutes the midpoint too, so it is
+  -- exact here.
   refine ⟨hmid, ?_⟩
   by_contra hτ
   obtain ⟨hwin, -⟩ := one_windows_truncated e hτ
@@ -1808,7 +1811,7 @@ theorem one_midpoint_separated (f : ℕ) (e : ℤ) (h : Regular f e) :
       hlt | hge
     · exact (hbelow hlt).le
     -- At the midpoint yy declined only for an even `sigHi`, and then the
-    -- cached power is exact, so the gap is exactly half a step.
+    -- power-of-ten approximation is exact, so the gap is exactly half a step.
     · obtain ⟨hres, hτ⟩ := one_tie_band_even f e h
         (one_even_of_not_round_up f e hsh hu1 hge) hge
         ((one_round_half f e hsh).2 hu1)
@@ -2098,18 +2101,18 @@ theorem dec_ten_up (f : ℕ) (e : ℤ) (h : Regular f e)
       exact_mod_cast hbound
     linarith
 
-/-! ## yy's output in the two cases
+/-! ## yy's coarse and fine outputs
 
-Trimmed, yy emits a multiple of ten and `dec_ten_down` and `dec_ten_up` bound
-its distance; untrimmed, it emits `decOne`, whose half-step bound already
-implies that it round-trips, the grid at `decimalExponent e` being no coarser
-than one ULP.
+On the coarse path, yy emits a multiple of ten, and `dec_ten_down` and
+`dec_ten_up` bound its distance. On the fine path, it emits `decOne`, whose
+half-step bound already implies that it round-trips because the grid step at
+`decimalExponent e` is at most one ULP.
 -/
 
-/-- Trimmed, yy emits a multiple of ten that round-trips. Which of the two
-    multiple-of-ten candidates `decTen` denotes is decided by `roundU0`; whether
-    both trimming flags fire is irrelevant. -/
-theorem trimmed_roundtrips (f : ℕ) (e : ℤ) (h : Regular f e)
+/-- On the coarse path, yy emits a multiple of ten that round-trips. Which of
+    the two multiple-of-ten candidates `decTen` denotes is decided by `roundU0`;
+    whether both trim flags fire is irrelevant. -/
+theorem coarse_output_roundtrips (f : ℕ) (e : ℤ) (h : Regular f e)
     (htrim : ((toDecimalCandidates f e).roundD0
       || (toDecimalCandidates f e).roundU0) = true) :
     (toDecimal f e).1 % 10 = 0 ∧
@@ -2133,8 +2136,8 @@ theorem trimmed_roundtrips (f : ℕ) (e : ℤ) (h : Regular f e)
   · rw [hten, hu0]
     simpa using dec_ten_up f e h hu0
 
-/-- Untrimmed, yy emits `decOne`, a nearest value on its own grid. -/
-theorem untrimmed_nearest (f : ℕ) (e : ℤ) (h : Regular f e)
+/-- On the fine path, yy emits `decOne`, a nearest value on its own grid. -/
+theorem fine_output_nearest (f : ℕ) (e : ℤ) (h : Regular f e)
     (htrim : ((toDecimalCandidates f e).roundD0
       || (toDecimalCandidates f e).roundU0) = false) :
     let x := value f e * 10 ^ (-decimalExponent e)
@@ -2149,24 +2152,24 @@ theorem untrimmed_nearest (f : ℕ) (e : ℤ) (h : Regular f e)
 
 /-! ## Completeness of the trim flags
 
-`decOne` lies on yy's unit decimal grid, while the two trim candidates lie on
-the grid one decimal digit coarser. yy trims exactly when a digit could have
-been dropped, that is, when the rounding interval contains a multiple of ten.
-`dec_ten_down` and `dec_ten_up` give one direction; the converses below give the
-other, which is what makes yy's trim flag a decision procedure for the exact
-method's case split.
+`decOne` lies on the fine decimal grid, while the two multiple-of-ten
+candidates lie on the grid one decimal digit coarser. yy trims exactly when a
+digit could have been dropped, that is, when the rounding interval contains a
+multiple of ten. `dec_ten_down` and `dec_ten_up` give one direction; the
+converses below give the other, which is what makes yy's trim decision a
+decision procedure for the exact method's case split.
 
-The rounding interval is narrower than one coarse step, so the two trim
-candidates are the only multiples of ten it can contain, and it is enough to
-recognize those two.
+The rounding interval is narrower than one coarse step, so the two
+multiple-of-ten candidates are the only multiples of ten it can contain, and it
+is enough to recognize those two.
 
 For even `f` every tie branch accepts, so a missing flag leaves the packed
 comparison a whole window unit clear of its boundary, enough to dominate the
-cached-power truncation error. For odd `f` the tie branches reject, so a
+power-of-ten truncation error. For odd `f` the tie branches reject, so a
 missing flag at a packed tie can leave the exact gap within one window unit on
 the rejected side of the boundary. The corresponding inward windows are
 excluded by `trim_gap_separated`. The exceptional `roundU0` tie at `k = 0`
-lies one unit farther out; there the cached power of ten is exact, and
+lies one unit farther out; there the power-of-ten approximation is exact, and
 `trim_gap_num_eq_scale_of_k_zero` settles it directly.
 -/
 
@@ -2246,7 +2249,7 @@ theorem trim_of_coarse_roundtrip (f : ℕ) (e : ℤ) (h : Regular f e) (d : ℕ)
 /-! ## yy refines the exact method
 
 Nothing above is needed beyond `ulp_scaled_bounds` and the three semantic
-obligations `trimmed_roundtrips`, `untrimmed_nearest`, and
+obligations `coarse_output_roundtrips`, `fine_output_nearest`, and
 `trim_of_coarse_roundtrip`. In particular no claim is made that yy's packed
 decisions agree with the exact ones: a packed midpoint need not be an exact
 midpoint, and the trim flags are matched to the existence of an exact coarse
@@ -2261,9 +2264,9 @@ theorem yy_exact_candidate (f : ℕ) (e : ℤ) (h : Regular f e) :
     ExactCandidate f e (decimalExponent e) (toDecimal f e).1 := by
   by_cases htrim : ((toDecimalCandidates f e).roundD0
       || (toDecimalCandidates f e).roundU0) = true
-  · exact Or.inl (trimmed_roundtrips f e h htrim)
+  · exact Or.inl (coarse_output_roundtrips f e h htrim)
   · rw [Bool.not_eq_true] at htrim
-    obtain ⟨hle, heven⟩ := untrimmed_nearest f e h htrim
+    obtain ⟨hle, heven⟩ := fine_output_nearest f e h htrim
     refine Or.inr ⟨fun ⟨c, h10, hc⟩ => ?_, hle, heven⟩
     rw [trim_of_coarse_roundtrip f e h c h10 hc] at htrim
     exact Bool.noConfusion htrim
