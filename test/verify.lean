@@ -1401,10 +1401,9 @@ theorem half_step_iff_scaled_error {cand dist : ℚ} (f : ℕ) (e : ℤ)
   · rw [div_eq_iff (ne_of_gt hpos)]
     constructor <;> intro hq <;> linarith
 
-/-- The grid step at yy's exponent is at most one ULP and strictly greater than
-    one tenth of an ULP. One grid step is `2^(128-h)·den` while half a ULP is
-    `num ≥ 2^127·den`, which gives the first bound; the second is the narrowness
-    certificate of the packed comparison. -/
+/-- One ULP spans `[1, 10)` grid steps at yy's exponent. One grid step is
+    `2^(128-h)·den` while half a ULP is `num ≥ 2^127·den`, which gives the first
+    bound; the second is the narrowness certificate of the packed comparison. -/
 theorem ulp_scaled_bounds (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
     1 ≤ ulp e * 10 ^ (-decimalExponent e) ∧
       ulp e * 10 ^ (-decimalExponent e) < 10 := by
