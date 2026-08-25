@@ -43,7 +43,8 @@ grid bounds,
 and
 
     yy_exact_candidate :
-      ExactCandidate f e (decimalExponent e) (toDecimal f e).1
+      let (d, k) := toDecimal f e
+      ExactCandidate f e k d
 
 ### 2. Semantic obligations of yy
 
@@ -2272,14 +2273,15 @@ candidate, not to any exact comparison.
     the other holds because trimmed output is itself a multiple of ten that
     round-trips. -/
 theorem yy_exact_candidate (f : ℕ) (e : ℤ) (h : Regular f e) :
-    ExactCandidate f e (decimalExponent e) (toDecimal f e).1 := by
-  by_cases htrim : ((toDecimalCandidates f e).roundD0
-      || (toDecimalCandidates f e).roundU0) = true
+    let (d, k) := toDecimal f e
+    ExactCandidate f e k d := by
+  set c := toDecimalCandidates f e
+  by_cases htrim : (c.roundD0 || c.roundU0) = true
   · exact Or.inl (coarse_output_roundtrips f e h htrim)
   · rw [Bool.not_eq_true] at htrim
     obtain ⟨hle, heven⟩ := fine_output_nearest f e h htrim
-    refine Or.inr ⟨fun ⟨c, h10, hc⟩ => ?_, hle, heven⟩
-    rw [trim_of_coarse_roundtrip f e h c h10 hc] at htrim
+    refine Or.inr ⟨fun ⟨d, h10, hd⟩ => ?_, hle, heven⟩
+    rw [trim_of_coarse_roundtrip f e h d h10 hd] at htrim
     exact Bool.noConfusion htrim
 
 /-- yy is correct on regularly spaced positive binary64 values: after removing
