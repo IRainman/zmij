@@ -2255,8 +2255,9 @@ theorem round_u0_of_ten_up_roundtrips (f : ℕ) (e : ℤ) (h : Regular f e)
 theorem trim_of_coarse_roundtrip (f : ℕ) (e : ℤ) (h : Regular f e) (d : ℕ)
     (h10 : d % 10 = 0)
     (hr : Roundtrips f e (d * 10 ^ decimalExponent e)) :
-    ((toDecimalCandidates f e).roundD0
-      || (toDecimalCandidates f e).roundU0) = true := by
+    let c := toDecimalCandidates f e
+    (c.roundD0 || c.roundU0) = true := by
+  intro c
   rw [Bool.or_eq_true]
   rcases coarse_candidate_cases f e h d h10 hr with rfl | rfl
   · exact Or.inl (round_d0_of_ten_down_roundtrips f e h hr)
