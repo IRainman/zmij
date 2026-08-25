@@ -450,8 +450,8 @@ theorem trim_c_eq (f : ℕ) (e : ℤ) (hsh : decimalShift e < 4) :
     rw [sig_lo_eq, hmod, Nat.div_div_eq_div_mul, ← pow_add]
   rw [hhi, hlo, hscaled, div_window]
 
-/-- `sigHi` is the quotient at the unit step. The multiple-of-ten candidate is
-    ten times the quotient at the window step. -/
+/-- `sigHi` is the quotient at the unit step. The multiple-of-ten candidate uses
+    the coarse step, which is ten unit steps. -/
 theorem sig_hi_quotient (f : ℕ) (e : ℤ) (hsh : decimalShift e < 4) :
     sigHi f e = 2 * f * trimSig e / 2 ^ (128 - decimalShift e) := by
   rw [sig_hi_eq, pow_shift_split e 128 (by omega),
@@ -460,7 +460,7 @@ theorem sig_hi_quotient (f : ℕ) (e : ℤ) (hsh : decimalShift e < 4) :
 theorem sig_hi_ten_quotient (f : ℕ) (e : ℤ) (hsh : decimalShift e < 4) :
     sigHi f e - sigHi f e % 10
       = 10 * (2 * f * trimSig e / trimModulus e) := by
-  -- Dividing the unit-step quotient by ten is dividing by the window step.
+  -- Dividing the unit-step quotient by ten is dividing by the coarse step.
   have hdiv : sigHi f e / 10 = 2 * f * trimSig e / trimModulus e := by
     rw [sig_hi_quotient f e hsh, Nat.div_div_eq_div_mul,
       show 2 ^ (128 - decimalShift e) * 10 = trimModulus e from by
@@ -1212,7 +1212,7 @@ theorem trim_gap_num_le_scale (f : ℕ) (e : ℤ) (h : Regular f e)
   have hedge := trim_residue_low_lt_edge f e
   exact (trim_gap_separated f e h).aboveScale ⟨hcon, by omega⟩
 
-/-- The free side of the trim-up bound: the gap can overshoot the window step,
+/-- The free side of the trim-up bound: the gap can overshoot the coarse step,
     but by less than `num`, since the residue stays below the step and
     `num ≥ 2^127·den` absorbs the truncation error. -/
 theorem trim_gap_lt_scale_add (f : ℕ) (e : ℤ) (h : Regular f e) :
@@ -1240,7 +1240,7 @@ In the scale `trimMul` the two multiple-of-ten candidates have scaled errors
 candidate bound `|cand - x| ≤ u/2` is a comparison of `trimGap` with `trimNum`.
 -/
 
-/-- The unit step, cleared. The window step is ten of them. -/
+/-- The unit step, cleared. The coarse step is ten of them. -/
 def trimMul (e : ℤ) : ℕ := 2 ^ (128 - decimalShift e) * trimDen e
 
 /-- The candidate scale factor is positive. -/
@@ -1259,7 +1259,7 @@ theorem trim_two_trunc_le_mul (e : ℤ) (hsh : decimalShift e < 4) :
   rw [trimMul]
   exact Nat.mul_le_mul_right _ (Nat.pow_le_pow_right (by norm_num) (by omega))
 
-/-- Half a grid step, cleared: half the unit-step window times `den`. -/
+/-- Half a grid step, cleared: half a unit step times `den`. -/
 theorem trim_mul_eq_two_half (e : ℤ) (hsh : decimalShift e < 4) :
     trimMul e = 2 * (trimDen e * 2 ^ (127 - decimalShift e)) := by
   rw [trimMul, show (2 : ℕ) ^ (128 - decimalShift e)
@@ -1334,7 +1334,7 @@ theorem scaled_error_of_nat {cand gap : ℕ} (f : ℕ) (e : ℤ)
   linear_combination hcast - hvalue
 
 /-- The trim-down candidate sits exactly `trimGap` below the scaled value: it is
-    the quotient at the window step, which is ten unit steps. -/
+    the quotient at the coarse step, which is ten unit steps. -/
 theorem dec_ten_down_scaled_error (f : ℕ) (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
     (((sigHi f e - sigHi f e % 10 : ℕ) : ℚ)
         - value f e * 10 ^ (-decimalExponent e)) * (trimMul e : ℚ)
@@ -1430,8 +1430,7 @@ theorem ulp_scaled_bounds (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
 `decOne` is `sigHi` rounded to nearest using the discarded word `sigLo`. In
 the scale `trimMul = 2^(128-h)·den`, `sigHi` sits `oneGap` below the scaled
 value and rounding up adds one whole `trimMul`. The `roundU1` test bounds the
-remainder relative to half the window `2^(128-h)`, with only the bits below
-`sigLo` unseen.
+remainder relative to half a unit step, with only the bits below `sigLo` unseen.
 
 `decOne` is never asked to round-trip directly: it is emitted only when nothing
 coarser round-trips, and then the exact method's fine case derives the
@@ -1464,8 +1463,8 @@ theorem sig_lo_eq_residue_div (f : ℕ) (e : ℤ) (hsh : decimalShift e < 4) :
     Nat.mul_div_mul_left _ _ (by positivity)]
 
 /-- What `roundU1` says about the remainder: yy compares the discarded word with
-    half its range, so the test is on the remainder against half the window
-    `2^(128-h)`, blind only to the `2^(64-h)` bits below `sigLo`. -/
+    half its range, so the test is on the remainder against half a unit step,
+    `2^(127-h)`, blind only to the `2^(64-h)` bits below `sigLo`. -/
 theorem one_round_half (f : ℕ) (e : ℤ) (hsh : decimalShift e < 4) :
     ((toDecimalCandidates f e).roundU1 = true →
         2 ^ (127 - decimalShift e) ≤ oneResidue f e) ∧
@@ -1519,8 +1518,8 @@ point is determined by comparing `2 * oneGap` with `trimMul`; equality is the
 exact midpoint case.
 
 Rounding up needs no additional separation: when `roundU1` fires, the packed
-remainder has reached half the window, hence the exact gap has reached at least
-half a step, since power-of-ten truncation only increases it.
+remainder has reached half a unit step, hence the exact gap has reached at
+least half a step, since power-of-ten truncation only increases it.
 
 Rounding down and exact midpoints are subtler. The packed test sees the
 remainder only down to `2^(64-h)`, while the exact gap also contains the
@@ -1550,7 +1549,7 @@ theorem one_gap_lt_mul_add (f : ℕ) (e : ℤ) (h : Regular f e) :
   omega
 
 /-- Rounding up means the gap is at least half a step: the packed test saw the
-    remainder reach half the window, and the truncation error only increases
+    remainder reach half a unit step, and the truncation error only increases
     it. -/
 theorem one_half_step_le_gap (f : ℕ) (e : ℤ) (h : Regular f e)
     (hu1 : (toDecimalCandidates f e).roundU1 = true) :
@@ -1580,14 +1579,14 @@ structure OneMidpointSeparated (f : ℕ) (e : ℤ) : Prop where
 /-! ### Refuting the unit-step windows
 
 Two bands of the remainder are left undecided, both at the midpoint
-`2^(127-h)` of the unit-step window. Just below it the truncation error
-`2·f·τ` can carry the exact gap past half a step while yy rounds down; at and
-just above it yy reads a packed tie and resolves it by the parity of `sigHi`,
-which the exact gap knows nothing about.
+`2^(127-h)` of the unit step. Just below it the truncation error `2·f·τ` can
+carry the exact gap past half a step while yy rounds down; at and just above it
+yy reads a packed tie and resolves it by the parity of `sigHi`, which the exact
+gap knows nothing about.
 
 An odd `sigHi` rounds up, so the tie band is dangerous only for an even one.
 That parity is the next bit of the same product, which the doubled modulus
-`2^(129-h)` sees: the residue stays below one window exactly when `sigHi` is
+`2^(129-h)` sees: the residue stays below one unit step exactly when `sigHi` is
 even. Both bands are windows there, refuted per exponent as `trimWindows` are.
 
 An exact power-of-ten approximation has no truncation error, so the band below
@@ -1599,8 +1598,8 @@ Those exponents refute the band above the midpoint only.
 def oneParityResidue (f : ℕ) (e : ℤ) : ℕ :=
   stepResidue (2 ^ (129 - decimalShift e)) f e
 
-/-- That bit, split off: the doubled residue carries one whole window above the
-    remainder exactly when `sigHi` is odd. -/
+/-- That bit, split off: the doubled residue carries one whole unit step above
+    the remainder exactly when `sigHi` is odd. -/
 theorem one_parity_residue_split (f : ℕ) (e : ℤ) (hsh : decimalShift e < 4) :
     oneParityResidue f e
       = 2 ^ (128 - decimalShift e) * (sigHi f e % 2) + oneResidue f e := by
@@ -1619,8 +1618,8 @@ theorem one_parity_residue_split (f : ℕ) (e : ℤ) (hsh : decimalShift e < 4) 
     (2 ^ (128 - decimalShift e))]
   rw [hhi, hlo]
 
-/-- Once the remainder has reached half the window, `roundU1` can be false only
-    through yy's tie branch, which declines exactly for an even `sigHi`. -/
+/-- Once the remainder has reached half a unit step, `roundU1` can be false
+    only through yy's tie branch, which declines exactly for an even `sigHi`. -/
 theorem one_even_of_not_round_up (f : ℕ) (e : ℤ) (hsh : decimalShift e < 4)
     (hu1 : (toDecimalCandidates f e).roundU1 = false)
     (hres : 2 ^ (127 - decimalShift e) ≤ oneResidue f e) :
@@ -1637,7 +1636,7 @@ theorem one_even_of_not_round_up (f : ℕ) (e : ℤ) (hsh : decimalShift e < 4)
         else decide (2 ^ 63 < sigLo f e) := rfl
   rw [hround] at hu1
   -- The tie branch declines for an even `sigHi`; the other branch cannot
-  -- decline at all, the remainder having passed half the window.
+  -- decline at all, the remainder having passed half a unit step.
   split at hu1 <;> (have := of_decide_eq_false hu1; omega)
 
 /-- The undecided bands as windows on the doubled residue. The truncation error
@@ -1697,7 +1696,7 @@ private theorem one_windows_truncated (e : ℤ)
   exact ⟨.tail _ (.head _), .tail _ (.tail _ (.head _))⟩
 
 /-- Below the midpoint the truncation error cannot reach it: a remainder short
-    of half the window is short of it by more than `2^54`. -/
+    of half a unit step is short of it by more than `2^54`. -/
 theorem one_residue_below_half (f : ℕ) (e : ℤ) (h : Regular f e)
     (hτ : trimNum e % trimDen e ≠ 0)
     (hres : oneResidue f e < 2 ^ (127 - decimalShift e)) :
@@ -1730,8 +1729,9 @@ theorem one_residue_below_half (f : ℕ) (e : ℤ) (h : Regular f e)
       (by rw [hp]; linarith)
 
 /-- In the packed tie band an even `sigHi` occurs only at a genuine midpoint:
-    the remainder is exactly half the window and the power-of-ten approximation
-    is exact, so the exact value is a tie too, and yy resolves it to even. -/
+    the remainder is exactly half a unit step and the power-of-ten
+    approximation is exact, so the exact value is a tie too, and yy resolves it
+    to even. -/
 theorem one_tie_band_even (f : ℕ) (e : ℤ) (h : Regular f e)
     (hpar : sigHi f e % 2 = 0)
     (hlo : 2 ^ (127 - decimalShift e) ≤ oneResidue f e)
@@ -1835,7 +1835,7 @@ theorem one_midpoint_separated (f : ℕ) (e : ℤ) (h : Regular f e) :
 
 /-! ### Nearest at the unit step -/
 
-/-- At a packed midpoint the remainder is exactly half the window, so yy takes
+/-- At a packed midpoint the remainder is exactly half a unit step, so yy takes
     its tie branch and rounds the significand to even. -/
 theorem dec_one_even_of_packed_midpoint (f : ℕ) (e : ℤ)
     (hsh : decimalShift e < 4)
