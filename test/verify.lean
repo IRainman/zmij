@@ -997,7 +997,7 @@ theorem u0_exact_tie_k_zero (f : ℕ) (e : ℤ) (hr : Regular f e)
 theorem u0_err_dropU_k_zero (f : ℕ) (e : ℤ) (hr : Regular f e)
     (hk : decimalExponent e = 0) :
     trimErr f e + trimDropU f e = 0 := by
-  have hsh : exponentShift e < 4 := exponent_shift_lt_four e hr.range
+  have hsh := exponent_shift_lt_four e hr.range
   obtain ⟨hnum, hsig⟩ := trim_power_of_k_zero e hk
   have hunit : trimUnit e ∣ trimSig e := by
     rw [hsig, trimUnit]
@@ -1085,7 +1085,7 @@ theorem trim_mul_eq (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
       rw [← zpow_add₀ (by norm_num : (10 : ℚ) ≠ 0)]; simp
     have halign : (exponentShift e : ℤ) + 1 - pe = e :=
       exponent_shift_align e he
-    have hsh : exponentShift e < 4 := exponent_shift_lt_four e he
+    have hsh := exponent_shift_lt_four e he
     calc (10 : ℚ) ^ (-k) * 2 ^ (128 - pe) * (2 ^ (1 - e) * 10 ^ k)
         = (10 ^ (-k) * 10 ^ k) * (2 ^ (128 - pe) * 2 ^ (1 - e)) := by
           ring
@@ -1228,7 +1228,7 @@ theorem round_d0_iff_gap (f : ℕ) (e : ℤ) (hr : Regular f e) :
     (toDecimalCandidates f e).roundD0 = true
       ↔ if f % 2 = 0 then trimGap f e ≤ trimNum e
         else trimGap f e < trimNum e := by
-  have hsh : exponentShift e < 4 := exponent_shift_lt_four e hr.range
+  have hsh := exponent_shift_lt_four e hr.range
   -- yy's test is `c ≤ p` for even `f` and `c < p` for odd `f`, that is
   -- `c < p + 1` and `c < p + 0`.
   have hflag : (toDecimalCandidates f e).roundD0
@@ -1286,7 +1286,7 @@ theorem round_u0_iff_gap (f : ℕ) (e : ℤ) (hr : Regular f e) :
     (toDecimalCandidates f e).roundU0 = true
       ↔ if f % 2 = 0 then trimScale e ≤ trimGap f e + trimNum e
         else trimScale e < trimGap f e + trimNum e := by
-  have hsh : exponentShift e < 4 := exponent_shift_lt_four e hr.range
+  have hsh := exponent_shift_lt_four e hr.range
   have hflag : (toDecimalCandidates f e).roundU0
       = (if trimResidue f e / trimUnit e + trimSig e / trimUnit e + 1
             = 10 * 2 ^ 60 then decide (f % 2 = 0)
