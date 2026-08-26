@@ -491,6 +491,13 @@ theorem Regular.range {f : ℕ} {e : ℤ} (hr : Regular f e) :
 def decimalExponent (e : ℤ) : ℤ :=
   e * 315_653 / 2 ^ 20
 
+/-- The exponents it reaches over binary64's range, which is what confines the
+    indices an implementation reads the table at below. -/
+theorem decimal_exponent_range (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
+    -324 ≤ decimalExponent e ∧ decimalExponent e ≤ 292 := by
+  unfold decimalExponent
+  omega
+
 /-! ### The power of ten
 
 The table an implementation multiplies by, as a truncated 128-bit significand

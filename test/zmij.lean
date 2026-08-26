@@ -96,12 +96,6 @@ bits, and 9 lets the digit constant be shared with the base-ten multiply. What
 the proof needs from it is only that the shift stays in `[6, 9]`.
 -/
 
-/-- The index `-k-1` of the power of ten Żmij multiplies by: one past the
-    decimal exponent, which is what puts the shorter candidate in the integral
-    part. -/
-def powerIndex (e : ℤ) : ℤ :=
-  -decimalExponent e - 1
-
 /-- Shift chosen to align the binary exponent with the power of ten, including
     Żmij's nine bits of headroom. -/
 def exponentShift (e : ℤ) : ℕ :=
@@ -109,7 +103,8 @@ def exponentShift (e : ℤ) : ℕ :=
 
 /-- The top 128 bits of Żmij's 192-bit product: `⌊f·2^s·p10 / 2^64⌋`. -/
 def scaledSignificand (f : ℕ) (e : ℤ) : ℕ :=
-  f * 2 ^ exponentShift e * power10Significand (powerIndex e) / 2 ^ 64
+  f * 2 ^ exponentShift e * power10Significand (-(decimalExponent e + 1))
+    / 2 ^ 64
 
 /-- The integral part of the scaled value, Żmij's shorter candidate: the product
     with the nine headroom bits and the fraction shifted off. -/
@@ -124,7 +119,8 @@ def fractionalPart (f : ℕ) (e : ℤ) : ℕ :=
     the two comparisons below from strict into non-strict exactly when a tie is
     allowed to round. -/
 def halfUlp (f : ℕ) (e : ℤ) : ℕ :=
-  power10Significand (powerIndex e) / 2 ^ 64 / 2 ^ (10 - exponentShift e)
+  power10Significand (-(decimalExponent e + 1)) / 2 ^ 64
+      / 2 ^ (10 - exponentShift e)
     + (1 - f % 2)
 
 /-- Rounding constant for the derived digit: half of `2^64`, nudged up by six.
@@ -202,16 +198,11 @@ theorem exponent_shift_range (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
     scale the same fixed-point quotient, so once the shift is known not to have
     been clamped this is arithmetic, whatever the decimal exponent is. -/
 theorem exponent_shift_align (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
-    (exponentShift e : ℤ) - 9 - power10Exponent (powerIndex e) = e := by
+    (exponentShift e : ℤ) - 9 - power10Exponent (-(decimalExponent e + 1))
+      = e := by
   have hb := exponent_shift_bounds e (by simpa [Finset.mem_Icc] using he)
   have heq := exponent_shift_eq e
-  unfold power10Exponent powerIndex
-  omega
-
-/-- The power index stays inside the range the normalization check covers. -/
-theorem power_index_range (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
-    -293 ≤ powerIndex e ∧ powerIndex e ≤ 323 := by
-  unfold powerIndex decimalExponent
+  unfold power10Exponent
   omega
 
 /-! ## The cleared quantities
@@ -228,13 +219,13 @@ reads the same quotient one word lower.
 -/
 
 /-- Numerator of the exact power of ten Żmij multiplies by. -/
-def num (e : ℤ) : ℕ := power10Num (powerIndex e)
+def num (e : ℤ) : ℕ := power10Num (-(decimalExponent e + 1))
 
 /-- Its denominator. -/
-def den (e : ℤ) : ℕ := power10Den (powerIndex e)
+def den (e : ℤ) : ℕ := power10Den (-(decimalExponent e + 1))
 
 /-- Its 128-bit truncation, the `p10` of the implementation. -/
-def p10 (e : ℤ) : ℕ := power10Significand (powerIndex e)
+def p10 (e : ℤ) : ℕ := power10Significand (-(decimalExponent e + 1))
 
 theorem den_pos (e : ℤ) : 0 < den e := power10_den_pos _
 
@@ -268,10 +259,9 @@ theorem integral_quotient (f : ℕ) (e : ℤ) (hs : exponentShift e ≤ 9) :
     rw [unit, ← pow_add, ← pow_add, ← pow_add]
     congr 1
     omega
-  rw [integralPart, scaledSignificand, p10, Nat.div_div_eq_div_mul, hsplit,
-    show f * 2 ^ exponentShift e * power10Significand (powerIndex e)
-        = 2 ^ exponentShift e * (f * power10Significand (powerIndex e)) from by
-      ring,
+  rw [integralPart, scaledSignificand, ← p10, Nat.div_div_eq_div_mul, hsplit,
+    show f * 2 ^ exponentShift e * p10 e
+        = 2 ^ exponentShift e * (f * p10 e) from by ring,
     Nat.mul_div_mul_left _ _ (by positivity)]
 
 /-- The fraction is the same quotient read one word lower. -/
@@ -281,10 +271,9 @@ theorem fraction_quotient (f : ℕ) (e : ℤ) (hs : exponentShift e ≤ 9) :
     rw [unit, ← pow_add, ← pow_add]
     congr 1
     omega
-  rw [fractionalPart, scaledSignificand, p10, Nat.div_div_eq_div_mul, hsplit,
-    show f * 2 ^ exponentShift e * power10Significand (powerIndex e)
-        = 2 ^ exponentShift e * (f * power10Significand (powerIndex e)) from by
-      ring,
+  rw [fractionalPart, scaledSignificand, ← p10, Nat.div_div_eq_div_mul, hsplit,
+    show f * 2 ^ exponentShift e * p10 e
+        = 2 ^ exponentShift e * (f * p10 e) from by ring,
     Nat.mul_div_mul_left _ _ (by positivity)]
 
 /-- The integral part and the fraction are the two halves of one quotient. -/
@@ -360,22 +349,24 @@ theorem step_pow (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
 /-- `step` clears the denominator in `power10_exact_ratio`, leaving `num`
     times the binary-decimal scaling factor. -/
 theorem step_eq (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
-    (step e : ℚ) = (num e : ℚ) * (2 ^ (-e) * 10 ^ (-powerIndex e)) := by
-  set pk := powerIndex e
-  set pe := power10Exponent pk
+    (step e : ℚ) = (num e : ℚ) * (2 ^ (-e) * 10 ^ (decimalExponent e + 1)) := by
+  set k := decimalExponent e
+  set pe := power10Exponent (-(k + 1))
   have hd : (0 : ℚ) < (den e : ℚ) := by exact_mod_cast den_pos e
-  have hnum : (10 : ℚ) ^ pk * 2 ^ (128 - pe) * den e = num e := by
+  have hnum : (10 : ℚ) ^ (-(k + 1)) * 2 ^ (128 - pe) * den e = num e := by
     rw [power10_exact_ratio, ← num, ← den, div_mul_cancel₀ _ (ne_of_gt hd)]
   -- The inverse scale turns the power-of-ten factor into `2^(137-s)`, which is
   -- where the shift alignment is spent.
-  have hscale : (10 : ℚ) ^ pk * 2 ^ (128 - pe) * (2 ^ (-e) * 10 ^ (-pk))
+  have hscale : (10 : ℚ) ^ (-(k + 1)) * 2 ^ (128 - pe)
+        * (2 ^ (-e) * 10 ^ (k + 1))
       = 2 ^ (137 - exponentShift e) := by
-    have h10 : (10 : ℚ) ^ pk * 10 ^ (-pk) = 1 := by
+    have h10 : (10 : ℚ) ^ (-(k + 1)) * 10 ^ (k + 1) = 1 := by
       rw [← zpow_add₀ (by norm_num : (10 : ℚ) ≠ 0)]; simp
     have halign : (exponentShift e : ℤ) - 9 - pe = e := exponent_shift_align e he
     have hs := exponent_shift_range e he
-    calc (10 : ℚ) ^ pk * 2 ^ (128 - pe) * (2 ^ (-e) * 10 ^ (-pk))
-        = (10 ^ pk * 10 ^ (-pk)) * (2 ^ (128 - pe) * 2 ^ (-e)) := by ring
+    calc (10 : ℚ) ^ (-(k + 1)) * 2 ^ (128 - pe) * (2 ^ (-e) * 10 ^ (k + 1))
+        = (10 ^ (-(k + 1)) * 10 ^ (k + 1)) * (2 ^ (128 - pe) * 2 ^ (-e)) := by
+          ring
       _ = (2 : ℚ) ^ ((128 - pe) + -e) := by
           rw [h10, one_mul, ← zpow_add₀ (by norm_num : (2 : ℚ) ≠ 0)]
       _ = 2 ^ (137 - exponentShift e) := by
@@ -390,15 +381,16 @@ theorem step_eq (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
     sends it to `num` itself: one ULP on the grid at `k+1` is exactly one
     `num`. -/
 theorem half_ulp_scaled (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
-    ulp e * 10 ^ powerIndex e / 2 * (((2 : ℕ) : ℚ) * (step e : ℚ))
+    ulp e * 10 ^ (-(decimalExponent e + 1)) / 2 * (((2 : ℕ) : ℚ) * (step e : ℚ))
       = ((num e : ℕ) : ℚ) := by
-  have h10 : (10 : ℚ) ^ powerIndex e * 10 ^ (-powerIndex e) = 1 := by
+  set k := decimalExponent e
+  have h10 : (10 : ℚ) ^ (-(k + 1)) * 10 ^ (k + 1) = 1 := by
     rw [← zpow_add₀ (by norm_num : (10 : ℚ) ≠ 0)]; simp
   have h2 : (2 : ℚ) ^ e * 2 ^ (-e) = 1 := by
     rw [← zpow_add₀ (two_ne_zero' ℚ)]; simp
-  calc ulp e * 10 ^ powerIndex e / 2 * (((2 : ℕ) : ℚ) * (step e : ℚ))
+  calc ulp e * 10 ^ (-(k + 1)) / 2 * (((2 : ℕ) : ℚ) * (step e : ℚ))
       = (num e : ℚ) * (2 ^ e * 2 ^ (-e))
-          * (10 ^ powerIndex e * 10 ^ (-powerIndex e)) := by
+          * (10 ^ (-(k + 1)) * 10 ^ (k + 1)) := by
         rw [ulp, step_eq e he]; push_cast; ring
     _ = ((num e : ℕ) : ℚ) := by rw [h10, h2]; ring
 
@@ -406,7 +398,8 @@ theorem half_ulp_scaled (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
     scaled value to the integer `f·num`, so every candidate distance is an
     integer. -/
 theorem value_scaled (f : ℕ) (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
-    value f e * 10 ^ powerIndex e * (step e : ℚ) = ((f * num e : ℤ) : ℚ) := by
+    value f e * 10 ^ (-(decimalExponent e + 1)) * (step e : ℚ)
+      = ((f * num e : ℤ) : ℚ) := by
   have h := half_ulp_scaled e he
   rw [ulp] at h
   push_cast at h ⊢
@@ -422,15 +415,11 @@ theorem roundtrips_iff_dist (f : ℕ) (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971)
     Roundtrips f e (c * 10 ^ (decimalExponent e + 1))
       ↔ if f % 2 = 0 then -(num e : ℤ) ≤ 2 * dist ∧ 2 * dist ≤ num e
         else -(num e : ℤ) < 2 * dist ∧ 2 * dist < num e := by
-  have hgrid : -(decimalExponent e + 1) = powerIndex e := by
-    rw [powerIndex]; ring
   obtain ⟨hle, hlt, -⟩ := scaled_cmp_of_int_eq (c := c) (m := step e) (a := 2)
     (b := num e) (dist := dist)
     (x := value f e * 10 ^ (-(decimalExponent e + 1)))
     (thr := ulp e * 10 ^ (-(decimalExponent e + 1)) / 2)
-    (step_pos e) two_pos
-    (by rw [hgrid]; exact value_scaled f e he)
-    (by rw [hgrid]; exact half_ulp_scaled e he) hc
+    (step_pos e) two_pos (value_scaled f e he) (half_ulp_scaled e he) hc
   refine (roundtrips_iff_scaled f e (decimalExponent e + 1) c).trans ?_
   split_ifs
   · exact hle.trans (by omega)
@@ -570,8 +559,8 @@ theorem err_bounds (f : ℕ) (e : ℤ) (hr : Regular f e) :
 /-- The power of ten is normalized in cleared form too. -/
 theorem num_bounds (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
     2 ^ 127 * den e ≤ num e ∧ num e < 2 ^ 128 * den e :=
-  power10_ratio_normalized (powerIndex e)
-    (by simp only [Finset.mem_Icc]; have := power_index_range e he; omega)
+  power10_ratio_normalized (-(decimalExponent e + 1))
+    (by simp only [Finset.mem_Icc]; have := decimal_exponent_range e he; omega)
 
 /-- A fraction unit is negligible against the power of ten, which is what
     leaves both coarse boundaries well inside the two steps the residue below
@@ -863,8 +852,8 @@ theorem half_bounds (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
     0 < half e ∧ half e < 2 ^ 64 := by
   obtain ⟨hs6, hs9⟩ := exponent_shift_range e he
   obtain ⟨hlo, hhi⟩ :=
-    power10_significand_bounds (powerIndex e)
-      (by have := power_index_range e he; omega)
+    power10_significand_bounds (-(decimalExponent e + 1))
+      (by have := decimal_exponent_range e he; omega)
   have hlo' : (2 : ℕ) ^ 127 ≤ p10 e := hlo
   have hhi' : p10 e < 2 ^ 128 := hhi
   have htwo := two_unit_eq e hs9
@@ -1528,8 +1517,8 @@ theorem num_pos (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) : 0 < num e := by
 
 /-- The grid at `k` is the one at `k+1` scaled by ten. -/
 private theorem grid_pow (e : ℤ) :
-    (10 : ℚ) ^ (-decimalExponent e) = 10 * 10 ^ powerIndex e := by
-  rw [show -decimalExponent e = powerIndex e + 1 from by rw [powerIndex]; ring,
+    (10 : ℚ) ^ (-decimalExponent e) = 10 * 10 ^ (-(decimalExponent e + 1)) := by
+  rw [show -decimalExponent e = -(decimalExponent e + 1) + 1 from by ring,
     zpow_add_one₀ (by norm_num : (10 : ℚ) ≠ 0)]
   ring
 

@@ -259,7 +259,7 @@ theorem trim_sig_nat (e : ℤ) : trimSig e = trimNum e / trimDen e :=
     enumerates. -/
 theorem trim_sig_bounds (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
     2 ^ 127 ≤ trimSig e ∧ trimSig e < 2 ^ 128 :=
-  power10_significand_bounds _ (by unfold decimalExponent; omega)
+  power10_significand_bounds _ (by have := decimal_exponent_range e he; omega)
 
 /-- Modulus of the packed comparison: the window wraps every 10·2^(128-h). -/
 def trimModulus (e : ℤ) : ℕ := 10 * 2 ^ (128 - exponentShift e)
