@@ -3,12 +3,13 @@
 -- Copyright (c) 2025 - present, Victor Zverovich
 -- Distributed under the MIT license (see LICENSE).
 
+import Mathlib.Algebra.Order.Floor.Semifield
 import Mathlib.Tactic
 
 /-! # Exact decimal conversion and certified comparisons
 
-The implementation-independent foundations of verifying shortest decimal
-conversion.
+The foundations of verifying shortest decimal conversion that no one algorithm
+owns.
 
 The first part specifies the problem and states the exact Schubfach-like
 selection rule: prefer a multiple of ten that round-trips, and settle for a
@@ -17,7 +18,13 @@ produces a shortest, correctly rounded decimal for any positive value, given
 only that the decimal grid is no coarser than one ULP and strictly coarser than
 a tenth of one.
 
-The second part relates an implementation's arithmetic to that rule. It works in
+The second part is the vocabulary the implementations share: how binary64 spaces
+the values they convert, which decimal exponent they report, and the normalized
+power-of-ten table they multiply by. It is specific to a format, which the rest
+of this file is not, but it is not specific to an algorithm, which is the line
+that decides what belongs here.
+
+The third part relates an implementation's arithmetic to the rule. It works in
 integers, so `scaled_cmp_of_int_eq` reads a comparison against the exact value
 off an integer identity; and it observes those quantities through comparisons it
 can only afford to make approximately. Away from a decision boundary the loss
@@ -26,10 +33,10 @@ observation is ambiguous, and the
 ambiguity is a Diophantine question about a modular progression, which
 `ModWindows` answers by kernel-checked certificate.
 
-Neither part knows an implementation. The conversion results ask only for bounds
-on the decimal grid, never for a binary format or for the rule that chose the
-grid; the certificate machinery knows only modular arithmetic, and never what a
-residue means.
+The first and third parts know no implementation at all. The conversion results
+ask only for bounds on the decimal grid, never for a binary format or for the
+rule that chose the grid; the certificate machinery knows only modular
+arithmetic, and never what a residue means.
 
 Throughout this file:
 * `f`, `e`: binary significand and exponent, denoting `f·2^e`;
@@ -447,6 +454,130 @@ theorem coarse_roundtrip_adjacent (f : ℕ) (e k : ℤ)
   have h20 : d < c + 20 := by
     exact_mod_cast (show (d : ℚ) < (c : ℚ) + 20 by linarith)
   omega
+
+/-! ## What the implementations share
+
+Nothing above knows an implementation and nothing below knows decimals. Between
+them sits what the implementation proofs have in common: how binary64 spaces the
+values they convert, which decimal exponent they report, and the normalized
+power-of-ten table they multiply by. No one algorithm owns any of it, and
+neither part around it uses any of it.
+-/
+
+/-! ### Regularly spaced values -/
+
+/-- Whether f·2^e is a regularly spaced positive binary64 value: a normal that
+    is not a power of 2, or anything at the minimum exponent, subnormals
+    included, there being no binade below to halve the spacing. -/
+def Regular (f : ℕ) (e : ℤ) : Prop :=
+  (0 < f ∧ f < 2 ^ 53 ∧ (2 ^ 52 < f ∨ e = -1074)) ∧
+  (-1074 ≤ e ∧ e ≤ 971)
+
+/-- A regular value has a positive significand. -/
+theorem Regular.pos {f : ℕ} {e : ℤ} (hr : Regular f e) : 0 < f := hr.1.1
+
+/-- A regular value has a significand below `2^53`. -/
+theorem Regular.sig_lt {f : ℕ} {e : ℤ} (hr : Regular f e) : f < 2 ^ 53 :=
+  hr.1.2.1
+
+/-- A regular value's exponent lies in binary64's range. -/
+theorem Regular.range {f : ℕ} {e : ℤ} (hr : Regular f e) :
+    -1074 ≤ e ∧ e ≤ 971 := hr.2
+
+/-! ### The decimal exponent -/
+
+/-- Approximation of floor(e·log₁₀ 2), the decimal exponent to report for a
+    value with binary exponent `e`. -/
+def decimalExponent (e : ℤ) : ℤ :=
+  e * 315_653 / 2 ^ 20
+
+/-! ### The power of ten
+
+The table an implementation multiplies by, as a truncated 128-bit significand
+with a fixed-point exponent. Which entry it reads is its own business: yy reads
+`10^(-k)` and Żmij `10^(-k-1)`, so the checks below cover both, over every index
+either reaches.
+-/
+
+/-- Binary exponent of 10^k used to normalize its 128-bit significand: the
+    fixed-point form of `⌊k·log₂10⌋ + 1`. Taking a logarithm here instead would
+    make every exponent-wise check below shift a 1077-bit number down to zero
+    one bit at a time. -/
+def power10Exponent (k : ℤ) : ℤ :=
+  k * 217_707 / 2 ^ 16 + 1
+
+/-- Truncated 128-bit normalized binary significand of 10^k. -/
+def power10Significand (k : ℤ) : ℕ :=
+  ⌊(10 : ℚ) ^ k * 2 ^ (128 - power10Exponent k)⌋₊
+
+/-- Numerator of the exact scaled power of ten `10^k·2^(128-pe)`, with negative
+    exponents moved to the denominator. Writing the power as a ratio of naturals
+    turns the truncation into a single `Nat` division, so the exponent-wise
+    checks below can run in the kernel. -/
+def power10Num (k : ℤ) : ℕ :=
+  10 ^ k.toNat * 2 ^ (128 - power10Exponent k).toNat
+
+/-- Denominator of that same power of ten, carrying the negative exponents. -/
+def power10Den (k : ℤ) : ℕ :=
+  10 ^ (-k).toNat * 2 ^ (power10Exponent k - 128).toNat
+
+theorem power10_den_pos (k : ℤ) : 0 < power10Den k := by
+  rw [power10Den]; positivity
+
+/-- The scaled exact power of ten is exactly the rational `num / den`. -/
+theorem power10_exact_ratio (k : ℤ) :
+    (10 : ℚ) ^ k * 2 ^ (128 - power10Exponent k)
+      = (power10Num k : ℚ) / (power10Den k : ℚ) := by
+  set pe := power10Exponent k
+  have hden : (power10Den k : ℚ) ≠ 0 :=
+    Nat.cast_ne_zero.mpr (power10_den_pos k).ne'
+  -- Each pair of exponents in the ratio adds up to the truncated one.
+  have hk : k + ((-k).toNat : ℤ) = (k.toNat : ℤ) := by omega
+  have hpe : 128 - pe + ((pe - 128).toNat : ℤ) = ((128 - pe).toNat : ℤ) := by
+    omega
+  rw [eq_div_iff hden, power10Num, power10Den]
+  push_cast
+  rw [← zpow_natCast (10 : ℚ) (-k).toNat,
+    ← zpow_natCast (2 : ℚ) (pe - 128).toNat,
+    ← zpow_natCast (10 : ℚ) k.toNat, ← zpow_natCast (2 : ℚ) (128 - pe).toNat,
+    show (10 : ℚ) ^ k * 2 ^ (128 - pe) *
+        (10 ^ ((-k).toNat : ℤ) * 2 ^ ((pe - 128).toNat : ℤ))
+      = (10 ^ k * 10 ^ ((-k).toNat : ℤ)) *
+        (2 ^ (128 - pe) * 2 ^ ((pe - 128).toNat : ℤ)) from by ring,
+    ← zpow_add₀ (by norm_num : (10 : ℚ) ≠ 0),
+    ← zpow_add₀ (by norm_num : (2 : ℚ) ≠ 0), hk, hpe]
+
+/-- The truncation is the natural quotient `num / den`, which is what lets the
+    normalization check and the layers an implementation builds on it stay in
+    `Nat`. -/
+theorem power10_significand_nat (k : ℤ) :
+    power10Significand k = power10Num k / power10Den k := by
+  rw [power10Significand, power10_exact_ratio]
+  exact Nat.floor_div_eq_div _ _
+
+/-- The fixed-point exponent does normalize `10^k`, over `[-293, 324]`: the
+    union of the ranges the two indices reach, `[-292, 324]` for `10^(-k)` and
+    `[-293, 323]` for `10^(-k-1)`. Beyond it the approximation eventually drifts
+    from `⌊k·log₂10⌋ + 1`, so this is where the range is pinned down. In ratio
+    form the check is two comparisons of naturals per exponent. -/
+theorem power10_ratio_normalized :
+    ∀ k ∈ Finset.Icc (-293 : ℤ) 324,
+      2 ^ 127 * power10Den k ≤ power10Num k ∧
+        power10Num k < 2 ^ 128 * power10Den k := by
+  -- This enumerates 618 exponents. `+kernel` keeps it out of the elaborator,
+  -- whose recursion and exponentiation guards it would otherwise trip.
+  decide +kernel
+
+/-- Hence the significand is a normalized 128-bit number: its top bit is set,
+    which is what makes `power10Exponent` an exponent for a 128-bit significand,
+    and it still fits in 128 bits. -/
+theorem power10_significand_bounds (k : ℤ) (hk : -293 ≤ k ∧ k ≤ 324) :
+    2 ^ 127 ≤ power10Significand k ∧ power10Significand k < 2 ^ 128 := by
+  obtain ⟨hlo, hhi⟩ :=
+    power10_ratio_normalized k (by simpa [Finset.mem_Icc] using hk)
+  rw [power10_significand_nat]
+  exact ⟨(Nat.le_div_iff_mul_le (power10_den_pos k)).mpr hlo,
+    (Nat.div_lt_iff_lt_mul (power10_den_pos k)).mpr hhi⟩
 
 /-! ## Certified exact comparisons
 

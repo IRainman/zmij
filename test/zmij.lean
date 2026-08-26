@@ -3,7 +3,6 @@
 -- Copyright (c) 2025 - present, Victor Zverovich
 -- Distributed under the MIT license (see LICENSE).
 
-import Mathlib.Algebra.Order.Floor.Semifield
 import core
 
 /-! # Correctness of Żmij
@@ -11,7 +10,9 @@ import core
 `core.lean` proves that an exact, Schubfach-like selection rule produces a
 shortest, correctly rounded decimal whenever the decimal grid step is at most
 one ULP and strictly greater than a tenth of one. This file proves that Żmij's
-regular binary64 path implements that rule.
+regular binary64 path implements that rule. What Żmij shares with any other
+implementation—binary64's spacing, the decimal exponent, the power-of-ten
+table—is defined there too.
 
 Żmij scales by `10^(-k-1)` rather than `10^(-k)`, an optimization by Xiang
 JunBo: one multiply lands the *shorter* 15-16 digit candidate in the integral
@@ -88,110 +89,6 @@ has a grid to be correctly rounded on.
 
 namespace zmij
 
-/-- Whether f·2^e is a regularly spaced positive binary64 value: a normal that
-    is not a power of 2, or anything at the minimum exponent, subnormals
-    included, there being no binade below to halve the spacing. -/
-def Regular (f : ℕ) (e : ℤ) : Prop :=
-  (0 < f ∧ f < 2 ^ 53 ∧ (2 ^ 52 < f ∨ e = -1074)) ∧
-  (-1074 ≤ e ∧ e ≤ 971)
-
-/-- A regular value has a positive significand. -/
-theorem Regular.pos {f : ℕ} {e : ℤ} (hr : Regular f e) : 0 < f := hr.1.1
-
-/-- A regular value has a significand below `2^53`. -/
-theorem Regular.sig_lt {f : ℕ} {e : ℤ} (hr : Regular f e) : f < 2 ^ 53 :=
-  hr.1.2.1
-
-/-- A regular value's exponent lies in binary64's range. -/
-theorem Regular.range {f : ℕ} {e : ℤ} (hr : Regular f e) :
-    -1074 ≤ e ∧ e ≤ 971 := hr.2
-
-/-! ## The power of ten
-
-The table Żmij multiplies by, as a truncated 128-bit significand with a
-fixed-point exponent. Nothing here is specific to Żmij: it is the same
-normalized table yy uses, read at a different index.
--/
-
-/-- Binary exponent of 10^k used to normalize its 128-bit significand: the
-    fixed-point form of `⌊k·log₂10⌋ + 1`. Taking a logarithm here instead would
-    make every exponent-wise check below shift a 1077-bit number down to zero
-    one bit at a time. -/
-def power10Exponent (k : ℤ) : ℤ :=
-  k * 217_707 / 2 ^ 16 + 1
-
-/-- Truncated 128-bit normalized binary significand of 10^k. -/
-def power10Significand (k : ℤ) : ℕ :=
-  ⌊(10 : ℚ) ^ k * 2 ^ (128 - power10Exponent k)⌋₊
-
-/-- Numerator of the exact scaled power of ten `10^k·2^(128-pe)`, with negative
-    exponents moved to the denominator. Writing the power as a ratio of naturals
-    turns the truncation into a single `Nat` division, so the exponent-wise
-    checks below can run in the kernel. -/
-def power10Num (k : ℤ) : ℕ :=
-  10 ^ k.toNat * 2 ^ (128 - power10Exponent k).toNat
-
-/-- Denominator of that same power of ten, carrying the negative exponents. -/
-def power10Den (k : ℤ) : ℕ :=
-  10 ^ (-k).toNat * 2 ^ (power10Exponent k - 128).toNat
-
-theorem power10_den_pos (k : ℤ) : 0 < power10Den k := by
-  rw [power10Den]; positivity
-
-/-- The scaled exact power of ten is exactly the rational `num / den`. -/
-theorem power10_exact_ratio (k : ℤ) :
-    (10 : ℚ) ^ k * 2 ^ (128 - power10Exponent k)
-      = (power10Num k : ℚ) / (power10Den k : ℚ) := by
-  set pe := power10Exponent k
-  have hden : (power10Den k : ℚ) ≠ 0 :=
-    Nat.cast_ne_zero.mpr (power10_den_pos k).ne'
-  -- Each pair of exponents in the ratio adds up to the truncated one.
-  have hk : k + ((-k).toNat : ℤ) = (k.toNat : ℤ) := by omega
-  have hpe : 128 - pe + ((pe - 128).toNat : ℤ) = ((128 - pe).toNat : ℤ) := by
-    omega
-  rw [eq_div_iff hden, power10Num, power10Den]
-  push_cast
-  rw [← zpow_natCast (10 : ℚ) (-k).toNat,
-    ← zpow_natCast (2 : ℚ) (pe - 128).toNat,
-    ← zpow_natCast (10 : ℚ) k.toNat, ← zpow_natCast (2 : ℚ) (128 - pe).toNat,
-    show (10 : ℚ) ^ k * 2 ^ (128 - pe) *
-        (10 ^ ((-k).toNat : ℤ) * 2 ^ ((pe - 128).toNat : ℤ))
-      = (10 ^ k * 10 ^ ((-k).toNat : ℤ)) *
-        (2 ^ (128 - pe) * 2 ^ ((pe - 128).toNat : ℤ)) from by ring,
-    ← zpow_add₀ (by norm_num : (10 : ℚ) ≠ 0),
-    ← zpow_add₀ (by norm_num : (2 : ℚ) ≠ 0), hk, hpe]
-
-/-- The truncation is the natural quotient `num / den`, which is what lets the
-    normalization check and the whole scaling layer stay in `Nat`. -/
-theorem power10_significand_nat (k : ℤ) :
-    power10Significand k = power10Num k / power10Den k := by
-  rw [power10Significand, power10_exact_ratio]
-  exact Nat.floor_div_eq_div _ _
-
-/-- The fixed-point exponent does normalize `10^k`, over the range Żmij's power
-    indices reach. Beyond it the approximation eventually drifts from
-    `⌊k·log₂10⌋ + 1`, so this is where the range is pinned down. In ratio form
-    the check is two comparisons of naturals per exponent. -/
-theorem power10_ratio_normalized :
-    ∀ k ∈ Finset.Icc (-293 : ℤ) 323,
-      2 ^ 127 * power10Den k ≤ power10Num k ∧
-        power10Num k < 2 ^ 128 * power10Den k := by
-  -- This and the checks like it below enumerate up to 2046 exponents.
-  -- `+kernel` keeps them out of the elaborator, whose recursion and
-  -- exponentiation guards they would otherwise trip.
-  decide +kernel
-
-/-- Hence the significand is a normalized 128-bit number: its top bit is set,
-    which is what makes `power10Exponent` an exponent for a 128-bit significand,
-    and it still fits in 128 bits. -/
-theorem power10_significand_bounds (k : ℤ) (hk : -293 ≤ k ∧ k ≤ 323) :
-    2 ^ 127 ≤ power10Significand k ∧ power10Significand k < 2 ^ 128 := by
-  obtain ⟨hlo, hhi⟩ :=
-    power10_ratio_normalized k (by simpa [Finset.mem_Icc] using hk)
-  rw [power10_significand_nat]
-  exact ⟨(Nat.le_div_iff_mul_le (power10_den_pos k)).mpr hlo,
-    (Nat.div_lt_iff_lt_mul (power10_den_pos k)).mpr hhi⟩
-
 /-! ## Żmij's conversion
 
 The algorithm, as Żmij computes it. One 192-bit multiply of the significand by
@@ -204,10 +101,6 @@ Nine is not forced: 3 keeps the shift non-negative, 10 keeps `f·2^s` inside 64
 bits, and 9 lets the digit constant be shared with the base-ten multiply. What
 the proof needs from it is only that the shift stays in `[6, 9]`.
 -/
-
-/-- Approximation of floor(e·log₁₀ 2) used as Żmij's decimal exponent. -/
-def decimalExponent (e : ℤ) : ℤ :=
-  e * 315_653 / 2 ^ 20
 
 /-- The power of ten Żmij multiplies by is `10^K` for this `K`: one past the
     decimal exponent, which is what puts the shorter candidate in the integral
@@ -299,6 +192,9 @@ theorem exponent_shift_bounds :
     ∀ e ∈ Finset.Icc (-1074 : ℤ) 971,
       6 ≤ e + (-(decimalExponent e + 1) * 217_707) / 2 ^ 16 + 10 ∧
         e + (-(decimalExponent e + 1) * 217_707) / 2 ^ 16 + 10 ≤ 9 := by
+  -- This and the two checks like it below enumerate 2046 exponents each.
+  -- `+kernel` keeps them out of the elaborator, whose recursion and
+  -- exponentiation guards they would otherwise trip.
   decide +kernel
 
 /-- Hence the shift, as a natural, is in `[6, 9]`. -/
@@ -368,13 +264,6 @@ def step (e : ℤ) : ℕ := unit e * 2 ^ 64 * den e
 theorem step_pos (e : ℤ) : 0 < step e := by
   rw [step]
   exact Nat.mul_pos (Nat.mul_pos (unit_pos e) (by positivity)) (den_pos e)
-
-/-- A power of two splits into the shift and what is left above it. -/
-theorem pow_shift_split (e : ℤ) (n : ℕ) (hn : exponentShift e ≤ n) :
-    (2 : ℕ) ^ n = 2 ^ exponentShift e * 2 ^ (n - exponentShift e) := by
-  rw [← pow_add]
-  congr 1
-  omega
 
 /-- The integral part is the quotient of the cleared product by one coarse
     step: the implementation's two shifts compose into one division, and the
@@ -688,7 +577,7 @@ theorem err_bounds (f : ℕ) (e : ℤ) (hr : Regular f e) :
 theorem num_bounds (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
     2 ^ 127 * den e ≤ num e ∧ num e < 2 ^ 128 * den e :=
   power10_ratio_normalized (powerIndex e)
-    (by simpa [Finset.mem_Icc] using power_index_range e he)
+    (by simp only [Finset.mem_Icc]; have := power_index_range e he; omega)
 
 /-- A fraction unit is negligible against the power of ten, which is what
     leaves both coarse boundaries well inside the two steps the residue below
@@ -980,7 +869,8 @@ theorem half_bounds (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
     0 < half e ∧ half e < 2 ^ 64 := by
   obtain ⟨hs6, hs9⟩ := exponent_shift_range e he
   obtain ⟨hlo, hhi⟩ :=
-    power10_significand_bounds (powerIndex e) (power_index_range e he)
+    power10_significand_bounds (powerIndex e)
+      (by have := power_index_range e he; omega)
   have hlo' : (2 : ℕ) ^ 127 ≤ p10 e := hlo
   have hhi' : p10 e < 2 ^ 128 := hhi
   have htwo := two_unit_eq e hs9
