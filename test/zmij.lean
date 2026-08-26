@@ -33,17 +33,20 @@ Throughout this file:
 * `d`, `k`: decimal significand and exponent, denoting `d·10^k`;
 * `s`: the shift `exponentShift e`, aligning `f·2^e` with `10^(-k-1)`.
 
-Żmij makes three decisions, and each is an equivalence with a comparison of
+Żmij makes three decisions, whose correctness is captured by comparisons of
 naturals in the cleared scale of `## Żmij's arithmetic model`:
 
     round_down_iff_gap :  roundDown ↔ 2·gap ≤ num
     round_up_iff_gap   :  roundUp   ↔ 2·step ≤ 2·gap + num
     digit_nearest      :  |digitDist| ≤ step
 
-The first two are strict for odd `f` and the third is not, which is each tie
-rule written into its bound: the coarse candidates are ties in the binary
-rounding interval, resolved by the parity of `f`, while a digit is a decimal
-tie, resolved by the parity of the digit itself.
+The first two are equivalences: each coarse flag fires exactly when its
+candidate lands within half a ULP. The third cannot be: a rounded digit is the
+outcome of no comparison. What holds of it is the bound above, that the digit
+is nearest on the grid at `k`, with a tie condition making a digit at the bound
+even. Both tie rules are written into their bounds: the coarse ones are strict
+for odd `f`, resolving a tie in the binary rounding interval, while the digit's
+is not, its tie being on the decimal grid and resolved by the digit itself.
 
 The coarse pair carries a second equivalence, on the other side:
 
@@ -90,10 +93,11 @@ the 128-bit power of ten, keeping the top 128 bits; the integral part and the
 fraction are read out of that product at a fixed bit position, and the three
 decisions are comparisons on those two words.
 
-`extraShift` is the 9 bits of headroom Żmij leaves below the integral part.
-Nine is not forced: 3 keeps the shift non-negative, 10 keeps `f·2^s` inside 64
-bits, and 9 lets the digit constant be shared with the base-ten multiply. What
-the proof needs from it is only that the shift stays in `[6, 9]`.
+The extra shift is the nine bits of headroom Żmij leaves below the integral
+part, which `exponentShift` folds in. Nine is not forced: 3 keeps the shift
+non-negative, 10 keeps `f·2^s` inside 64 bits, and 9 lets the digit constant be
+shared with the base-ten multiply. What the proof needs from it is only that the
+shift stays in `[6, 9]`.
 -/
 
 /-- Shift chosen to align the binary exponent with the power of ten, including
@@ -205,7 +209,15 @@ theorem exponent_shift_align (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
   unfold power10Exponent
   omega
 
-/-! ## The cleared quantities
+/-! ## Żmij's arithmetic model
+
+Żmij's three decisions are comparisons of machine words. What follows rebuilds
+those words as exact naturals: the scale they are read in, what their
+truncations discard, and how that scale relates to the rationals the
+specification is stated over.
+-/
+
+/-! ### The cleared quantities
 
 The power of ten is a ratio `num / den`, and clearing that denominator turns
 every comparison below into one between naturals. Cleared, one step of the grid
@@ -275,13 +287,6 @@ theorem fraction_quotient (f : ℕ) (e : ℤ) (hs : exponentShift e ≤ 9) :
     show f * 2 ^ exponentShift e * p10 e
         = 2 ^ exponentShift e * (f * p10 e) from by ring,
     Nat.mul_div_mul_left _ _ (by positivity)]
-
-/-- The integral part and the fraction are the two halves of one quotient. -/
-theorem integral_add_fraction (f : ℕ) (e : ℤ) (hs : exponentShift e ≤ 9) :
-    integralPart f e * 2 ^ 64 + fractionalPart f e = f * p10 e / unit e := by
-  rw [integral_quotient f e hs, fraction_quotient f e hs,
-    ← Nat.div_div_eq_div_mul]
-  exact Nat.div_add_mod' _ _
 
 /-- The gap from the integral part up to the exact scaled value, cleared: what
     the quotient dropped, plus what the truncated power of ten dropped. -/
@@ -832,7 +837,7 @@ private theorem edge_succ_le (e : ℤ) {a b : ℕ} (h : a < b) :
   calc edge e * a + edge e = edge e * (a + 1) := by ring
     _ ≤ edge e * b := Nat.mul_le_mul_left _ (by omega)
 
-/-- And two units two of them. -/
+/-- And two units are worth two edges. -/
 private theorem edge_two_le (e : ℤ) {a b : ℕ} (h : a + 2 ≤ b) :
     edge e * a + 2 * edge e ≤ edge e * b := by
   calc edge e * a + 2 * edge e = edge e * (a + 2) := by ring
@@ -1061,9 +1066,18 @@ the fraction word also fixes the digit, that leaves eleven possible fraction
 words in all, each an explicit constant. Each one fixes how much of the
 truncation the `+6` would have to have got right, which is a bound on the
 remainder below one fraction unit, and the certificates below say no significand
-meets it. What survives is the exact midpoint at a quarter, where the truncation
-vanishes and the digit is two: that is the tie, and Żmij's special case rounds
-it to even.
+meets it. Of these eleven exceptional fraction words, only the exact midpoint at
+a quarter survives, where the truncation vanishes and the digit is two: that is
+the tie, and Żmij's special case rounds it to even.
+-/
+
+/-! ### The digit error
+
+The digit's distance from the value splits into the fraction word, which the
+digit is computed from, and the remainder the fraction word dropped, which the
+`+6` stands in for. The remainder is what the boundary cases below turn on, so
+it is bounded first: it stays under one fraction unit, and twenty of it under
+twenty-one, the twenty being the ten of the base-ten multiply doubled.
 -/
 
 /-- What the fraction word and the truncation are read off: the cleared product
@@ -1161,6 +1175,15 @@ private theorem res_ge_of_err (f : ℕ) (e : ℤ) (hr : Regular f e) {a : ℕ}
           _ ≤ den e * (20 * (f * p10 e % unit e))
               + 20 * (2 ^ 53 * den e) := by omega
           _ = den e * (20 * (f * p10 e % unit e) + 20 * 2 ^ 53) := by ring
+
+/-! ### Refuting the digit windows
+
+Each of the eleven fraction words that can reach a digit boundary asks the
+truncation to reach a definite distance, and each such demand is a window of
+residues of `f·p10` modulo one coarse step. The generic machinery of
+`ModWindows` refutes every one of those windows over the exponent range, one
+exponent at a time.
+-/
 
 /-- The six fraction words that can reach a digit boundary from below, each with
     how far the truncation would have to reach for it to happen, in fifths of a
@@ -1311,6 +1334,15 @@ private theorem no_digit_high (f : ℕ) (e : ℤ) (hr : Regular f e) {w j : ℕ}
             (if num e % den e = 0 then (1 : ℤ) else 0) with ⟨h, -⟩ | ⟨h, -⟩ <;>
           rw [h] <;> omega)
     (by rw [hres]; omega)
+
+/-! ### Nearest at the digit
+
+What is left is finite arithmetic on the fraction word and the digit it
+produces. The biased quotient bounds how far the two can be out of step;
+reaching either boundary pins the fraction word to an entry of the tables above,
+where the certificates rule it out; and the one exact midpoint Żmij does not
+special-case has an even digit. `digit_nearest` assembles these.
+-/
 
 /-- The biased quotient bounds the offset of twenty times the fraction word from
     the digit boundary below it: the `+6` is worth twelve of those units, so the
