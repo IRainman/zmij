@@ -170,7 +170,7 @@ theorem power10_ratio_normalized :
     ∀ k ∈ Finset.Icc (-292 : ℤ) 324,
       2 ^ 127 * power10Den k ≤ power10Num k ∧
         power10Num k < 2 ^ 128 * power10Den k := by
-  -- This and the three checks like it below enumerate up to 2046 exponents.
+  -- This and the two checks like it below enumerate up to 2046 exponents.
   -- `+kernel` keeps them out of the elaborator, whose recursion and
   -- exponentiation guards they would otherwise trip.
   decide +kernel
@@ -661,14 +661,19 @@ theorem trim_two_edge_lt_num (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
   have hden := trim_den_pos e
   omega
 
-/-! ### Truncated block counts
+/-! ### The cleared quantities
 
-Truncating to blocks of `U` is what the packed comparisons do, so each trim
-bound has to turn a comparison of block counts back into one of the untruncated
-values. The first two facts below do that, non-strictly and strictly, since the
-discarded low bits are worth less than one block; the third says that truncating
-a sum never overshoots it. All three are stated for a generic block size `u` and
-always instantiated with `U`.
+With the denominator cleared, the power of ten splits as `den·p10 + τ = num`
+and the coarse step as `den·N = scale`, and every candidate satisfies one
+identity: scaled back up by `m·den`, the quotient at step `m` plus the gap is
+`2·f·num`. `step_quotient_add_gap` states it for a generic step, and the unit
+and coarse candidates both instantiate it.
+
+The rest are the sizes that identity is used with. The truncation error is
+below `2^54·den`, since `τ < den` and `2·f < 2^54`; one ULP is narrower than
+one coarse step, which is the narrowness certificate cleared; and the gap
+overshoots the coarse step by less than `num`. At `k = 0` the power of ten is
+exact and `τ` vanishes, the one case the arguments below have to separate out.
 -/
 
 theorem trim_unit_pos (e : ℤ) : 0 < trimUnit e := by
@@ -1487,7 +1492,8 @@ gap knows nothing about.
 An odd `sigHi` rounds up, so the tie band is dangerous only for an even one.
 That parity is the next bit of the same product, which the doubled modulus
 `2^(129-h)` sees: the residue stays below one unit step exactly when `sigHi` is
-even. Both bands are windows there, refuted per exponent as `trimWindows` are.
+even. Both bands are windows there, refuted per exponent the way `expWindows`
+refutes the coarse ones.
 
 An exact power-of-ten approximation has no truncation error, so the band below
 the midpoint is harmless and the midpoint is a genuine tie, resolved to even.
