@@ -59,9 +59,9 @@ semantic specification. Consumers read one direction or the other:
 
 ## Dependencies
 
-    yy_correct
+    correct
       ← ulp_scaled_bounds
-      ← yy_exact_candidate
+      ← exact_candidate
           ← coarse_output_roundtrips
           ← fine_output_nearest
           ← trim_of_coarse_roundtrip
@@ -76,6 +76,8 @@ semantic specification. Consumers read one direction or the other:
 yy's exponent one ULP spans between one and ten grid steps, so the fine case has
 a grid to be correctly rounded on.
 -/
+
+namespace yy
 
 /-- Whether f·2^e is a regularly spaced positive binary64 value: a normal that
     is not a power of 2, or anything at the minimum exponent, subnormals
@@ -1907,7 +1909,7 @@ candidate, not to any exact comparison.
     candidate exists. One direction is `trim_of_coarse_roundtrip`; the other
     holds because trimmed output is itself a multiple of ten that
     round-trips. -/
-theorem yy_exact_candidate (f : ℕ) (e : ℤ) (hr : Regular f e) :
+theorem exact_candidate (f : ℕ) (e : ℤ) (hr : Regular f e) :
     let (d, k) := toDecimal f e
     ExactCandidate f e k d := by
   set c := toDecimalCandidates f e
@@ -1922,10 +1924,12 @@ theorem yy_exact_candidate (f : ℕ) (e : ℤ) (hr : Regular f e) :
 /-- yy is correct on regularly spaced positive binary64 values: after removing
     trailing zeros its output is a shortest decimal representation that
     round-trips, and it is correctly rounded on its own decimal grid. -/
-theorem yy_correct (f : ℕ) (e : ℤ) (hr : Regular f e) :
+theorem correct (f : ℕ) (e : ℤ) (hr : Regular f e) :
     let (d, k) := toDecimal f e
     let (d', k') := reduceDecimal d k
     Shortest f e d' k' ∧ CorrectlyRounded f e d' k' := by
   obtain ⟨hfine, hcoarse⟩ := ulp_scaled_bounds e hr.range
   exact exact_candidate_correct f e (decimalExponent e) hr.pos hfine hcoarse
-    (yy_exact_candidate f e hr)
+    (exact_candidate f e hr)
+
+end yy
