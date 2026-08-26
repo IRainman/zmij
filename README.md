@@ -10,6 +10,7 @@ A fast floating-point-to-string conversion library for C and C++
 * Round trip guarantee
 * Shortest decimal representation similar to Python's default output
 * Correct rounding
+* Formally verified shortest conversion for `double`
 * Scientific, fixed, and general formatting with a given precision (like
   `printf`'s `%e`/`%f`/`%g`)
 * Locale-independent output
