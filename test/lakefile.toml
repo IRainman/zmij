@@ -8,4 +8,4 @@ scope = "leanprover-community"
 [[lean_lib]]
 name = "zmij"
 srcDir = "."
-roots = ["core", "yy"]
+roots = ["core", "yy", "zmij"]
