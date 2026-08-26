@@ -15,12 +15,12 @@ implements that rule.
 
 The whole argument is that each of yy's three packed Boolean decisions is an
 exact arithmetic predicate. yy computes them from a truncated power of ten and
-from words it has already dropped bits from, so a decision could in principle
-differ from the exact one; the narrow regions where that could happen are
-discharged by finite modular certificates. Once the three characterizations are
-in hand, the rest is a short assembly into `ExactCandidate`. No claim is made
-that yy's packed comparisons agree with the exact ones case by case—a packed
-midpoint need not be an exact midpoint—only that the output is right.
+from a product whose low bits it has already dropped, so a decision could in
+principle differ from the exact one; the narrow regions where that could happen
+are discharged by finite modular certificates. Once the three characterizations
+are in hand, the rest is a short assembly into `ExactCandidate`. No claim is
+made that yy's packed comparisons agree with the exact ones case by case—a
+packed midpoint need not be an exact midpoint—only that the output is right.
 
 Throughout this file:
 * `f`, `e`: binary significand and exponent, denoting `f·2^e`;
@@ -42,9 +42,9 @@ is a decimal tie, resolved by the parity of the digit being emitted.
 
 `## yy's arithmetic model` is there to prove those three. It supplies the
 quantities they are stated in—`trimGap`, `trimNum`, `trimScale`, `trimMul`,
-`oneGap`—and keeps the rest below them: the packed words, the exact identities
-behind them, the truncation error, bounds on that error, and the `ModWindows`
-certificates closing the regions the bounds leave open.
+`oneGap`—and keeps the rest below them: the packed quantities, the exact
+identities behind them, the truncation error, bounds on that error, and the
+`ModWindows` certificates closing the regions the bounds leave open.
 
 The coarse pair carries a second equivalence, on the other side:
 
@@ -110,11 +110,11 @@ own right and is proved here because it is the same arithmetic.
 
 /-! ### yy's conversion
 
-The truncated power of ten, the words yy computes from it, and the shift that
-aligns the two. `toDecimalCandidates` is the algorithm itself: the three packed
-Booleans and the two candidates they choose between, which is what the whole
-file is about. The alignment lemmas come last because `exponent_shift_align`
-is stated against `power10Exponent`.
+The truncated power of ten, the quantities yy computes from it, and the shift
+that aligns the two. `toDecimalCandidates` is the algorithm itself: the three
+packed Booleans and the two candidates they choose between, which is what the
+whole file is about. The alignment lemmas come last because
+`exponent_shift_align` is stated against `power10Exponent`.
 -/
 
 /-- Binary exponent of 10^k used to normalize its 128-bit significand: the
