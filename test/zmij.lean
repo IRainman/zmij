@@ -31,13 +31,7 @@ yy wrote into a flag Żmij writes into a rounding constant.
 Throughout this file:
 * `f`, `e`: binary significand and exponent, denoting `f·2^e`;
 * `d`, `k`: decimal significand and exponent, denoting `d·10^k`;
-* `K`: the index `-k-1` of the power of ten Żmij multiplies by;
-* `s`: the shift `exponentShift e`, aligning `f·2^e` with `10^K`.
-
-Every name here is `zmij.*`, which is what lets the cleared quantities be called
-`num`, `den`, `gap`, `step` and `unit` instead of spelling the algorithm into
-each one. `yy.lean` names the same three roles `trimNum`, `trimGap` and
-`trimMul`.
+* `s`: the shift `exponentShift e`, aligning `f·2^e` with `10^(-k-1)`.
 
 Żmij makes three decisions, and each is an equivalence with a comparison of
 naturals in the cleared scale of `## Żmij's arithmetic model`:
@@ -102,7 +96,7 @@ bits, and 9 lets the digit constant be shared with the base-ten multiply. What
 the proof needs from it is only that the shift stays in `[6, 9]`.
 -/
 
-/-- The power of ten Żmij multiplies by is `10^K` for this `K`: one past the
+/-- The index `-k-1` of the power of ten Żmij multiplies by: one past the
     decimal exponent, which is what puts the shorter candidate in the integral
     part. -/
 def powerIndex (e : ℤ) : ℤ :=
@@ -173,8 +167,8 @@ def toDecimal (f : ℕ) (e : ℤ) : ℕ × ℤ :=
 
 /-! ### The shift
 
-The shift is `e + pe + 9`, where `pe` is the power-of-ten exponent at `K`, and
-it lands in `[6, 9]`. Both facts are about the two fixed-point constants rather
+The shift is `e + pe + 9`, where `pe` is the exponent of `10^(-k-1)`, and it
+lands in `[6, 9]`. Both facts are about the two fixed-point constants rather
 than about magnitudes, so both are checked over the exponent range.
 -/
 
@@ -367,21 +361,21 @@ theorem step_pow (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
     times the binary-decimal scaling factor. -/
 theorem step_eq (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
     (step e : ℚ) = (num e : ℚ) * (2 ^ (-e) * 10 ^ (-powerIndex e)) := by
-  set K := powerIndex e
-  set pe := power10Exponent K
+  set pk := powerIndex e
+  set pe := power10Exponent pk
   have hd : (0 : ℚ) < (den e : ℚ) := by exact_mod_cast den_pos e
-  have hnum : (10 : ℚ) ^ K * 2 ^ (128 - pe) * den e = num e := by
+  have hnum : (10 : ℚ) ^ pk * 2 ^ (128 - pe) * den e = num e := by
     rw [power10_exact_ratio, ← num, ← den, div_mul_cancel₀ _ (ne_of_gt hd)]
   -- The inverse scale turns the power-of-ten factor into `2^(137-s)`, which is
   -- where the shift alignment is spent.
-  have hscale : (10 : ℚ) ^ K * 2 ^ (128 - pe) * (2 ^ (-e) * 10 ^ (-K))
+  have hscale : (10 : ℚ) ^ pk * 2 ^ (128 - pe) * (2 ^ (-e) * 10 ^ (-pk))
       = 2 ^ (137 - exponentShift e) := by
-    have h10 : (10 : ℚ) ^ K * 10 ^ (-K) = 1 := by
+    have h10 : (10 : ℚ) ^ pk * 10 ^ (-pk) = 1 := by
       rw [← zpow_add₀ (by norm_num : (10 : ℚ) ≠ 0)]; simp
     have halign : (exponentShift e : ℤ) - 9 - pe = e := exponent_shift_align e he
     have hs := exponent_shift_range e he
-    calc (10 : ℚ) ^ K * 2 ^ (128 - pe) * (2 ^ (-e) * 10 ^ (-K))
-        = (10 ^ K * 10 ^ (-K)) * (2 ^ (128 - pe) * 2 ^ (-e)) := by ring
+    calc (10 : ℚ) ^ pk * 2 ^ (128 - pe) * (2 ^ (-e) * 10 ^ (-pk))
+        = (10 ^ pk * 10 ^ (-pk)) * (2 ^ (128 - pe) * 2 ^ (-e)) := by ring
       _ = (2 : ℚ) ^ ((128 - pe) + -e) := by
           rw [h10, one_mul, ← zpow_add₀ (by norm_num : (2 : ℚ) ≠ 0)]
       _ = 2 ^ (137 - exponentShift e) := by
@@ -616,9 +610,9 @@ boundary is `num` and the trim-up boundary `2·step - num`. A violation of eithe
 puts that residue in a window of relative width about `2^-63`, which is the kind
 of question `ModWindows` answers with one multiplier per exponent.
 
-Ties are not rare here and not refutable: `10^K` for `K` in `[-23, -1]` gives a
-scaled ULP with a small denominator, and the boundary is then hit by a whole
-residue class of significands, up to a fifth of them at `K = -1`. What makes
+Ties are not rare here and not refutable: `10^(-k-1)` for `k` in `[0, 22]` gives
+a scaled ULP with a small denominator, and the boundary is then hit by a whole
+residue class of significands, up to a fifth of them at `k = 0`. What makes
 those cases correct is that each is an exact tie, resolved by parity, which is
 exactly what excluding the boundary from the windows says.
 -/
@@ -1504,11 +1498,11 @@ theorem digit_nearest (f : ℕ) (e : ℤ) (hr : Regular f e) :
 
 Everything so far has been stated on the grid at `k+1`, where the coarse
 candidates live, or in cleared integers. The exact method asks for the grid at
-`k`, one power of ten finer: `10^(-k) = 10·10^K`. Two things have to be said
-there. One ULP has to fall between one and ten steps of it, which is what makes
-`k` the right exponent to report and is checked per exponent. And Żmij's output
-has to be read on it: the coarse candidates as multiples of ten, and the fine
-one as the integral part with the digit appended.
+`k`, one power of ten finer: `10^(-k) = 10·10^(-k-1)`. Two things have to be
+said there. One ULP has to fall between one and ten steps of it, which is what
+makes `k` the right exponent to report and is checked per exponent. And Żmij's
+output has to be read on it: the coarse candidates as multiples of ten, and the
+fine one as the integral part with the digit appended.
 -/
 
 /-- The power of ten is normalized against the grid at `k`: cleared, one ULP is
