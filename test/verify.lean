@@ -105,7 +105,14 @@ bounds leave open. The subsections are stages of one proof, not interfaces.
 own right and is proved here because it is the same arithmetic.
 -/
 
-/-! ### The truncated power of ten -/
+/-! ### yy's conversion
+
+The truncated power of ten, the words yy computes from it, and the shift that
+aligns the two. `toDecimalCandidates` is the algorithm itself: the three packed
+Booleans and the two candidates they choose between, which is what the whole
+file is about. The alignment lemmas come last because `exponent_shift_align`
+is stated against `power10Exponent`.
+-/
 
 /-- Binary exponent of 10^k used to normalize its 128-bit significand: the
     fixed-point form of `⌊k·log₂10⌋ + 1`. Taking a logarithm here instead would
@@ -185,8 +192,6 @@ theorem power10_significand_bounds (k : ℤ) (hk : -292 ≤ k ∧ k ≤ 324) :
   rw [power10_significand_nat]
   exact ⟨(Nat.le_div_iff_mul_le (power10_den_pos k)).mpr hlo,
     (Nat.div_lt_iff_lt_mul (power10_den_pos k)).mpr hhi⟩
-
-/-! ### yy's conversion -/
 
 /-- Approximation of floor(e·log₁₀ 2) used as yy's decimal exponent. -/
 def decimalExponent (e : ℤ) : ℤ :=
@@ -278,8 +283,6 @@ def toDecimal (f : ℕ) (e : ℤ) : ℕ × ℤ :=
   let c := toDecimalCandidates f e
   (if c.roundD0 || c.roundU0 then c.decTen else c.decOne, c.k)
 
-/-! ### Exponent alignment -/
-
 /-- The shift used by yy's regular path is less than 4. -/
 theorem exponent_shift_lt_four (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
     exponentShift e < 4 := by
@@ -306,7 +309,7 @@ theorem exponent_shift_align (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
   unfold exponentShift power10Exponent
   omega
 
-/-! ### Packed quantities
+/-! ### The packed quantities
 
 yy's `roundD0` and `roundU0` compare the packed value `c` (the last decimal
 digit of the integral part, followed by the top 60 bits of `sigLo`) with
@@ -319,6 +322,12 @@ one has `c = W / U`, `halfUlp = p10 / U`, `10·2^60 = N / U`, and
 `ten·2^(128-h) + W = 2·f·p10`. Thus the two tests use only the pair
 `(W, p10)` measured in units of `U`, and the boundary analysis becomes exact
 integer arithmetic rather than an error estimate.
+
+This subsection supplies those quantities with the denominator cleared, the
+facts checked about them per exponent, the two bounds the comparisons decide,
+and the sizes the rest of the argument measures against. What each comparison
+discards is defined at the end, and the subsection after this one states the
+comparisons in these quantities exactly.
 -/
 
 /-- Numerator of the exact power of ten `10^(-k)·2^(128-pe)` for the decimal
@@ -457,14 +466,6 @@ theorem sig_hi_ten_quotient (f : ℕ) (e : ℤ) (hsh : exponentShift e < 4) :
   rw [← hdiv]
   omega
 
-/-- The window modulus is a whole number of window units. -/
-theorem trim_modulus_eq (e : ℤ) (hsh : exponentShift e < 4) :
-    trimModulus e = trimUnit e * (10 * 2 ^ 60) := by
-  rw [trimModulus, trimUnit,
-    show 128 - exponentShift e = (68 - exponentShift e) + 60 from by omega,
-    pow_add]
-  ring
-
 /-! ### The bounds the comparisons decide
 
 The two multiple-of-ten candidates are within half a ULP exactly when
@@ -582,9 +583,7 @@ theorem trim_high_bits (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
     2 ^ 54 * (trimNum e % trimDen e) + trimSig e % trimUnit e * trimDen e
       ≤ trimUnit e * trimDen e := (trim_checks e he).2.2
 
-/-! ### The modular formulation
-
-The comparisons that decide those bounds are themselves packed: `roundD0`
+/-! The comparisons that decide those bounds are themselves packed: `roundD0`
 compares `W / U` with `p10 / U`, while `roundU0` compares their sum with
 `N / U`. They see the exact quantities only up to one window unit `U`;
 `round_d0_iff_gap` and `round_u0_iff_gap` recover the exact bound each decides.
@@ -598,49 +597,7 @@ does not fire bounds the exact gap from the other side, again with at most one
 unit of uncertainty. There the relevant margin is the distance from the
 discarded low bits of `p10` to the next window boundary, rather than the low
 bits themselves; this is why `trimChecksHold` certifies both sides of the unit.
-
-Each bound is needed in both directions, so each of the two boundaries
-contributes a window on either side of it; the boundary value itself lies in
-none of them, which is what leaves the exact ties above their room. Soundness
-and completeness for both boundaries therefore reduce to one modular question
-per exponent, of the kind `ModWindows` answers. Writing `num/den` for the exact
-power of ten, the progression is `g = 2·num` modulo `modulus = N·den`, the
-residue is the gap, and any violation forces it into a window of width below
-`den·U`, a relative width of `U/N ≈ 2^(-63.3)`. This is where verify.py counts
-solutions with `floor_sum`; here a refutation certificate reaches the same
-conclusion with one small check per window.
-
-A Nadezhin-style separation proof, as used in Schubfach, was considered but
-still requires a finite Diophantine check over the binary64 significand range.
-The direct modular-window formulation below matches yy more closely and is
-substantially simpler.
 -/
-
-/-- Scaling the window residue by `den` and adding back the truncation error
-    `2·f·τ` preserves the residue modulo `n·den`, provided the sum has not
-    wrapped. -/
-theorem trim_mod_shift (p den τ n f : ℕ)
-    (hlt : den * (2 * f * p % n) + 2 * f * τ < n * den) :
-    2 * (p * den + τ) * f % (n * den)
-      = den * (2 * f * p % n) + 2 * f * τ := by
-  have hsplit := Nat.div_add_mod (2 * f * p) n
-  have hkey : 2 * (p * den + τ) * f
-      = n * den * (2 * f * p / n)
-        + (den * (2 * f * p % n) + 2 * f * τ) := by
-    calc 2 * (p * den + τ) * f = den * (2 * f * p) + 2 * f * τ := by ring
-      _ = den * (n * (2 * f * p / n) + 2 * f * p % n) + 2 * f * τ := by
-          rw [hsplit]
-      _ = n * den * (2 * f * p / n)
-            + (den * (2 * f * p % n) + 2 * f * τ) := by ring
-  rw [hkey, Nat.mul_add_mod, Nat.mod_eq_of_lt hlt]
-
-theorem trim_gap_mod (f : ℕ) (e : ℤ) (hlt : trimGap f e < trimScale e) :
-    2 * trimNum e * f % trimScale e = trimGap f e := by
-  rw [trimGap, stepGap, stepResidue, trim_sig_nat, trimScale] at hlt ⊢
-  rw [show 2 * trimNum e * f
-      = 2 * (trimNum e / trimDen e * trimDen e + trimNum e % trimDen e) * f
-      from by rw [Nat.div_add_mod']]
-  exact trim_mod_shift _ _ _ _ _ hlt
 
 /-- `p10Exact ≥ 2^127`, with the denominator cleared. -/
 theorem trim_num_lower (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
@@ -661,13 +618,10 @@ theorem trim_two_edge_lt_num (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
   have hden := trim_den_pos e
   omega
 
-/-! ### The cleared quantities
-
-With the denominator cleared, the power of ten splits as `den·p10 + τ = num`
-and the coarse step as `den·N = scale`, and every candidate satisfies one
-identity: scaled back up by `m·den`, the quotient at step `m` plus the gap is
-`2·f·num`. `step_quotient_add_gap` states it for a generic step, and the unit
-and coarse candidates both instantiate it.
+/-! With the denominator cleared the power of ten splits as `den·p10 + τ = num`,
+and every candidate satisfies one identity: scaled back up by `m·den`, the
+quotient at step `m` plus the gap is `2·f·num`. `step_quotient_add_gap` states
+it for a generic step, and the unit and coarse candidates both instantiate it.
 
 The rest are the sizes that identity is used with. The truncation error is
 below `2^54·den`, since `τ < den` and `2·f < 2^54`; one ULP is narrower than
@@ -684,10 +638,6 @@ theorem trim_num_split (e : ℤ) :
     trimDen e * trimSig e + trimNum e % trimDen e = trimNum e := by
   rw [trim_sig_nat]; exact Nat.div_add_mod _ _
 
-theorem trim_scale_split (e : ℤ) :
-    trimDen e * trimModulus e = trimScale e := by
-  rw [trimScale]; ring
-
 /-- One ULP of the value is narrower than one step of the coarse decimal grid:
     `2·num < scale`. This depends on the low bits of the truncated power of ten,
     not just its magnitude, so it is checked separately for each exponent. -/
@@ -698,7 +648,8 @@ theorem trim_two_num_lt_scale (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
   have hexp : trimDen e * (2 * trimSig e + 2)
       = 2 * (trimDen e * trimSig e) + 2 * trimDen e := by ring
   have hsplit := trim_num_split e
-  have hscale := trim_scale_split e
+  have hscale : trimDen e * trimModulus e = trimScale e := by
+    rw [trimScale]; ring
   have hmod : trimNum e % trimDen e < trimDen e := Nat.mod_lt _ (trim_den_pos e)
   omega
 
@@ -752,8 +703,6 @@ theorem trim_gap_lt_scale_add (f : ℕ) (e : ℤ) (hr : Regular f e) :
   rw [trim_gap_eq]
   omega
 
-/-! ### What the comparisons discard -/
-
 /-- What the trim-down comparison throws away, with the denominator cleared: the
     bits of `p10` below the window unit, plus the remainder `τ` that truncating
     the power of ten dropped in the first place. -/
@@ -774,7 +723,17 @@ private theorem sum_split (den u w p : ℕ) :
         rw [Nat.div_add_mod, Nat.div_add_mod]
     _ = den * (w % u) + den * (p % u) + u * den * (w / u + p / u) := by ring
 
-/-! ### The comparisons as exact identities -/
+/-! ### The comparisons and their error
+
+Each packed comparison is now an exact identity in the quantities above, off
+the boundary it decides by exactly the bits it discarded: `packed_iff` for the
+trim-down test, `trim_packed_sum` for the trim-up one. The three bounds after
+them say how far those bits can move a decision. The truncation error never
+exceeds what the trim-down comparison discards; that in turn is less than the
+error plus one window edge; and the trim-up comparison, which truncates the
+residue as well, discards less than two edges. What survives is a narrow window
+at either boundary.
+-/
 
 /-- The packed boundary `n` window units above `p10`, scaled: it differs from
     the exact boundary `num` by exactly the discarded bits. -/
@@ -822,13 +781,14 @@ theorem trim_packed_sum (f : ℕ) (e : ℤ) :
   rw [trimDropU, trimDrop, trimEdge]
   omega
 
-/-- The coarse step is `10·2^60` window edges, the constant yy compares to. -/
+/-- The coarse step is `10·2^60` window edges, the constant yy compares to: the
+    modulus is that many window units. -/
 theorem trim_scale_eq_edge (e : ℤ) (hsh : exponentShift e < 4) :
     trimScale e = trimEdge e * (10 * 2 ^ 60) := by
-  rw [trimScale, trimEdge, trim_modulus_eq e hsh]
+  rw [trimScale, trimEdge, trimModulus, trimUnit,
+    show 128 - exponentShift e = (68 - exponentShift e) + 60 from by omega,
+    pow_add]
   ring
-
-/-! ### How far they can be wrong -/
 
 /-- The truncation error never exceeds the bits the trim-down comparison
     discards: that is what `trim_low_bits` certifies, per exponent. -/
@@ -872,13 +832,55 @@ theorem trim_err_dropU_lt (f : ℕ) (e : ℤ) (hr : Regular f e) :
   rw [trimDropU, trimDrop, trimEdge]
   omega
 
-/-! ### Refuting the exceptional windows
+/-! ### Refuting the exceptional trim windows
 
 Everything above is analytic. What is left is a band of width one window edge on
 either side of each boundary, minus the boundary itself; the certificates say
 those bands are empty. The two boundaries share one modular problem, since both
 ask where `2·num·f mod scale` can land.
+
+Each bound is needed in both directions, so each of the two boundaries
+contributes a window on either side of it; the boundary value itself lies in
+none of them, which is what leaves the exact ties above their room. Soundness
+and completeness for both boundaries therefore reduce to one modular question
+per exponent, of the kind `ModWindows` answers. Writing `num/den` for the exact
+power of ten, the progression is `g = 2·num` modulo `modulus = N·den`, the
+residue is the gap, and any violation forces it into a window of width below
+`den·U`, a relative width of `U/N ≈ 2^(-63.3)`. This is where verify.py counts
+solutions with `floor_sum`; here a refutation certificate reaches the same
+conclusion with one small check per window.
+
+A Nadezhin-style separation proof, as used in Schubfach, was considered but
+still requires a finite Diophantine check over the binary64 significand range.
+The direct modular-window formulation below matches yy more closely and is
+substantially simpler.
 -/
+
+/-- Scaling the window residue by `den` and adding back the truncation error
+    `2·f·τ` preserves the residue modulo `n·den`, provided the sum has not
+    wrapped. -/
+theorem trim_mod_shift (p den τ n f : ℕ)
+    (hlt : den * (2 * f * p % n) + 2 * f * τ < n * den) :
+    2 * (p * den + τ) * f % (n * den)
+      = den * (2 * f * p % n) + 2 * f * τ := by
+  have hsplit := Nat.div_add_mod (2 * f * p) n
+  have hkey : 2 * (p * den + τ) * f
+      = n * den * (2 * f * p / n)
+        + (den * (2 * f * p % n) + 2 * f * τ) := by
+    calc 2 * (p * den + τ) * f = den * (2 * f * p) + 2 * f * τ := by ring
+      _ = den * (n * (2 * f * p / n) + 2 * f * p % n) + 2 * f * τ := by
+          rw [hsplit]
+      _ = n * den * (2 * f * p / n)
+            + (den * (2 * f * p % n) + 2 * f * τ) := by ring
+  rw [hkey, Nat.mul_add_mod, Nat.mod_eq_of_lt hlt]
+
+theorem trim_gap_mod (f : ℕ) (e : ℤ) (hlt : trimGap f e < trimScale e) :
+    2 * trimNum e * f % trimScale e = trimGap f e := by
+  rw [trimGap, stepGap, stepResidue, trim_sig_nat, trimScale] at hlt ⊢
+  rw [show 2 * trimNum e * f
+      = 2 * (trimNum e / trimDen e * trimDen e + trimNum e % trimDen e) * f
+      from by rw [Nat.div_add_mod']]
+  exact trim_mod_shift _ _ _ _ _ hlt
 
 /-- The gaps the error bounds cannot decide: within one window edge of `num` or
     of `scale - num`, the two boundaries themselves excluded, plus the exact tie
@@ -1021,7 +1023,7 @@ theorem u0_tie_k_zero (f : ℕ) (e : ℤ) (hr : Regular f e)
   · have := hr.pos; omega
   · exact u0_exact_tie_k_zero f e hr h htie
 
-/-! ### Crossing into ℚ
+/-! ### Exact scaling
 
 Everything above is integer arithmetic and everything below is a claim about
 the exact value; `scaled_cmp_of_int_eq` is the one crossing, and it asks for
@@ -1364,8 +1366,9 @@ remainder relative to half a unit step, with only the bits below `sigLo` unseen.
 `decOne` is never asked to round-trip directly: it is emitted only when nothing
 coarser round-trips, and then the exact method's fine case derives the
 round-trip from the half-step bound, the grid at `decimalExponent e` being no
-coarser than one ULP. So the only obligation here is that bound, which is a
-comparison of `2·oneGap` with `trimMul`.
+coarser than one ULP. So the only obligation here is that bound, a comparison
+of `2·oneGap` with `trimMul` in which a midpoint goes up only from an odd
+`sigHi`. That is one bound per parity, which is what `round_u1_iff_gap` states.
 -/
 
 /-- The residue at the unit step: `sigHi·2^(128-h) + oneResidue` is the
@@ -1376,12 +1379,6 @@ def oneResidue (f : ℕ) (e : ℤ) : ℕ :=
 /-- The gap at the unit step, the distance from `sigHi` to the scaled value once
     the denominator is cleared. -/
 def oneGap (f : ℕ) (e : ℤ) : ℕ := stepGap (2 ^ (128 - exponentShift e)) f e
-
-/-- `sigHi` scaled up, plus the gap, is the scaled value `2·f·num`. -/
-theorem sig_hi_add_one_gap (f : ℕ) (e : ℤ) (hsh : exponentShift e < 4) :
-    sigHi f e * trimMul e + oneGap f e = 2 * f * trimNum e := by
-  rw [sig_hi_quotient f e hsh]
-  exact step_quotient_add_gap _ f e
 
 /-- `sigLo` is the unit-step remainder with its low `64 - h` bits discarded, so
     the packed test sees the remainder only in units of `2^(64-h)`. -/
@@ -1434,20 +1431,15 @@ theorem one_round_half (f : ℕ) (e : ℤ) (hsh : exponentShift e < 4) :
     simp only [decide_eq_true_eq]
     split_ifs <;> omega
 
-/-- `sigHi` sits exactly `oneGap` below the scaled value. -/
+/-- `sigHi` sits exactly `oneGap` below the scaled value: `step_quotient_add_gap`
+    at the unit step. -/
 theorem sig_hi_scaled (f : ℕ) (e : ℤ) (hsh : exponentShift e < 4) :
     (sigHi f e : ℤ) * trimMul e + oneGap f e = 2 * f * trimNum e := by
-  exact_mod_cast sig_hi_add_one_gap f e hsh
+  have h : sigHi f e * trimMul e + oneGap f e = 2 * f * trimNum e := by
+    rw [sig_hi_quotient f e hsh]; exact step_quotient_add_gap _ f e
+  exact_mod_cast h
 
-/-! ### The gap at the unit step
-
-On the grid at `decimalExponent e`, one decimal step is one `trimMul`.
-`sigHi` lies `oneGap` below the scaled value, so rounding to the nearest grid
-point compares `2 * oneGap` with `trimMul`, and a midpoint goes up only from an
-odd `sigHi`. That is one bound per parity, which is what `round_u1_iff_gap`
-states and the only thing the fine path needs.
-
-Rounding up needs no additional separation: when `roundU1` fires, the packed
+/-! Rounding up needs no additional separation: when `roundU1` fires, the packed
 remainder has reached half a unit step, hence the exact gap has reached at
 least half a step, since power-of-ten truncation only increases it.
 
