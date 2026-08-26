@@ -601,8 +601,11 @@ sends the scaled value to an integer `t`. A candidate `c` then sits at a signed
 integer distance `dist` from it, fixed by `c·m + dist = t`, and a threshold `thr`
 worth `b` over `a` copies of `m` is met exactly when `a·dist` lies in `[-b, b]`.
 
-These two are the whole crossing into `ℚ`. Below them an implementation states
-one identity per candidate and reasons in `ℤ`; above them nothing mentions the
+The same scale answers the other question the method asks, how many grid steps
+one ULP spans, off an identity of the same shape.
+
+These are the whole crossing into `ℚ`. Below them an implementation states one
+identity per candidate and reasons in `ℤ`; above them nothing mentions the
 scale. The interval form is deliberate: the conclusions are what `omega` reads.
 -/
 
@@ -639,6 +642,18 @@ theorem scaled_cmp_of_int_eq {c m a b : ℕ} {t dist : ℤ} {x thr : ℚ}
     constructor <;> intro h <;> exact_mod_cast h
   · rw [← mul_left_inj' (ne_of_gt hp), hthr, habs, abs_eq (by positivity)]
     constructor <;> intro h <;> exact_mod_cast h
+
+/-- The two bounds on the decimal grid that `exact_candidate_correct` asks for,
+    read off an integer identity. The scale `m` sends `u`, one ULP measured in
+    grid steps, to the integer `t`, and `u` then spans between one and ten steps
+    as soon as `t` lies between `m` and `10·m`. -/
+theorem ulp_steps_of_int_eq {m t : ℕ} {u : ℚ} (hm : 0 < m) (hu : u * m = t)
+    (hlo : m ≤ t) (hhi : t < 10 * m) : 1 ≤ u ∧ u < 10 := by
+  have hmq : (0 : ℚ) < m := by exact_mod_cast hm
+  refine ⟨(mul_le_mul_iff_of_pos_right hmq).mp ?_,
+    (mul_lt_mul_iff_of_pos_right hmq).mp ?_⟩
+  · rw [one_mul, hu]; exact_mod_cast hlo
+  · rw [hu]; exact_mod_cast hhi
 
 /-! ### Stability away from a boundary -/
 

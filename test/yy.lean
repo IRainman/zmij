@@ -1087,25 +1087,17 @@ theorem ulp_scaled_bounds (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
     1 ≤ ulp e * 10 ^ (-decimalExponent e) ∧
       ulp e * 10 ^ (-decimalExponent e) < 10 := by
   have hsh := exponent_shift_lt_four e he
-  have hpos : (0 : ℚ) < (trimMul e : ℚ) := by exact_mod_cast trim_mul_pos e
-  have hstep : (ulp e * 10 ^ (-decimalExponent e)) * (trimMul e : ℚ)
-      = 2 * (trimNum e : ℚ) := by
-    linear_combination 2 * trim_mul_half_ulp e he
-  have hlow : (trimMul e : ℚ) ≤ 2 * (trimNum e : ℚ) := by
+  have hlow : trimMul e ≤ 2 * trimNum e := by
     have h1 : trimMul e ≤ 2 ^ 128 * trimDen e := by
       rw [trimMul]
       exact Nat.mul_le_mul_right _
         (Nat.pow_le_pow_right (by norm_num) (by omega))
     have h2 := trim_num_lower e he
-    exact_mod_cast (show trimMul e ≤ 2 * trimNum e by omega)
-  have hhigh : 2 * (trimNum e : ℚ) < 10 * (trimMul e : ℚ) := by
-    have hn : 2 * trimNum e < trimScale e := trim_two_num_lt_scale e he
-    rw [trim_scale_eq_ten_mul] at hn
-    exact_mod_cast hn
-  refine ⟨(mul_le_mul_iff_of_pos_right hpos).mp ?_,
-    (mul_lt_mul_iff_of_pos_right hpos).mp ?_⟩
-  · rw [one_mul, hstep]; exact hlow
-  · rw [hstep]; exact hhigh
+    omega
+  have hhigh := trim_two_num_lt_scale e he
+  rw [trim_scale_eq_ten_mul] at hhigh
+  exact ulp_steps_of_int_eq (t := 2 * trimNum e) (trim_mul_pos e)
+    (by push_cast; linear_combination 2 * trim_mul_half_ulp e he) hlow hhigh
 
 /-! ## The coarse decisions
 

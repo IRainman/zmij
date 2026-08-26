@@ -1562,19 +1562,11 @@ theorem half_ulp_grid (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
 theorem ulp_scaled_bounds (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
     1 ≤ ulp e * 10 ^ (-decimalExponent e)
       ∧ ulp e * 10 ^ (-decimalExponent e) < 10 := by
-  have hpos : (0 : ℚ) < (step e : ℚ) := by exact_mod_cast step_pos e
-  have hstep : ulp e * 10 ^ (-decimalExponent e) * (step e : ℚ)
-      = 10 * (num e : ℚ) := by
-    have h := half_ulp_grid e he
-    push_cast at h
-    linear_combination 2 * h
-  obtain ⟨hhigh, hlow⟩ := grid_bounds e he
-  refine ⟨(mul_le_mul_iff_of_pos_right hpos).mp ?_,
-    (mul_lt_mul_iff_of_pos_right hpos).mp ?_⟩
-  · rw [one_mul, hstep]
-    exact_mod_cast hlow
-  · rw [hstep]
-    exact_mod_cast (by omega : 10 * num e < 10 * step e)
+  obtain ⟨hnum, hstep⟩ := grid_bounds e he
+  refine ulp_steps_of_int_eq (t := 10 * num e) (step_pos e) ?_ hstep (by omega)
+  have h := half_ulp_grid e he
+  push_cast at h ⊢
+  linear_combination 2 * h
 
 /-- Żmij's significand: the integral part on the grid at `k`, with the digit
     appended unless a coarse candidate was taken. -/
