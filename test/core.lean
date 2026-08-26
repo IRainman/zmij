@@ -788,6 +788,43 @@ theorem ModWindows.not_hit (w : ModWindows) (f : ℕ) (hmodulus : 0 < w.modulus)
       (by exact_mod_cast hf0) (by exact_mod_cast hf1) hyz hlo hhi
   exact window_gap_absurd (by exact_mod_cast hmodulus) hb0 hb1 hgap0 hgap1
 
+/-! ### The significand box
+
+Nothing above knows what the significands are. Every implementation asks its
+question over the same ones, `Regular` being all it knows about `f`, so the box
+and the two bounds a certificate needs of it belong here rather than in each
+implementation.
+-/
+
+/-- Only the minimum exponent carries significands below `2^52`, and the
+    certificates need the smaller box everywhere else. -/
+def regularWindows (g modulus : ℕ) (e : ℤ) (windows : List (ℤ × ℤ)) :
+    ModWindows where
+  g := g
+  modulus := modulus
+  f0 := if e = -1074 then 1 else 2 ^ 52 + 1
+  f1 := 2 ^ 53 - 1
+  windows := windows
+
+/-- `not_hit` over that box: `Regular` discharges the significand bounds, so an
+    implementation supplies only its modulus being positive and its quantity
+    being the residue. -/
+theorem regular_not_hit {g modulus : ℕ} {e : ℤ} {windows : List (ℤ × ℤ)}
+    {q lo hi : ℤ} {y : ℕ} (f : ℕ) (hr : Regular f e) (hmodulus : 0 < modulus)
+    (hcert : (regularWindows g modulus e windows).refutedBy q = true)
+    (hmem : (lo, hi) ∈ windows) (hy : y = g * f % modulus)
+    (hlo : lo ≤ (y : ℤ)) (hhi : (y : ℤ) ≤ hi) :
+    False := by
+  refine (regularWindows g modulus e windows).not_hit f hmodulus hcert hmem
+    ?_ ?_ hy hlo hhi <;> simp only [regularWindows]
+  · split_ifs with hmin
+    · exact hr.pos
+    · rcases hr.1.2.2 with h | h
+      · omega
+      · exact absurd h hmin
+  · have := hr.sig_lt
+    omega
+
 /-! ### Certificate search
 
 Nothing below is trusted. `ModWindows.search` runs during elaboration, outside

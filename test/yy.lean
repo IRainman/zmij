@@ -792,12 +792,8 @@ theorem trim_gap_mod (f : ℕ) (e : ℤ) (hlt : trimGap f e < trimScale e) :
     of `scale - num`, the two boundaries themselves excluded, plus the exact tie
     `scale - num` wherever the power of ten is exact and `k` is not zero, which
     no significand can reach either. -/
-private def expWindows (e : ℤ) : ModWindows where
-  g := 2 * trimNum e
-  modulus := trimScale e
-  f0 := 1
-  f1 := 2 ^ 53 - 1
-  windows :=
+private def expWindows (e : ℤ) : ModWindows :=
+  regularWindows (2 * trimNum e) (trimScale e) e <|
     let num : ℤ := trimNum e
     let edge : ℤ := trimEdge e
     let scale : ℤ := trimScale e
@@ -824,14 +820,11 @@ private theorem exp_no_window_hit {lo hi q : ℤ} (f : ℕ) (e : ℤ)
     (hmem : (lo, hi) ∈ (expWindows e).windows)
     (hwrap : trimGap f e < trimScale e)
     (hlo : lo ≤ (trimGap f e : ℤ)) (hhi : (trimGap f e : ℤ) ≤ hi) :
-    False := by
-  obtain ⟨⟨hf_pos, hf_hi, -⟩, -⟩ := hr
-  refine (expWindows e).not_hit f ?_ hcert hmem ?_ ?_
-    (trim_gap_mod f e hwrap).symm hlo hhi <;> simp only [expWindows]
-  · rw [trimScale, trimModulus]
-    exact Nat.mul_pos (by positivity) (trim_den_pos e)
-  · omega
-  · omega
+    False :=
+  regular_not_hit f hr
+    (by rw [trimScale, trimModulus]
+        exact Nat.mul_pos (by positivity) (trim_den_pos e))
+    hcert hmem (trim_gap_mod f e hwrap).symm hlo hhi
 
 /-- Either the gap sits exactly on a boundary, a genuine exact tie, or it is
     outside the windows either side of it, where the packed comparison cannot be
@@ -864,7 +857,8 @@ theorem d0_gap_tie_or_far (f : ℕ) (e : ℤ) (hr : Regular f e) :
   have hnarrow := trim_two_num_lt_scale e hr.range
   have := gap_tie_or_far (b := (trimNum e : ℤ))
     (hi := (trimNum e : ℤ) + trimEdge e) f e hr (by omega)
-    (by simp [expWindows]) (by simp [expWindows])
+    (by simp [expWindows, regularWindows])
+    (by simp [expWindows, regularWindows])
   omega
 
 /-- The trim-up dichotomy, the same statement about the boundary `scale - num`,
@@ -877,7 +871,8 @@ theorem u0_sum_tie_or_far (f : ℕ) (e : ℤ) (hr : Regular f e) :
   have hnarrow := trim_two_num_lt_scale e hr.range
   have := gap_tie_or_far (b := (trimScale e : ℤ) - trimNum e)
     (hi := (trimScale e : ℤ) - trimNum e + trimEdge e - 1) f e hr (by omega)
-    (by simp [expWindows]) (by simp [expWindows])
+    (by simp [expWindows, regularWindows])
+    (by simp [expWindows, regularWindows])
   omega
 
 /-- An exact tie in the trim-up comparison needs `k = 0` when the power of ten
@@ -1417,12 +1412,8 @@ theorem one_parity_residue_split (f : ℕ) (e : ℤ) (hsh : exponentShift e < 4)
 
 /-- The undecided bands as windows on the doubled residue. The truncation error
     is below `2^54·den`, so `2^54` bounds its reach in remainder units. -/
-private def oneWindows (e : ℤ) : ModWindows where
-  g := 2 * trimSig e
-  modulus := 2 ^ (129 - exponentShift e)
-  f0 := 1
-  f1 := 2 ^ 53 - 1
-  windows :=
+private def oneWindows (e : ℤ) : ModWindows :=
+  regularWindows (2 * trimSig e) (2 ^ (129 - exponentShift e)) e <|
     let half : ℤ := 2 ^ (127 - exponentShift e)
     let band : ℤ := 2 ^ (64 - exponentShift e)
     let w : ℤ := 2 ^ (128 - exponentShift e)
@@ -1450,14 +1441,9 @@ private theorem one_no_window_hit {lo hi q : ℤ} (f : ℕ) (e : ℤ)
     (hmem : (lo, hi) ∈ (oneWindows e).windows)
     (hlo : lo ≤ (oneParityResidue f e : ℤ))
     (hhi : (oneParityResidue f e : ℤ) ≤ hi) :
-    False := by
-  obtain ⟨⟨hf_pos, hf_hi, -⟩, -⟩ := hr
-  refine (oneWindows e).not_hit f ?_ hcert hmem ?_ ?_ ?_ hlo hhi <;>
-    simp only [oneWindows]
-  · positivity
-  · omega
-  · omega
-  · rw [oneParityResidue, stepResidue, Nat.mul_right_comm]
+    False :=
+  regular_not_hit f hr (by positivity) hcert hmem
+    (by rw [oneParityResidue, stepResidue, Nat.mul_right_comm]) hlo hhi
 
 /-- A truncated power-of-ten approximation adds the midpoint and the truncation
     error's reach below it, one for each parity of `sigHi`. -/
@@ -1468,7 +1454,7 @@ private theorem one_windows_truncated (e : ℤ)
       ((2 : ℤ) ^ (128 - exponentShift e) + 2 ^ (127 - exponentShift e) - 2 ^ 54,
           (2 : ℤ) ^ (128 - exponentShift e) + 2 ^ (127 - exponentShift e) - 1)
         ∈ (oneWindows e).windows := by
-  simp only [oneWindows, ite_eq_right hτ]
+  simp only [oneWindows, regularWindows, ite_eq_right hτ]
   exact ⟨.tail _ (.head _), .tail _ (.tail _ (.head _))⟩
 
 /-- Below the midpoint the truncation error cannot reach it: a remainder short

@@ -262,43 +262,52 @@ theorem step_pos (e : ℤ) : 0 < step e := by
   rw [step]
   exact Nat.mul_pos (Nat.mul_pos (unit_pos e) (by positivity)) (den_pos e)
 
-/-- The integral part is the quotient of the cleared product by one coarse
-    step: the implementation's two shifts compose into one division, and the
-    alignment shift divides out of both sides of it. -/
-theorem integral_quotient (f : ℕ) (e : ℤ) (hs : exponentShift e ≤ 9) :
-    integralPart f e = f * p10 e / (unit e * 2 ^ 64) := by
-  have hsplit : (2 : ℕ) ^ 64 * 2 ^ 73 = 2 ^ exponentShift e * (unit e * 2 ^ 64) := by
-    rw [unit, ← pow_add, ← pow_add, ← pow_add]
-    congr 1
-    omega
-  rw [integralPart, scaledSignificand, ← p10, Nat.div_div_eq_div_mul, hsplit,
+/-- Both readouts are one division of the cleared product, by whatever the
+    implementation's two shifts compose into: the alignment shift divides out of
+    both sides of it. -/
+private theorem scaled_div (f : ℕ) (e : ℤ) {n m : ℕ}
+    (h : (2 : ℕ) ^ 64 * 2 ^ n = 2 ^ exponentShift e * m) :
+    scaledSignificand f e / 2 ^ n = f * p10 e / m := by
+  rw [scaledSignificand, ← p10, Nat.div_div_eq_div_mul, h,
     show f * 2 ^ exponentShift e * p10 e
         = 2 ^ exponentShift e * (f * p10 e) from by ring,
     Nat.mul_div_mul_left _ _ (by positivity)]
+
+/-- The integral part is the quotient by one coarse step. -/
+theorem integral_quotient (f : ℕ) (e : ℤ) (hs : exponentShift e ≤ 9) :
+    integralPart f e = f * p10 e / (unit e * 2 ^ 64) := by
+  rw [integralPart]
+  refine scaled_div f e ?_
+  rw [unit, ← pow_add, ← pow_add, ← pow_add]
+  congr 1
+  omega
 
 /-- The fraction is the same quotient read one word lower. -/
 theorem fraction_quotient (f : ℕ) (e : ℤ) (hs : exponentShift e ≤ 9) :
     fractionalPart f e = f * p10 e / unit e % 2 ^ 64 := by
-  have hsplit : (2 : ℕ) ^ 64 * 2 ^ 9 = 2 ^ exponentShift e * unit e := by
+  have h : scaledSignificand f e / 2 ^ 9 = f * p10 e / unit e := by
+    refine scaled_div f e ?_
     rw [unit, ← pow_add, ← pow_add]
     congr 1
     omega
-  rw [fractionalPart, scaledSignificand, ← p10, Nat.div_div_eq_div_mul, hsplit,
-    show f * 2 ^ exponentShift e * p10 e
-        = 2 ^ exponentShift e * (f * p10 e) from by ring,
-    Nat.mul_div_mul_left _ _ (by positivity)]
+  rw [fractionalPart, h]
+
+/-- What that division left behind, the residue of the cleared product in one
+    coarse step. The fraction word is its top and the truncation its bottom, and
+    both of the digit's boundaries constrain the two together, so both are
+    stated about this. -/
+def res (f : ℕ) (e : ℤ) : ℕ := f * p10 e % (unit e * 2 ^ 64)
 
 /-- The gap from the integral part up to the exact scaled value, cleared: what
     the quotient dropped, plus what the truncated power of ten dropped. -/
-def gap (f : ℕ) (e : ℤ) : ℕ :=
-  den e * (f * p10 e % (unit e * 2 ^ 64)) + f * (num e % den e)
+def gap (f : ℕ) (e : ℤ) : ℕ := den e * res f e + f * (num e % den e)
 
 /-- The integral part scaled back up, plus the gap, is the scaled value
     `f·num`: `Nat.div_add_mod` recovers the product from the quotient and
     `num_split` the power of ten from its truncation. -/
 theorem integral_add_gap (f : ℕ) (e : ℤ) (hs : exponentShift e ≤ 9) :
     integralPart f e * step e + gap f e = f * num e := by
-  rw [integral_quotient f e hs, step, gap]
+  rw [integral_quotient f e hs, step, gap, res]
   calc f * p10 e / (unit e * 2 ^ 64) * (unit e * 2 ^ 64 * den e)
         + (den e * (f * p10 e % (unit e * 2 ^ 64))
           + f * (num e % den e))
@@ -318,20 +327,25 @@ ULP is twice half a ULP in the same units plus a remainder below one. Those two
 remainders are the whole error budget the certificates below have to close.
 -/
 
-/-- The gap, in the units the fraction is measured in, is the fraction plus
-    what the two truncations discarded. -/
-theorem gap_eq_fraction_add (f : ℕ) (e : ℤ) (hs : exponentShift e ≤ 9) :
-    gap f e
-      = unit e * den e * fractionalPart f e
-        + (den e * (f * p10 e % unit e) + f * (num e % den e)) := by
-  -- The remainder below one coarse step splits at the fraction's own unit.
+/-- The residue splits at the fraction's own unit: the fraction word above it,
+    the remainder the fraction word dropped below. -/
+theorem res_split (f : ℕ) (e : ℤ) (hs : exponentShift e ≤ 9) :
+    res f e = unit e * fractionalPart f e + f * p10 e % unit e := by
   have hdiv : f * p10 e % (unit e * 2 ^ 64) / unit e
       = f * p10 e / unit e % 2 ^ 64 := Nat.mod_mul_right_div_self _ _ _
   have hmod : f * p10 e % (unit e * 2 ^ 64) % unit e = f * p10 e % unit e :=
     Nat.mod_mod_of_dvd _ (dvd_mul_right _ _)
   have hsplit := Nat.div_add_mod (f * p10 e % (unit e * 2 ^ 64)) (unit e)
   rw [hdiv, hmod] at hsplit
-  rw [gap, ← hsplit, fraction_quotient f e hs]
+  rw [res, ← hsplit, fraction_quotient f e hs]
+
+/-- So the gap, in the units the fraction is measured in, is the fraction plus
+    what the two truncations discarded. -/
+theorem gap_eq_fraction_add (f : ℕ) (e : ℤ) (hs : exponentShift e ≤ 9) :
+    gap f e
+      = unit e * den e * fractionalPart f e
+        + (den e * (f * p10 e % unit e) + f * (num e % den e)) := by
+  rw [gap, res_split f e hs]
   ring
 
 /-! ### Crossing into ℚ
@@ -567,6 +581,15 @@ theorem num_bounds (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
   power10_ratio_normalized (-(decimalExponent e + 1))
     (by simp only [Finset.mem_Icc]; have := decimal_exponent_range e he; omega)
 
+/-- In particular one ULP is positive, which is what makes both coarse
+    boundaries genuine ones. -/
+theorem num_pos (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) : 0 < num e := by
+  have hlow := (num_bounds e he).1
+  have h : 0 < 2 ^ 127 * den e := by
+    have := den_pos e
+    positivity
+  omega
+
 /-- A fraction unit is negligible against the power of ten, which is what
     leaves both coarse boundaries well inside the two steps the residue below
     runs over: `edge ≤ 2^67·den` while `num ≥ 2^127·den`. -/
@@ -675,14 +698,8 @@ theorem rest_mod (f : ℕ) (e : ℤ) (hr : Regular f e) :
 /-- The residues the error bounds cannot decide: one fraction unit's reach
     either side of each coarse boundary, the boundaries themselves excluded,
     plus the overshoot of a whole step, which no significand reaches either. -/
-private def expWindows (e : ℤ) : ModWindows where
-  g := 2 * num e
-  modulus := 2 * step e
-  -- Only the minimum exponent carries significands below `2^52`, and the
-  -- certificates need the smaller box everywhere else.
-  f0 := if e = -1074 then 1 else 2 ^ 52 + 1
-  f1 := 2 ^ 53 - 1
-  windows :=
+private def expWindows (e : ℤ) : ModWindows :=
+  regularWindows (2 * num e) (2 * step e) e <|
     let n : ℤ := num e
     let m : ℤ := 2 * step e
     let w : ℤ := 4 * edge e
@@ -703,24 +720,9 @@ private theorem no_window_hit {lo hi q : ℤ} (f : ℕ) (e : ℤ) (hr : Regular 
     (hcert : (expWindows e).refutedBy q = true)
     (hmem : (lo, hi) ∈ (expWindows e).windows)
     (hlo : lo ≤ 2 * (rest f e : ℤ)) (hhi : 2 * (rest f e : ℤ) ≤ hi) :
-    False := by
-  have hf0 : (expWindows e).f0 ≤ f := by
-    simp only [expWindows]
-    split_ifs with hcase
-    · exact hr.pos
-    · rcases hr.1.2.2 with h | h
-      · omega
-      · exact absurd h hcase
-  have hf1 : f ≤ (expWindows e).f1 := by
-    simp only [expWindows]
-    have := hr.sig_lt
-    omega
-  have hmod : 0 < (expWindows e).modulus := by
-    simp only [expWindows]
-    have := step_pos e
-    omega
-  exact (expWindows e).not_hit f hmod hcert hmem hf0 hf1 (rest_mod f e hr).symm
-    (by push_cast; omega) (by push_cast; omega)
+    False :=
+  regular_not_hit f hr (by have := step_pos e; omega) hcert hmem
+    (rest_mod f e hr).symm (by push_cast; omega) (by push_cast; omega)
 
 /-- The gap never passes a whole coarse step. The truncated power of ten can put
     the integral part one short of the exact one, which happens exactly when the
@@ -791,7 +793,8 @@ theorem down_tie_or_far (f : ℕ) (e : ℤ) (hr : Regular f e) :
   have hb := edge_bounds e hr.range
   exact gap_tie_or_far (b := (num e : ℤ)) f e hr
     ⟨by exact_mod_cast hb.1, by exact_mod_cast hb.2⟩
-    (by simp [expWindows]) (by simp [expWindows])
+    (by simp [expWindows, regularWindows])
+    (by simp [expWindows, regularWindows])
 
 /-- The trim-up dichotomy, about the boundary `2·step - num`, which Żmij's carry
     reads as the fraction and the half-ULP word summing past `2^64`. -/
@@ -800,12 +803,7 @@ theorem up_tie_or_far (f : ℕ) (e : ℤ) (hr : Regular f e) :
       ∨ 2 * (step e : ℤ) + 4 * edge e < 2 * (gap f e : ℤ) + num e
       ∨ 2 * (gap f e : ℤ) + (num e : ℤ) + 4 * edge e < 2 * step e := by
   have hb := edge_bounds e hr.range
-  have hnum : 0 < num e := by
-    have := (num_bounds e hr.range).1
-    have h : 0 < 2 ^ 127 * den e := by
-      have := den_pos e
-      positivity
-    omega
+  have hnum := num_pos e hr.range
   have hbz : 4 * (edge e : ℤ) < 2 * (step e : ℤ) - num e
       ∧ 2 * (step e : ℤ) - num e + 4 * (edge e : ℤ) < 2 * (step e : ℤ) := by
     obtain ⟨h1, h2⟩ := hb
@@ -815,7 +813,8 @@ theorem up_tie_or_far (f : ℕ) (e : ℤ) (hr : Regular f e) :
     · have : 4 * (edge e : ℤ) < num e := by exact_mod_cast h1
       omega
   have := gap_tie_or_far (b := 2 * (step e : ℤ) - num e) f e hr hbz
-    (by simp [expWindows]) (by simp [expWindows])
+    (by simp [expWindows, regularWindows])
+    (by simp [expWindows, regularWindows])
   omega
 
 /-! ## The coarse decisions
@@ -831,16 +830,10 @@ sides resolve the same way, the flag by the `+1` for even `f` and the
 specification by the parity in `roundtrips_iff_dist`.
 -/
 
-/-- One unit of the fraction is worth one `edge` of the gap. -/
-private theorem edge_succ_le (e : ℤ) {a b : ℕ} (h : a < b) :
-    edge e * a + edge e ≤ edge e * b := by
-  calc edge e * a + edge e = edge e * (a + 1) := by ring
-    _ ≤ edge e * b := Nat.mul_le_mul_left _ (by omega)
-
-/-- And two units are worth two edges. -/
-private theorem edge_two_le (e : ℤ) {a b : ℕ} (h : a + 2 ≤ b) :
-    edge e * a + 2 * edge e ≤ edge e * b := by
-  calc edge e * a + 2 * edge e = edge e * (a + 2) := by ring
+/-- Units of the fraction are worth that many `edge` of the gap. -/
+private theorem edge_add_le (e : ℤ) {a b n : ℕ} (h : a + n ≤ b) :
+    edge e * a + n * edge e ≤ edge e * b := by
+  calc edge e * a + n * edge e = edge e * (a + n) := by ring
     _ ≤ edge e * b := Nat.mul_le_mul_left _ h
 
 /-- Twice the fraction's unit as a power of two, which is what `half`
@@ -964,11 +957,11 @@ theorem round_down_iff_gap (f : ℕ) (e : ℤ) (hr : Regular f e) :
     rw [decide_eq_true_eq, half_ulp_eq f e hs]
   rw [hflag]
   rcases Nat.lt_trichotomy (fractionalPart f e) (half e) with hf | hf | hf
-  · have hp := edge_succ_le e hf
+  · have hp := edge_add_le e (by omega : fractionalPart f e + 1 ≤ half e)
     split_ifs <;> omega
   · have hp : edge e * fractionalPart f e = edge e * half e := by rw [hf]
     split_ifs <;> omega
-  · have hp := edge_succ_le e hf
+  · have hp := edge_add_le e (by omega : half e + 1 ≤ fractionalPart f e)
     split_ifs <;> omega
 
 /-- What `roundUp` decides. Żmij detects it as the carry out of a 64-bit
@@ -996,7 +989,7 @@ theorem round_up_iff_gap (f : ℕ) (e : ℤ) (hr : Regular f e) :
   rcases Nat.lt_trichotomy (fractionalPart f e + half e) (2 ^ 64) with hf | hf | hf
   · -- Short of the carry: either two units short, or one short and a tie.
     rcases Nat.lt_or_ge (fractionalPart f e + half e + 1) (2 ^ 64) with h1 | h1
-    · have hp := edge_two_le e (by omega : fractionalPart f e + half e + 2 ≤ 2 ^ 64)
+    · have hp := edge_add_le e (by omega : fractionalPart f e + half e + 2 ≤ 2 ^ 64)
       split_ifs <;> omega
     · have heq : fractionalPart f e + half e + 1 = 2 ^ 64 := by omega
       have hp : edge e * (fractionalPart f e + half e) + edge e
@@ -1006,7 +999,8 @@ theorem round_up_iff_gap (f : ℕ) (e : ℤ) (hr : Regular f e) :
           _ = edge e * 2 ^ 64 := by rw [heq]
       split_ifs <;> omega
   · exact absurd hf hne
-  · have hp := edge_succ_le e hf
+  · have hp := edge_add_le e
+      (by omega : 2 ^ 64 + 1 ≤ fractionalPart f e + half e)
     split_ifs <;> omega
 
 /-- The integral part sits `gap` below the scaled value. -/
@@ -1041,12 +1035,7 @@ theorem round_up_iff_roundtrips (f : ℕ) (e : ℤ) (hr : Regular f e) :
     (toDecimalCandidates f e).roundUp = true
       ↔ Roundtrips f e ((integralPart f e + 1 : ℕ) * 10 ^ (decimalExponent e + 1)) := by
   have hle := gap_le_step f e hr
-  have hnum : 0 < num e := by
-    have := (num_bounds e hr.range).1
-    have h : 0 < 2 ^ 127 * den e := by
-      have := den_pos e
-      positivity
-    omega
+  have hnum := num_pos e hr.range
   rw [round_up_iff_gap f e hr,
     roundtrips_iff_dist f e hr.range
       (successor_scaled f e (exponent_shift_range e hr.range).2)]
@@ -1073,29 +1062,13 @@ the tie, and Żmij's special case rounds it to even.
 
 /-! ### The digit error
 
-The digit's distance from the value splits into the fraction word, which the
-digit is computed from, and the remainder the fraction word dropped, which the
-`+6` stands in for. The remainder is what the boundary cases below turn on, so
-it is bounded first: it stays under one fraction unit, and twenty of it under
-twenty-one, the twenty being the ten of the base-ten multiply doubled.
+The digit's distance from the value splits the way `res_split` splits the
+residue: into the fraction word, which the digit is computed from, and the
+remainder below one fraction unit, which the `+6` stands in for. That remainder
+is what the boundary cases below turn on, so it is bounded first, at twenty of
+it under twenty-one units, the twenty being the ten of the base-ten multiply
+doubled.
 -/
-
-/-- What the fraction word and the truncation are read off: the cleared product
-    below the integral part, the fraction word above one unit and the remainder
-    below it. Both digit boundaries constrain the two together, so both are
-    stated about this. -/
-def res (f : ℕ) (e : ℤ) : ℕ := f * p10 e % (unit e * 2 ^ 64)
-
-/-- Its two halves. -/
-theorem res_split (f : ℕ) (e : ℤ) (hs : exponentShift e ≤ 9) :
-    res f e = unit e * fractionalPart f e + f * p10 e % unit e := by
-  have hdiv : f * p10 e % (unit e * 2 ^ 64) / unit e
-      = f * p10 e / unit e % 2 ^ 64 := Nat.mod_mul_right_div_self _ _ _
-  have hmod : f * p10 e % (unit e * 2 ^ 64) % unit e = f * p10 e % unit e :=
-    Nat.mod_mod_of_dvd _ (dvd_mul_right _ _)
-  have hsplit := Nat.div_add_mod (f * p10 e % (unit e * 2 ^ 64)) (unit e)
-  rw [hdiv, hmod] at hsplit
-  rw [res, ← hsplit, fraction_quotient f e hs]
 
 /-- Twice the signed distance from Żmij's fine output to the exact value, on the
     grid at `k` and cleared by `step`: the digit accounts for ten times the gap,
@@ -1201,24 +1174,18 @@ private def digitHighEdges : List (ℕ × ℕ) :=
     (10145709240540253388, 4), (4611686018427387903, 5),
     (13835058055282163711, 5)]
 
-private def digitLowWindows (e : ℤ) : ModWindows where
-  g := p10 e
-  modulus := unit e * 2 ^ 64
-  f0 := if e = -1074 then 1 else 2 ^ 52 + 1
-  f1 := 2 ^ 53 - 1
-  windows := digitLowEdges.map fun p =>
-    ((unit e : ℤ) * p.1, (unit e : ℤ) * p.1 + p.2 * (unit e : ℤ) / 5)
+private def digitLowWindows (e : ℤ) : ModWindows :=
+  regularWindows (p10 e) (unit e * 2 ^ 64) e <|
+    digitLowEdges.map fun p =>
+      ((unit e : ℤ) * p.1, (unit e : ℤ) * p.1 + p.2 * (unit e : ℤ) / 5)
 
-private def digitHighWindows (e : ℤ) : ModWindows where
-  g := p10 e
-  modulus := unit e * 2 ^ 64
-  f0 := if e = -1074 then 1 else 2 ^ 52 + 1
-  f1 := 2 ^ 53 - 1
-  windows := digitHighEdges.map fun p =>
-    ((unit e : ℤ) * p.1
-        + max (p.2 * (unit e : ℤ) / 5 - 2 ^ 53)
-            (if num e % den e = 0 then 1 else 0),
-      (unit e : ℤ) * p.1 + unit e - 1)
+private def digitHighWindows (e : ℤ) : ModWindows :=
+  regularWindows (p10 e) (unit e * 2 ^ 64) e <|
+    digitHighEdges.map fun p =>
+      ((unit e : ℤ) * p.1
+          + max (p.2 * (unit e : ℤ) / 5 - 2 ^ 53)
+              (if num e % den e = 0 then 1 else 0),
+        (unit e : ℤ) * p.1 + unit e - 1)
 
 /-- Close the two digit certificates for a literal exponent. -/
 elab "digit_low_cert" : tactic => modCertTactic fun e => (digitLowWindows e).search
@@ -1238,28 +1205,14 @@ private theorem digit_high_refuted (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
 /-- A fraction word together with a bound on the remainder below the unit is a
     point of `res`, which is the residue of `f·p10` modulo one coarse step, so
     a refuted window rules the pair out. -/
-private theorem no_res_hit {lo hi q : ℤ} (f : ℕ) (e : ℤ) (hr : Regular f e)
-    (W : ModWindows) (hg : W.g = p10 e) (hm : W.modulus = unit e * 2 ^ 64)
-    (hf0 : W.f0 = if e = -1074 then 1 else 2 ^ 52 + 1) (hf1 : W.f1 = 2 ^ 53 - 1)
-    (hcert : W.refutedBy q = true) (hmem : (lo, hi) ∈ W.windows)
-    (hlo : lo ≤ (res f e : ℤ)) (hhi : (res f e : ℤ) ≤ hi) : False := by
-  have h0 : W.f0 ≤ f := by
-    rw [hf0]
-    split_ifs with hcase
-    · exact hr.pos
-    · rcases hr.1.2.2 with h | h
-      · omega
-      · exact absurd h hcase
-  have h1 : f ≤ W.f1 := by
-    rw [hf1]
-    have := hr.sig_lt
-    omega
-  have hmod : 0 < W.modulus := by
-    rw [hm]
-    have := unit_pos e
-    positivity
-  exact W.not_hit f hmod hcert hmem h0 h1
-    (by rw [hg, hm, res, Nat.mul_comm]) hlo hhi
+private theorem no_res_hit {lo hi q : ℤ} {windows : List (ℤ × ℤ)} (f : ℕ)
+    (e : ℤ) (hr : Regular f e)
+    (hcert : (regularWindows (p10 e) (unit e * 2 ^ 64) e windows).refutedBy q
+      = true)
+    (hmem : (lo, hi) ∈ windows)
+    (hlo : lo ≤ (res f e : ℤ)) (hhi : (res f e : ℤ) ≤ hi) : False :=
+  regular_not_hit f hr (by have := unit_pos e; positivity) hcert hmem
+    (by rw [res, Nat.mul_comm]) hlo hhi
 
 /-- No significand pairs one of the six low fraction words with a truncation
     that reaches the boundary. -/
@@ -1281,7 +1234,7 @@ private theorem no_digit_low (f : ℕ) (e : ℤ) (hr : Regular f e) {w j : ℕ}
       ∈ (digitLowWindows e).windows :=
     List.mem_map_of_mem (l := digitLowEdges) (f := fun p : ℕ × ℕ =>
       ((unit e : ℤ) * p.1, (unit e : ℤ) * p.1 + p.2 * (unit e : ℤ) / 5)) hmem
-  exact no_res_hit f e hr (digitLowWindows e) rfl rfl rfl rfl hcert hmem'
+  exact no_res_hit f e hr hcert hmem'
     (by rw [hres]; omega) (by rw [hres]; omega)
 
 /-- Nor with one of the five high words, the quarter included: there the
@@ -1328,7 +1281,7 @@ private theorem no_digit_high (f : ℕ) (e : ℤ) (hr : Regular f e) {w j : ℕ}
           + max (p.2 * (unit e : ℤ) / 5 - 2 ^ 53)
               (if num e % den e = 0 then 1 else 0),
         (unit e : ℤ) * p.1 + unit e - 1)) hmem
-  exact no_res_hit f e hr (digitHighWindows e) rfl rfl rfl rfl hcert hmem'
+  exact no_res_hit f e hr hcert hmem'
     (by rw [hres]
         rcases max_cases ((j : ℤ) * (unit e : ℤ) / 5 - 2 ^ 53)
             (if num e % den e = 0 then (1 : ℤ) else 0) with ⟨h, -⟩ | ⟨h, -⟩ <;>
@@ -1539,13 +1492,6 @@ theorem grid_bounds (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
     num e < step e ∧ step e ≤ 10 * num e := by
   have hcert := grid_all e (by simpa [Finset.mem_Icc] using he)
   simpa only [gridHolds, decide_eq_true_eq] using hcert
-
-theorem num_pos (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) : 0 < num e := by
-  have hlow := (num_bounds e he).1
-  have h : 0 < 2 ^ 127 * den e := by
-    have := den_pos e
-    positivity
-  omega
 
 /-- The grid at `k` is the one at `k+1` scaled by ten. -/
 private theorem grid_pow (e : ℤ) :
