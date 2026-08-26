@@ -4,11 +4,11 @@
 -- Distributed under the MIT license (see LICENSE).
 
 import Mathlib.Algebra.Order.Floor.Semifield
-import exact
+import core
 
 /-! # Correctness of yy
 
-`exact.lean` proves that an exact, Schubfach-like selection rule produces a
+`core.lean` proves that an exact, Schubfach-like selection rule produces a
 shortest, correctly rounded decimal whenever the decimal grid step is at most
 one ULP and strictly greater than a tenth of one. This file proves that yy
 implements that rule.
