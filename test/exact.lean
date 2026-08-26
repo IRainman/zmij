@@ -3,7 +3,6 @@
 -- Copyright (c) 2025 - present, Victor Zverovich
 -- Distributed under the MIT license (see LICENSE).
 
-import Mathlib.Algebra.Order.Floor.Semifield
 import Mathlib.Tactic
 
 /-! # Exact decimal conversion and certified comparisons
@@ -99,15 +98,30 @@ apart, so a candidate within half a step is nearest, and one strictly within
 half a step is uniquely nearest.
 -/
 
+/-- Scaling by the positive factor `10^k` carries a distance in the scaled
+    domain to the corresponding distance on the grid at `k`. Every comparison
+    below crosses between the two through this one identity. -/
+private theorem abs_sub_scaled (f : ℕ) (e k : ℤ) (n : ℕ) :
+    |(n : ℚ) - value f e * 10 ^ (-k)| * 10 ^ k
+      = |(n : ℚ) * 10 ^ k - value f e| := by
+  have h : ((n : ℚ) - value f e * 10 ^ (-k)) * 10 ^ k
+      = (n : ℚ) * 10 ^ k - value f e := by
+    rw [zpow_neg]; field_simp
+  rw [← h, abs_mul, abs_of_pos (show (0 : ℚ) < 10 ^ k by positivity)]
+
+/-- Two grid points are no farther apart than the sum of their distances to any
+    value. -/
+private theorem abs_sub_le_add (a b x : ℚ) : |a - b| ≤ |a - x| + |b - x| := by
+  rw [abs_sub_comm b x]
+  exact abs_sub_le a x b
+
 /-- Distinct integer candidates are at least one step apart, so the sum of their
     distances to any value is at least one. -/
 private theorem one_le_abs_sub_add_abs_sub {x : ℚ} {d d' : ℕ} (hne : d' ≠ d) :
     1 ≤ |(d' : ℚ) - x| + |(d : ℚ) - x| := by
   have hstep : (1 : ℚ) ≤ |(d' : ℚ) - (d : ℚ)| := by
     exact_mod_cast Int.one_le_abs (show (d' : ℤ) - d ≠ 0 by omega)
-  calc (1 : ℚ) ≤ |(d' : ℚ) - (d : ℚ)| := hstep
-    _ ≤ |(d' : ℚ) - x| + |x - (d : ℚ)| := abs_sub_le _ _ _
-    _ = |(d' : ℚ) - x| + |(d : ℚ) - x| := by rw [abs_sub_comm x]
+  linarith [abs_sub_le_add (d' : ℚ) (d : ℚ) x]
 
 /-- A candidate within half a step is a nearest grid point. -/
 private theorem abs_sub_le_of_le_half {x : ℚ} {d : ℕ}
@@ -124,49 +138,24 @@ private theorem eq_of_abs_sub_eq_of_lt_half {x : ℚ} {d d' : ℕ}
   by_contra hne
   linarith [one_le_abs_sub_add_abs_sub (x := x) hne]
 
-/-- Correct rounding in the scaled domain: `10^k` is positive, so it cancels
-    from every comparison, leaving comparisons between `d`, `d'` and `x`. -/
-private theorem correctly_rounded_iff_scaled (f : ℕ) (e : ℤ) (d : ℕ) (k : ℤ) :
-    let x := value f e * 10 ^ (-k)
-    CorrectlyRounded f e d k
-      ↔ (∀ d' : ℕ, |(d : ℚ) - x| ≤ |(d' : ℚ) - x|) ∧
-        ∀ d' : ℕ,
-          |(d : ℚ) - x| = |(d' : ℚ) - x| → d' = d ∨ d % 2 = 0 := by
-  intro x
-  have hp : (0 : ℚ) < 10 ^ k := by positivity
-  have hdist : ∀ n : ℕ,
-      |(n : ℚ) - x| * 10 ^ k = |(n : ℚ) * 10 ^ k - value f e| := by
-    intro n
-    have h : ((n : ℚ) - x) * 10 ^ k = (n : ℚ) * 10 ^ k - value f e := by
-      simp only [x, zpow_neg]
-      field_simp
-    rw [← h, abs_mul, abs_of_pos hp]
-  simp only [CorrectlyRounded]
-  constructor
-  · rintro ⟨hnear, hties⟩
-    refine ⟨fun d' => ?_, fun d' hd' => hties d' ?_⟩
-    · have hscaled := hnear d'
-      rw [← hdist d, ← hdist d'] at hscaled
-      exact (mul_le_mul_iff_of_pos_right hp).mp hscaled
-    · rw [← hdist d, ← hdist d', hd']
-  · rintro ⟨hnear, hties⟩
-    refine ⟨fun d' => ?_, fun d' hd' => hties d' ?_⟩
-    · rw [← hdist d, ← hdist d']
-      exact (mul_le_mul_iff_of_pos_right hp).mpr (hnear d')
-    · rw [← hdist d, ← hdist d'] at hd'
-      exact mul_right_cancel₀ (ne_of_gt hp) hd'
-
 /-- A candidate within half a grid step is correctly rounded if an exact
-    midpoint is resolved to an even candidate. -/
+    midpoint is resolved to an even candidate. The factor `10^k` is positive, so
+    it cancels from every comparison, leaving comparisons in the scaled
+    domain. -/
 private theorem correctly_rounded_of_le_half (f : ℕ) (e : ℤ) (d : ℕ) (k : ℤ)
     (hle : |(d : ℚ) - value f e * 10 ^ (-k)| ≤ 1 / 2)
     (heven : |(d : ℚ) - value f e * 10 ^ (-k)| = 1 / 2 → d % 2 = 0) :
     CorrectlyRounded f e d k := by
-  refine (correctly_rounded_iff_scaled f e d k).mpr
-    ⟨fun d' => abs_sub_le_of_le_half hle d', fun d' hd' => ?_⟩
-  rcases lt_or_eq_of_le hle with hlt | heq
-  · exact Or.inl (eq_of_abs_sub_eq_of_lt_half hlt hd')
-  · exact Or.inr (heven heq)
+  have hp : (0 : ℚ) < 10 ^ k := by positivity
+  simp only [CorrectlyRounded]
+  refine ⟨fun d' => ?_, fun d' hd' => ?_⟩
+  · rw [← abs_sub_scaled f e k d, ← abs_sub_scaled f e k d']
+    exact mul_le_mul_of_nonneg_right (abs_sub_le_of_le_half hle d') hp.le
+  · rw [← abs_sub_scaled f e k d, ← abs_sub_scaled f e k d'] at hd'
+    rcases lt_or_eq_of_le hle with hlt | heq
+    · exact Or.inl
+        (eq_of_abs_sub_eq_of_lt_half hlt (mul_right_cancel₀ (ne_of_gt hp) hd'))
+    · exact Or.inr (heven heq)
 
 /-! ### Round-trips in the scaled domain
 
@@ -187,10 +176,7 @@ theorem roundtrips_iff_scaled (f : ℕ) (e k : ℤ) (d : ℕ) :
   intro x u
   have hp : (0 : ℚ) < 10 ^ k := by positivity
   have hne : (10 : ℚ) ^ k ≠ 0 := ne_of_gt hp
-  have hdist : |(d : ℚ) - x| * 10 ^ k = |(d : ℚ) * 10 ^ k - value f e| := by
-    have h : ((d : ℚ) - x) * 10 ^ k = (d : ℚ) * 10 ^ k - value f e := by
-      simp only [x, zpow_neg]; field_simp
-    rw [← h, abs_mul, abs_of_pos hp]
+  have hdist := abs_sub_scaled f e k d
   have hhalf : u / 2 * 10 ^ k = ulp e / 2 := by
     simp only [u, zpow_neg]; field_simp
   simp only [Roundtrips]
@@ -351,10 +337,7 @@ private theorem coarse_roundtrip_unique (f : ℕ) (e k : ℤ)
   have hd₁ := abs_sub_le_half_ulp f e k hround₁
   have hd₂ := abs_sub_le_half_ulp f e k hround₂
   have hsum : |(c₁ : ℚ) - (c₂ : ℚ)| < 10 :=
-    calc |(c₁ : ℚ) - (c₂ : ℚ)| ≤ |(c₁ : ℚ) - x| + |x - (c₂ : ℚ)| :=
-          abs_sub_le _ _ _
-      _ = |(c₁ : ℚ) - x| + |(c₂ : ℚ) - x| := by rw [abs_sub_comm x]
-      _ < 10 := by linarith
+    lt_of_le_of_lt (abs_sub_le_add _ _ x) (by linarith)
   obtain ⟨hlo, hhi⟩ := abs_lt.mp hsum
   have hn₁ : c₁ < c₂ + 10 := by
     exact_mod_cast (show (c₁ : ℚ) < (c₂ : ℚ) + 10 by linarith)
@@ -364,84 +347,80 @@ private theorem coarse_roundtrip_unique (f : ℕ) (e k : ℤ)
 
 /-! ### Correctness -/
 
+/-- A candidate with no trailing zero that is the only value round-tripping on
+    its grid is both shortest and correctly rounded. Nothing coarser
+    round-trips, since it would be a multiple of ten back on this grid, hence
+    the candidate, which has none; and nothing on this grid is closer, since
+    anything at least as close round-trips too. That also leaves no tie to
+    resolve. -/
+private theorem shortest_correct_of_unique (f : ℕ) (e k : ℤ) {d : ℕ}
+    (hrt : Roundtrips f e (d * 10 ^ k)) (hne : d % 10 ≠ 0)
+    (huniq : ∀ c : ℕ, Roundtrips f e (c * 10 ^ k) → c = d) :
+    Shortest f e d k ∧ CorrectlyRounded f e d k := by
+  have hclose (c : ℕ)
+      (hc : |(c : ℚ) * 10 ^ k - value f e| ≤ |(d : ℚ) * 10 ^ k - value f e|) :
+      c = d := huniq c (roundtrips_of_abs_le f e hrt hc)
+  refine ⟨⟨hrt, fun c hc => hne ?_⟩,
+    fun c => ?_, fun c hc => Or.inl (hclose c hc.ge)⟩
+  · obtain ⟨c', h10', hc'⟩ := (coarse_roundtrip_iff_next_grid f e k).mpr ⟨c, hc⟩
+    rw [← huniq c' hc']
+    exact h10'
+  · by_contra hcon
+    rw [hclose c (not_le.mp hcon).le] at hcon
+    exact hcon le_rfl
+
 /--
 Correctness of the exact method. In the coarse case the candidate carries
 trailing zeros, and after stripping them every value on the reduced grid is
 still a multiple of ten back at `k`, where uniqueness identifies it with the
-candidate; that single fact gives both shortness and correct rounding, and
-leaves no tie to resolve. In the fine case the candidate has no trailing zero to
-strip, since one would itself be a coarse candidate, so nothing on any coarser
-grid round-trips, and correct rounding is the half-step bound read through
-`correctly_rounded_of_le_half`.
+candidate. In the fine case the candidate has no trailing zero to strip, since
+one would itself be a coarse candidate, so reduction leaves it alone, nothing on
+any coarser grid round-trips, and correct rounding is the half-step bound read
+through `correctly_rounded_of_le_half`.
 -/
 theorem exact_candidate_correct (f : ℕ) (e k : ℤ) {d : ℕ} (hf0 : 0 < f)
     (hfine : 1 ≤ ulp e * 10 ^ (-k)) (hcoarse : ulp e * 10 ^ (-k) < 10)
     (hd : ExactCandidate f e k d) :
     let (d', k') := reduceDecimal d k
     Shortest f e d' k' ∧ CorrectlyRounded f e d' k' := by
-  -- Both cases round-trip: the coarse one by assumption, the fine one because
-  -- the grid at `k` is no coarser than one ULP.
-  have hrt : Roundtrips f e (d * 10 ^ k) := by
-    rcases hd with ⟨-, hrt⟩ | ⟨-, hle, -⟩
-    · exact hrt
-    · exact roundtrips_of_le_half f e k d hfine hle
-  obtain ⟨t, hkt, hstrip⟩ := reduce_shift d k
-  have hstop := reduce_reduced d k
-  have hval := reduce_value d k
-  rcases hred : reduceDecimal d k with ⟨d', k'⟩
-  simp only [hred] at hkt hstrip hstop hval ⊢
-  have hrt' : Roundtrips f e ((d' : ℚ) * 10 ^ k') := by rw [hval]; exact hrt
-  -- Reduction never reaches zero, which does not round-trip, so it stopped at a
-  -- significand with no trailing zero.
-  have hne : d' % 10 ≠ 0 := by
-    rcases hstop with h0 | h10
-    · rw [h0] at hrt'
-      exact absurd (by simpa using hrt') (not_roundtrips_zero f e hf0)
-    · exact h10
-  have hmul10 (c s : ℕ) : (c * 10 ^ (s + 1)) % 10 = 0 := by
-    rw [pow_succ, ← Nat.mul_assoc]
-    exact Nat.mul_mod_left _ _
-  rcases hd with ⟨h10, -⟩ | ⟨hnone, hle, heven⟩
+  rcases hd with ⟨h10, hrt⟩ | ⟨hnone, hle, heven⟩
   · -- The coarse case.
+    obtain ⟨t, hkt, hstrip⟩ := reduce_shift d k
+    have hstop := reduce_reduced d k
+    have hval := reduce_value d k
+    rcases hred : reduceDecimal d k with ⟨d', k'⟩
+    simp only [hred] at hkt hstrip hstop hval ⊢
+    have hrt' : Roundtrips f e ((d' : ℚ) * 10 ^ k') := by rw [hval]; exact hrt
+    -- Reduction never reaches zero, which does not round-trip, so it stopped at
+    -- a significand with no trailing zero -- and so it stripped at least one.
+    have hne : d' % 10 ≠ 0 := by
+      rcases hstop with h0 | hstop
+      · rw [h0] at hrt'
+        exact absurd (by simpa using hrt') (not_roundtrips_zero f e hf0)
+      · exact hstop
     have ht : 1 ≤ t := by
       rcases Nat.eq_zero_or_pos t with rfl | ht
       · simp only [pow_zero, Nat.mul_one] at hstrip
         omega
       · exact ht
+    obtain ⟨s, rfl⟩ : ∃ s, t = s + 1 := ⟨t - 1, by omega⟩
     -- Every value that round-trips on the reduced grid is the candidate itself.
-    have hstep (c : ℕ) (hc : Roundtrips f e ((c : ℚ) * 10 ^ k')) : c = d' := by
-      obtain ⟨s, rfl⟩ : ∃ s, t = s + 1 := ⟨t - 1, by omega⟩
-      have hck : Roundtrips f e (((c * 10 ^ (s + 1) : ℕ) : ℚ) * 10 ^ k) := by
-        rw [ten_pow_shift c (s + 1), show k + ((s + 1 : ℕ) : ℤ) = k' from by
-          rw [hkt]]
-        exact hc
-      have heq := coarse_roundtrip_unique f e k hcoarse (hmul10 c s) h10 hck hrt
-      rw [hstrip] at heq
-      exact Nat.eq_of_mul_eq_mul_right (by positivity) heq
-    refine ⟨⟨hrt', fun c hc => hne ?_⟩, ?_⟩
-    · obtain ⟨c', h10', hc'⟩ :=
-        (coarse_roundtrip_iff_next_grid f e k').mpr ⟨c, hc⟩
-      rw [← hstep c' hc']
-      exact h10'
-    · have hclose (c : ℕ)
-          (hc : |(c : ℚ) * 10 ^ k' - value f e|
-            ≤ |(d' : ℚ) * 10 ^ k' - value f e|) : c = d' :=
-        hstep c (roundtrips_of_abs_le f e hrt' hc)
-      refine ⟨fun c => ?_, fun c hc => Or.inl (hclose c hc.ge)⟩
-      by_contra hcon
-      rw [hclose c (not_le.mp hcon).le] at hcon
-      exact hcon le_rfl
-  · -- The fine case.
+    refine shortest_correct_of_unique f e k' hrt' hne fun c hc => ?_
+    have hck : Roundtrips f e (((c * 10 ^ (s + 1) : ℕ) : ℚ) * 10 ^ k) := by
+      rw [ten_pow_shift c (s + 1),
+        show k + ((s + 1 : ℕ) : ℤ) = k' from by rw [hkt]]
+      exact hc
+    have hc10 : (c * 10 ^ (s + 1)) % 10 = 0 := by
+      rw [pow_succ, ← Nat.mul_assoc]
+      exact Nat.mul_mod_left _ _
+    have heq := coarse_roundtrip_unique f e k hcoarse hc10 h10 hck hrt
+    rw [hstrip] at heq
+    exact Nat.eq_of_mul_eq_mul_right (by positivity) heq
+  · -- The fine case: no trailing zero to strip, so reduction is the identity.
+    have hrt : Roundtrips f e (d * 10 ^ k) :=
+      roundtrips_of_le_half f e k d hfine hle
     have hd10 : d % 10 ≠ 0 := fun h10 => hnone ⟨d, h10, hrt⟩
-    have ht : t = 0 := by
-      rcases Nat.eq_zero_or_pos t with ht | ht
-      · exact ht
-      · exfalso
-        obtain ⟨s, rfl⟩ : ∃ s, t = s + 1 := ⟨t - 1, by omega⟩
-        exact hd10 (by rw [hstrip]; exact hmul10 d' s)
-    subst ht
-    simp only [pow_zero, Nat.mul_one] at hstrip
-    rw [← hstrip, show k' = k from by rw [hkt]; simp]
+    rw [show reduceDecimal d k = (d, k) from by rw [reduceDecimal]; simp [hd10]]
     exact ⟨⟨hrt, fun c hc =>
         hnone ((coarse_roundtrip_iff_next_grid f e k).mpr ⟨c, hc⟩)⟩,
       correctly_rounded_of_le_half f e d k hle heven⟩
@@ -628,23 +607,6 @@ private theorem window_bounds {g modulus f0 f1 lo hi q p r f j y : ℤ}
         le_trans (mul_le_mul_of_nonpos_right hf0 hr0) (le_max_left _ _)⟩
   exact ⟨by linarith [hfr.2], by linarith [hfr.1]⟩
 
-private theorem not_window_hit {g modulus f0 f1 lo hi q f j y : ℤ}
-    (hmodulus : 0 < modulus)
-    (hcert : modWindowRefuted g modulus f0 f1 lo hi q = true)
-    (hf0 : f0 ≤ f) (hf1 : f ≤ f1)
-    (hy : y = g * f - modulus * j)
-    (hlo : lo ≤ y) (hhi : y ≤ hi) :
-    False := by
-  simp only [modWindowRefuted, decide_eq_true_eq] at hcert
-  obtain ⟨hq, hgap0, hgap1⟩ := hcert
-  let p := (2 * (g * q) + modulus) / (2 * modulus)
-  obtain ⟨hb0, hb1⟩ :=
-    window_bounds
-      (p := p)
-      (r := g * q - modulus * p)
-      hq rfl hf0 hf1 hy hlo hhi
-  exact window_gap_absurd hmodulus hb0 hb1 hgap0 hgap1
-
 /-- What a certificate says: no significand in range has its residue in any
     window the multiplier refutes. Everything an implementation has to supply is
     the identification of its own quantity with the residue. -/
@@ -654,18 +616,24 @@ theorem ModWindows.not_hit (w : ModWindows) (f : ℕ) (hmodulus : 0 < w.modulus)
     (hy : y = w.g * f % w.modulus)
     (hlo : lo ≤ (y : ℤ)) (hhi : (y : ℤ) ≤ hi) :
     False := by
-  have hwindow : modWindowRefuted w.g w.modulus w.f0 w.f1 lo hi q = true :=
-    List.all_eq_true.mp hcert _ hmem
-  refine not_window_hit (f := (f : ℤ))
-    (j := ((w.g * f / w.modulus : ℕ) : ℤ))
-    (by exact_mod_cast hmodulus) hwindow (by exact_mod_cast hf0)
-    (by exact_mod_cast hf1) ?_ hlo hhi
+  have hwindow := List.all_eq_true.mp hcert _ hmem
+  simp only [modWindowRefuted, decide_eq_true_eq] at hwindow
+  obtain ⟨hq, hgap0, hgap1⟩ := hwindow
   have hz : ((w.modulus * (w.g * f / w.modulus) + w.g * f % w.modulus : ℕ) : ℤ)
       = ((w.g * f : ℕ) : ℤ) := by
     exact_mod_cast Nat.div_add_mod (w.g * f) w.modulus
-  rw [hy]
-  push_cast at hz ⊢
-  linarith
+  -- The residue identity, with the quotient as the multiple of the modulus.
+  have hyz : (y : ℤ)
+      = w.g * f - w.modulus * ((w.g * f / w.modulus : ℕ) : ℤ) := by
+    rw [hy]
+    push_cast at hz ⊢
+    linarith
+  obtain ⟨hb0, hb1⟩ :=
+    window_bounds (f0 := (w.f0 : ℤ)) (f1 := (w.f1 : ℤ))
+      (p := (2 * ((w.g : ℤ) * q) + w.modulus) / (2 * w.modulus))
+      (r := (w.g : ℤ) * q - w.modulus * _) hq rfl
+      (by exact_mod_cast hf0) (by exact_mod_cast hf1) hyz hlo hhi
+  exact window_gap_absurd (by exact_mod_cast hmodulus) hb0 hb1 hgap0 hgap1
 
 /-! ### Certificate search
 
