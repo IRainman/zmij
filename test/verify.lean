@@ -535,53 +535,52 @@ def trimScale (e : ℤ) : ℕ := trimModulus e * trimDen e
     comparison and the scale of the narrow windows refuted below. -/
 def trimEdge (e : ℤ) : ℕ := trimUnit e * trimDen e
 
-/-- Integer form of `2·p10 + 2 ≤ N`, where `N = trimModulus`. The truncation is
-    expressed as natural division so the finite check reduces directly in the
-    kernel. -/
-def trimNarrowHolds (e : ℤ) : Bool :=
-  decide (2 * (trimNum e / trimDen e) + 2 ≤ trimModulus e)
-
-theorem trim_narrow_all :
-    ∀ e ∈ Finset.Icc (-1074 : ℤ) 971, trimNarrowHolds e = true := by
-  decide +kernel
-
-/-- Integer form of `2^54·(p10Exact - p10) ≤ p10 % U` and of its complement
-    `2^54·(p10Exact - p10) ≤ U - p10 % U`, with the denominator cleared. The
+/-- Everything about the truncated power of ten that has to be checked per
+    exponent, as one predicate so the kernel sweeps the range once. Narrowness
+    is `2·p10 + 2 ≤ N`, which keeps the gap from wrapping the window modulus.
+    The other two are `2^54·(p10Exact - p10) ≤ p10 % U` and its complement
+    `2^54·(p10Exact - p10) ≤ U - p10 % U`, with the denominator cleared: the
     truncation error fits in the bits the packed comparison discards, measured
-    from either end of the window unit. -/
-def trimWindowMarginsHolds (e : ℤ) : Bool :=
+    from either end of the window unit. Truncation is expressed as natural
+    division so the check reduces directly in the kernel. -/
+def trimChecksHold (e : ℤ) : Bool :=
   let num := trimNum e
   let den := trimDen e
   let low := num / den % trimUnit e
-  decide (2 ^ 54 * (num % den) ≤ low * den
+  decide (2 * (num / den) + 2 ≤ trimModulus e
+    ∧ 2 ^ 54 * (num % den) ≤ low * den
     ∧ 2 ^ 54 * (num % den) + low * den ≤ trimUnit e * den)
 
-theorem trim_window_margins_all :
-    ∀ e ∈ Finset.Icc (-1074 : ℤ) 971, trimWindowMarginsHolds e = true := by
+theorem trim_checks_all :
+    ∀ e ∈ Finset.Icc (-1074 : ℤ) 971, trimChecksHold e = true := by
   decide +kernel
+
+/-- The three checked facts for one exponent, with the truncation read back as
+    `trimSig`. Which bits of the power of ten survive truncation is not a
+    magnitude property, which is why these are checked rather than derived. -/
+theorem trim_checks (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
+    2 * trimSig e + 2 ≤ trimModulus e
+      ∧ 2 ^ 54 * (trimNum e % trimDen e) ≤ trimSig e % trimUnit e * trimDen e
+      ∧ 2 ^ 54 * (trimNum e % trimDen e) + trimSig e % trimUnit e * trimDen e
+        ≤ trimUnit e * trimDen e := by
+  have hcert := trim_checks_all e (by simpa [Finset.mem_Icc] using he)
+  simp only [trimChecksHold, decide_eq_true_eq] at hcert
+  rw [trim_sig_nat]
+  exact hcert
 
 /-- The discarded low bits `p10 % U` dominate the power-of-ten truncation error
     `p10Exact - p10 = τ/den`: the margin used when a packed comparison is strict
-    on the low side. Which bits of the power of ten survive truncation is not a
-    magnitude property, so this is checked per exponent. -/
+    on the low side. -/
 theorem trim_low_bits (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
     2 ^ 54 * (trimNum e % trimDen e)
-      ≤ trimSig e % trimUnit e * trimDen e := by
-  have hcert := trim_window_margins_all e (by simpa [Finset.mem_Icc] using he)
-  simp only [trimWindowMarginsHolds, decide_eq_true_eq] at hcert
-  rw [trim_sig_nat]
-  exact hcert.1
+      ≤ trimSig e % trimUnit e * trimDen e := (trim_checks e he).2.1
 
 /-- The complementary distance to the next window unit dominates the same
     truncation error: the margin used when a packed comparison falls short of
     its boundary, which is what the completeness directions need. -/
 theorem trim_high_bits (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
     2 ^ 54 * (trimNum e % trimDen e) + trimSig e % trimUnit e * trimDen e
-      ≤ trimUnit e * trimDen e := by
-  have hcert := trim_window_margins_all e (by simpa [Finset.mem_Icc] using he)
-  simp only [trimWindowMarginsHolds, decide_eq_true_eq] at hcert
-  rw [trim_sig_nat]
-  exact hcert.2
+      ≤ trimUnit e * trimDen e := (trim_checks e he).2.2
 
 /-! ### The modular formulation
 
@@ -598,8 +597,7 @@ Completeness reads the same comparisons in the opposite direction. A test that
 does not fire bounds the exact gap from the other side, again with at most one
 unit of uncertainty. There the relevant margin is the distance from the
 discarded low bits of `p10` to the next window boundary, rather than the low
-bits themselves; this is why `trimWindowMarginsHolds` certifies both sides of
-the unit.
+bits themselves; this is why `trimChecksHold` certifies both sides of the unit.
 
 Each bound is needed in both directions, so each of the two boundaries
 contributes a window on either side of it; the boundary value itself lies in
@@ -690,11 +688,8 @@ theorem trim_scale_split (e : ℤ) :
     not just its magnitude, so it is checked separately for each exponent. -/
 theorem trim_two_num_lt_scale (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
     2 * trimNum e < trimScale e := by
-  have hcert := trim_narrow_all e (by simpa [Finset.mem_Icc] using he)
-  simp only [trimNarrowHolds, decide_eq_true_eq] at hcert
-  rw [← trim_sig_nat] at hcert
   have hstep : trimDen e * (2 * trimSig e + 2) ≤ trimDen e * trimModulus e :=
-    Nat.mul_le_mul_left _ hcert
+    Nat.mul_le_mul_left _ (trim_checks e he).1
   have hexp : trimDen e * (2 * trimSig e + 2)
       = 2 * (trimDen e * trimSig e) + 2 * trimDen e := by ring
   have hsplit := trim_num_split e
@@ -924,42 +919,52 @@ private theorem no_window_hit {lo hi q : ℤ} (f : ℕ) (e : ℤ) (hr : Regular 
   · omega
   · omega
 
-/-- The trim-down dichotomy: either the gap sits exactly on the boundary, a
-    genuine exact tie, or it is more than one window edge away, where the packed
-    comparison cannot be wrong. -/
+/-- Either the gap sits exactly on a boundary, a genuine exact tie, or it is
+    outside the windows either side of it, where the packed comparison cannot be
+    wrong. Both boundaries take this form, and `b` and `hi` say which windows
+    are meant: `hi` is the last residue the upper one covers, a full edge above
+    the trim-down boundary and one short of that above the trim-up one.
+    Refuting the one residue fewer is what leaves the trim-up conclusion
+    non-strict, which is the form `round_u0_iff_gap` needs for even `f`. -/
+private theorem gap_tie_or_far {b hi : ℤ} (f : ℕ) (e : ℤ) (hr : Regular f e)
+    (hcap : hi < (trimScale e : ℤ))
+    (hbelow : (b - trimEdge e, b - 1) ∈ (expWindows e).windows)
+    (habove : (b + 1, hi) ∈ (expWindows e).windows) :
+    (trimGap f e : ℤ) = b ∨ hi < (trimGap f e : ℤ)
+      ∨ (trimGap f e : ℤ) + trimEdge e < b := by
+  by_contra hcon
+  push Not at hcon
+  obtain ⟨hne, hhi, hlo⟩ := hcon
+  obtain ⟨q, hcert⟩ := exp_windows_refuted e hr.range
+  have hwrap : trimGap f e < trimScale e := by omega
+  rcases lt_or_ge (trimGap f e : ℤ) b with h | h
+  · exact no_window_hit f e hr hcert hbelow hwrap (by omega) (by omega)
+  · exact no_window_hit f e hr hcert habove hwrap (by omega) (by omega)
+
+/-- The trim-down dichotomy, about the boundary `num`. -/
 theorem d0_gap_tie_or_far (f : ℕ) (e : ℤ) (hr : Regular f e) :
     trimGap f e = trimNum e
       ∨ trimNum e + trimEdge e < trimGap f e
       ∨ trimGap f e + trimEdge e < trimNum e := by
-  by_contra hcon
-  push Not at hcon
-  obtain ⟨hne, hhi, hlo⟩ := hcon
-  obtain ⟨q, hcert⟩ := exp_windows_refuted e hr.range
   have hedge := trim_two_edge_lt_num e hr.range
   have hnarrow := trim_two_num_lt_scale e hr.range
-  have hwrap : trimGap f e < trimScale e := by omega
-  rcases Nat.lt_or_ge (trimGap f e) (trimNum e) with h | h
-  · exact no_window_hit f e hr hcert (.head _) hwrap (by omega) (by omega)
-  · exact no_window_hit f e hr hcert (.tail _ (.head _)) hwrap
-      (by omega) (by omega)
+  have := gap_tie_or_far (b := (trimNum e : ℤ))
+    (hi := (trimNum e : ℤ) + trimEdge e) f e hr (by omega)
+    (by simp [expWindows]) (by simp [expWindows])
+  omega
 
-/-- The trim-up dichotomy, the same statement about the other boundary. -/
+/-- The trim-up dichotomy, the same statement about the boundary `scale - num`,
+    which the packed comparison reads as `gap + num` against `scale`. -/
 theorem u0_sum_tie_or_far (f : ℕ) (e : ℤ) (hr : Regular f e) :
     trimGap f e + trimNum e = trimScale e
       ∨ trimScale e + trimEdge e ≤ trimGap f e + trimNum e
       ∨ trimGap f e + trimNum e + trimEdge e < trimScale e := by
-  by_contra hcon
-  push Not at hcon
-  obtain ⟨hne, hhi, hlo⟩ := hcon
-  obtain ⟨q, hcert⟩ := exp_windows_refuted e hr.range
   have hedge := trim_two_edge_lt_num e hr.range
   have hnarrow := trim_two_num_lt_scale e hr.range
-  have hwrap : trimGap f e < trimScale e := by omega
-  rcases Nat.lt_or_ge (trimGap f e + trimNum e) (trimScale e) with h | h
-  · exact no_window_hit f e hr hcert (.tail _ (.tail _ (.head _))) hwrap
-      (by omega) (by omega)
-  · exact no_window_hit f e hr hcert
-      (.tail _ (.tail _ (.tail _ (.head _)))) hwrap (by omega) (by omega)
+  have := gap_tie_or_far (b := (trimScale e : ℤ) - trimNum e)
+    (hi := (trimScale e : ℤ) - trimNum e + trimEdge e - 1) f e hr (by omega)
+    (by simp [expWindows]) (by simp [expWindows])
+  omega
 
 /-- An exact tie in the trim-up comparison needs `k = 0` when the power of ten
     is exact: that is the residue the fifth window refutes elsewhere. -/
