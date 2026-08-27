@@ -881,7 +881,8 @@ struct data {
   int16x8 multipliers16 = {0xce0, neg10};
 #elif ZMIJ_USE_SSE
   // Ordered so the values used to format floats fit in a single cache line.
-  uint128 div100 = splat32(div100_sig);
+  // Read via aligned load (_mm_load_si128), so must be 16-byte aligned.
+  alignas(16) uint128 div100 = splat32(div100_sig);
   uint128 div10 = splat16((1 << 16) / 10 + 1);
 #  if ZMIJ_USE_SSE4_1
   uint128 neg100 = splat32(::neg100);
