@@ -296,8 +296,7 @@ theorem correct_away_from_bad (f : ℕ) (e : ℤ) (hr : binary128.Regular f e)
     Shortest f e d' k' ∧ CorrectlyRounded f e d' k' := by
   obtain ⟨hlo, hhi⟩ := hr.range
   have ha := checks_at e hlo hhi hne
-  obtain ⟨hfine, hcoarse⟩ := ulp_scaled_bounds binary128 layout e
-    ha.shift_nonneg ha.shift_lt_four ha.table ha.trim
+  obtain ⟨hfine, hcoarse⟩ := ulp_scaled_bounds binary128 layout e ha
   exact exact_candidate_correct f e (binary128.decimalExponent e) hr.pos hfine
     hcoarse (exact_candidate binary128 layout f e hr ha)
 

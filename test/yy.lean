@@ -435,12 +435,12 @@ sign.
 
 A magnitude bound cannot do that on its own. For `k ≥ 0` and `e ≥ k + 2`, both
 terms of `Λ` are divisible by `2^(k+1)`, so the scaled defect is a multiple of
-`2^(width+1-h)/5^k` while `trim_low_bits` only bounds it by `2^(word+5)`; that
-forces `Λ = 0` only while the quantum stays above the uncertainty, which fails
-not far past the tie threshold (binary64: `k ≤ 26`). Beyond that the quantum is
-smaller than the uncertainty and the separation becomes genuinely arithmetic, so
-the development below clears denominators instead. Writing `num/den` for the
-exact power of ten and `τ = num % den`, the two bounds become
+`2^(width+1-h)/5^k` while the low-bits check only bounds it by `2^(word+5)`;
+that forces `Λ = 0` only while the quantum stays above the uncertainty, which
+fails not far past the tie threshold (binary64: `k ≤ 26`). Beyond that the
+quantum is smaller than the uncertainty and the separation becomes genuinely
+arithmetic, so the development below clears denominators instead. Writing
+`num/den` for the exact power of ten and `τ = num % den`, the two bounds become
 
     trim down:  trimGap ≤ num,
     trim up:    trimScale ≤ trimGap + num,
@@ -506,19 +506,6 @@ theorem trim_checks_of_hold (e : ℤ) (hcert : trimChecksHold fmt e = true) :
   rw [TrimChecks, trim_sig_nat]
   exact hcert
 
-theorem trim_low_bits (e : ℤ) (hc : TrimChecks fmt e) :
-    2 ^ (fmt.prec + 1) * (trimNum fmt e % trimDen fmt e)
-      ≤ trimSig fmt e % trimUnit fmt e * trimDen fmt e := hc.2.1
-
-theorem trim_high_bits (e : ℤ) (hc : TrimChecks fmt e) :
-    2 ^ (fmt.prec + 1) * (trimNum fmt e % trimDen fmt e)
-        + trimSig fmt e % trimUnit fmt e * trimDen fmt e
-      ≤ trimUnit fmt e * trimDen fmt e := hc.2.2
-
-/-- `p10Exact ≥ 2^(2w-1)`, with the denominator cleared. -/
-theorem trim_num_lower (e : ℤ) (hnorm : TableNormalized fmt e) :
-    2 ^ (fmt.width - 1) * trimDen fmt e ≤ trimNum fmt e := hnorm.1
-
 /-- The resolution of the packed comparison is negligible against the power of
     ten: `U ≤ 2^(w+4)` while `p10Exact ≥ 2^(2w-1)`. -/
 theorem trim_two_edge_lt_num (hl : Layout fmt) (e : ℤ)
@@ -529,7 +516,7 @@ theorem trim_two_edge_lt_num (hl : Layout fmt) (e : ℤ)
     rw [trimUnit]; exact Nat.pow_le_pow_right (by norm_num) (by omega)
   have hedge : trimEdge fmt e ≤ 2 ^ (fmt.word + 4) * trimDen fmt e := by
     rw [trimEdge]; exact Nat.mul_le_mul_right _ hu
-  have hnum := trim_num_lower fmt e hnorm
+  have hnum := hnorm.1
   have hden := trim_den_pos fmt e
   -- `2·2^(w+4) = 2^(w+5) < 2^(2w-1)` is where the layout is used.
   have hgrow : 2 * 2 ^ (fmt.word + 4) < 2 ^ (fmt.width - 1) := by
@@ -635,7 +622,7 @@ theorem trim_gap_lt_scale_add (hl : Layout fmt) (f : ℕ) (e : ℤ)
     le_trans
       (Nat.mul_le_mul_right _
         (Nat.pow_le_pow_right (by norm_num) (by have := hl.prec_le; omega)))
-      (trim_num_lower fmt e hnorm)
+      hnorm.1
   rw [trim_gap_eq]
   omega
 
@@ -722,13 +709,14 @@ theorem trim_scale_eq_edge (hl : Layout fmt) (e : ℤ)
   ring
 
 /-- The truncation error never exceeds the bits the trim-down comparison
-    discards: that is what `trim_low_bits` certifies, per exponent. -/
+    discards: that is what the low-bits half of `TrimChecks` certifies, per
+    exponent. -/
 theorem trim_err_le_drop (f : ℕ) (e : ℤ) (hr : fmt.Regular f e)
     (hc : TrimChecks fmt e) : trimErr fmt f e ≤ trimDrop fmt e := by
   have hbig : trimErr fmt f e
       ≤ 2 ^ (fmt.prec + 1) * (trimNum fmt e % trimDen fmt e) :=
     Nat.mul_le_mul_right _ (two_sig_lt fmt hr).le
-  have hlow := trim_low_bits fmt e hc
+  have hlow := hc.2.1
   rw [trimDrop]
   omega
 
@@ -746,14 +734,14 @@ theorem trim_drop_lt_err_add_edge (f : ℕ) (e : ℤ) (hr : fmt.Regular f e) :
   omega
 
 /-- The trim-up comparison discards less than two window edges. This is where
-    `trim_high_bits` is needed. -/
+    the high-bits half of `TrimChecks` is needed. -/
 theorem trim_err_drop_u_lt (f : ℕ) (e : ℤ) (hr : fmt.Regular f e)
     (hc : TrimChecks fmt e) :
     trimErr fmt f e + trimDropU fmt f e < 2 * trimEdge fmt e := by
   have hbig : trimErr fmt f e
       ≤ 2 ^ (fmt.prec + 1) * (trimNum fmt e % trimDen fmt e) :=
     Nat.mul_le_mul_right _ (two_sig_lt fmt hr).le
-  have hhigh := trim_high_bits fmt e hc
+  have hhigh := hc.2.2
   have hτ : trimNum fmt e % trimDen fmt e < trimDen fmt e :=
     Nat.mod_lt _ (trim_den_pos fmt e)
   have hres : trimResidue fmt f e % trimUnit fmt e * trimDen fmt e
@@ -964,8 +952,7 @@ theorem u0_exact_tie_k_zero (f : ℕ) (e : ℤ) (hr : fmt.Regular f e)
   by_contra hk
   obtain ⟨q, hcert⟩ := hexp
   have hnum : 0 < trimNum fmt e :=
-    lt_of_lt_of_le (Nat.mul_pos (by positivity) (trim_den_pos fmt e))
-      (trim_num_lower fmt e hnorm)
+    lt_of_lt_of_le (Nat.mul_pos (by positivity) (trim_den_pos fmt e)) hnorm.1
   -- The fifth window is present exactly under these two hypotheses.
   have hmem : ((trimScale fmt e : ℤ) - trimNum fmt e,
       (trimScale fmt e : ℤ) - trimNum fmt e) ∈ (expWindows fmt e).windows := by
@@ -1176,9 +1163,7 @@ theorem dec_ten_up_scaled (hl : Layout fmt) (f : ℕ) (e : ℤ)
   linear_combination dec_ten_down_scaled fmt hl f e hsh - hten
 
 /-- One ULP spans `[1, 10)` grid steps at yy's exponent. -/
-theorem ulp_scaled_bounds (hl : Layout fmt) (e : ℤ)
-    (hnn : 0 ≤ shiftRaw fmt e) (hsh : exponentShift fmt e < 4)
-    (hnorm : TableNormalized fmt e) (hc : TrimChecks fmt e) :
+theorem ulp_scaled_bounds (hl : Layout fmt) (e : ℤ) (ha : ChecksAt fmt e) :
     1 ≤ ulp e * 10 ^ (-fmt.decimalExponent e) ∧
       ulp e * 10 ^ (-fmt.decimalExponent e) < 10 := by
   obtain ⟨hwidth, hw⟩ := hl.width_word
@@ -1187,7 +1172,7 @@ theorem ulp_scaled_bounds (hl : Layout fmt) (e : ℤ)
       rw [trimMul]
       exact Nat.mul_le_mul_right _
         (Nat.pow_le_pow_right (by norm_num) (by omega))
-    have h2 := trim_num_lower fmt e hnorm
+    have h2 := ha.table.1
     -- `omega` cannot multiply a power identity through by `den`, so it is
     -- stated already multiplied.
     have h3 : (2 : ℕ) ^ fmt.width * trimDen fmt e
@@ -1196,10 +1181,12 @@ theorem ulp_scaled_bounds (hl : Layout fmt) (e : ℤ)
         rw [← pow_succ']; congr 1; omega]
       ring
     omega
-  have hhigh := trim_two_num_lt_scale fmt e hc
+  have hhigh := trim_two_num_lt_scale fmt e ha.trim
   rw [trim_scale_eq_ten_mul] at hhigh
   exact ulp_steps_of_int_eq (t := 2 * trimNum fmt e) (trim_mul_pos fmt e)
-    (by push_cast; linear_combination 2 * trim_mul_half_ulp fmt hl e hnn hsh)
+    (by push_cast
+        linear_combination
+          2 * trim_mul_half_ulp fmt hl e ha.shift_nonneg ha.shift_lt_four)
     hlow hhigh
 
 /-! ## The coarse decisions
@@ -1870,9 +1857,7 @@ theorem coarse_candidate_cases (hl : Layout fmt) (f : ℕ) (e : ℤ)
   have hstep : (trimScale fmt e : ℚ) = 10 * (trimMul fmt e : ℚ) := by
     exact_mod_cast trim_scale_eq_ten_mul fmt e
   exact coarse_roundtrip_adjacent f e (fmt.decimalExponent e)
-    (ulp_scaled_bounds fmt hl e ha.shift_nonneg ha.shift_lt_four ha.table
-      ha.trim).2
-    (sig_ten_mod_ten fmt f e) h10
+    (ulp_scaled_bounds fmt hl e ha).2 (sig_ten_mod_ten fmt f e) h10
     (le_of_mul_le_mul_right (by linarith) hmul)
     (lt_of_mul_lt_mul_right (by linarith) hmul.le) hround
 
@@ -1932,8 +1917,7 @@ theorem correct_of (hl : Layout fmt) (hchk : Checks fmt) (f : ℕ) (e : ℤ)
     Shortest f e d' k' ∧ CorrectlyRounded f e d' k' := by
   obtain ⟨hlo, hhi⟩ := hr.range
   have ha := hchk e hlo hhi
-  obtain ⟨hfine, hcoarse⟩ := ulp_scaled_bounds fmt hl e ha.shift_nonneg
-    ha.shift_lt_four ha.table ha.trim
+  obtain ⟨hfine, hcoarse⟩ := ulp_scaled_bounds fmt hl e ha
   exact exact_candidate_correct f e (fmt.decimalExponent e) hr.pos hfine hcoarse
     (exact_candidate fmt hl f e hr ha)
 
