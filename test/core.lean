@@ -632,8 +632,8 @@ def Format.power10Significand (fmt : Format) (k : ℤ) : ℕ :=
 
 /-- Numerator of the exact scaled power of ten `10^k·2^(width-pe)`, with
     negative exponents moved to the denominator. Writing the power as a ratio of
-    naturals turns the truncation into a single `Nat` division, so the
-    exponent-wise checks below can run in the kernel. -/
+    naturals turns the truncation into a single `Nat` division, which is what
+    keeps the exponent-wise checks below cheap in the kernel. -/
 def Format.power10Num (fmt : Format) (k : ℤ) : ℕ :=
   10 ^ k.toNat * 2 ^ ((fmt.width : ℤ) - fmt.power10Exponent k).toNat
 
