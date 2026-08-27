@@ -458,20 +458,100 @@ theorem coarse_roundtrip_adjacent (f : ℕ) (e k : ℤ)
 /-! ## What the implementations share
 
 Nothing above knows an implementation and nothing below knows decimals. Between
-them sits what the implementation proofs have in common: how binary64 spaces the
+them sits what the implementation proofs have in common: how a format spaces the
 values they convert, which decimal exponent they report, and the normalized
 power-of-ten table they multiply by. No one algorithm owns any of it, and
 neither part around it uses any of it.
+
+All of it is stated over a `Format`, so that an implementation proof can be
+written once and instantiated per format. Each generic definition is followed by
+its binary64 spelling, which is what lets the implementation files name these
+without a format argument.
 -/
+
+/-! ### The format -/
+
+/-- A binary format, as the layers below need it: precision, exponent range, the
+    machine word an implementation packs into, and fixed-point approximations of
+    `log₁₀2` and `log₂10` as a numerator over a power of two. Those two
+    approximations are the only part of a format that has to be checked rather
+    than derived, and how far they can be trusted is what pins down the exponent
+    range of the checks below. -/
+structure Format where
+  prec : ℕ
+  emin : ℤ
+  emax : ℤ
+  word : ℕ
+  log10Two : ℕ × ℕ
+  log2Ten  : ℕ × ℕ
+
+/-- Width of the power-of-ten table: an implementation multiplies by a
+    `2·word`-bit power of ten and keeps the high word. -/
+abbrev Format.width (fmt : Format) : ℕ := 2 * fmt.word
+
+/-- IEEE 754 binary64. -/
+def binary64 : Format where
+  prec := 53
+  emin := -1074
+  emax := 971
+  word := 64
+  log10Two := (315_653, 20)
+  log2Ten  := (217_707, 16)
+
+/-- IEEE 754 binary128. The fixed-point logarithms need wider denominators than
+    binary64's: `315653/2^20` first disagrees with `⌊e·log₁₀2⌋` at `e = -16407`,
+    and `217707/2^16` with `⌈k·log₂10⌉` at `k = -4886`, both inside binary128's
+    range. These are the smallest power-of-two denominators exact over the whole
+    of it. Their product still exceeds one, as binary64's does, which is what
+    keeps `exponentShift` in `[0, 4)`. -/
+def binary128 : Format where
+  prec := 113
+  emin := -16494
+  emax := 16271
+  word := 128
+  log10Two := (20_201_781, 26)
+  log2Ten  := (55_732_705, 24)
 
 /-! ### Regularly spaced values -/
 
-/-- Whether f·2^e is a regularly spaced positive binary64 value: a normal that
-    is not a power of 2, or anything at the minimum exponent, subnormals
-    included, there being no binade below to halve the spacing. -/
+/-- Whether f·2^e is a regularly spaced positive value of the format: a normal
+    that is not a power of 2, or anything at the minimum exponent, subnormals
+    included, there being no binade below to halve the spacing.
+
+    The grouping is load-bearing: the exponent range is the second component, so
+    that `range` is the second projection and the significand facts the first. -/
+def Format.Regular (fmt : Format) (f : ℕ) (e : ℤ) : Prop :=
+  (0 < f ∧ f < 2 ^ fmt.prec ∧ (2 ^ (fmt.prec - 1) < f ∨ e = fmt.emin)) ∧
+  (fmt.emin ≤ e ∧ e ≤ fmt.emax)
+
+/-- A regular value has a positive significand. -/
+theorem Format.Regular.pos {fmt : Format} {f : ℕ} {e : ℤ}
+    (hr : fmt.Regular f e) : 0 < f := hr.1.1
+
+/-- A regular value's significand fits the precision. -/
+theorem Format.Regular.sig_lt {fmt : Format} {f : ℕ} {e : ℤ}
+    (hr : fmt.Regular f e) : f < 2 ^ fmt.prec := hr.1.2.1
+
+/-- A regular value's exponent lies in the format's range. -/
+theorem Format.Regular.range {fmt : Format} {f : ℕ} {e : ℤ}
+    (hr : fmt.Regular f e) : fmt.emin ≤ e ∧ e ≤ fmt.emax := hr.2
+
+/-- Only the minimum exponent carries significands below `2^(prec-1)`. -/
+theorem Format.Regular.normal_or_min {fmt : Format} {f : ℕ} {e : ℤ}
+    (hr : fmt.Regular f e) : 2 ^ (fmt.prec - 1) < f ∨ e = fmt.emin := hr.1.2.2
+
+/-! Below, binary64's own layer. Each definition is spelled out rather than
+applied to `binary64`, and tied to the generic one by `rfl`. The wrappers would
+be shorter, but `unfold` and `simp only` in the implementation files need to see
+the literal constants and the structure literal, and stop at a wrapper. -/
+
+/-- Regularly spaced positive binary64 values. -/
 def Regular (f : ℕ) (e : ℤ) : Prop :=
   (0 < f ∧ f < 2 ^ 53 ∧ (2 ^ 52 < f ∨ e = -1074)) ∧
   (-1074 ≤ e ∧ e ≤ 971)
+
+theorem regular_eq_binary64 (f : ℕ) (e : ℤ) :
+    Regular f e = binary64.Regular f e := rfl
 
 /-- A regular value has a positive significand. -/
 theorem Regular.pos {f : ℕ} {e : ℤ} (hr : Regular f e) : 0 < f := hr.1.1
@@ -488,8 +568,41 @@ theorem Regular.range {f : ℕ} {e : ℤ} (hr : Regular f e) :
 
 /-- Approximation of floor(e·log₁₀ 2), the decimal exponent to report for a
     value with binary exponent `e`. -/
+def Format.decimalExponent (fmt : Format) (e : ℤ) : ℤ :=
+  e * fmt.log10Two.1 / 2 ^ fmt.log10Two.2
+
+/-- The decimal exponents reached at the ends of the format's range. Being
+    computed from `emin`/`emax` rather than supplied, they cannot name an
+    interval the format does not actually reach. -/
+def Format.kmin (fmt : Format) : ℤ := fmt.decimalExponent fmt.emin
+
+/-- The decimal exponent reached at the top of the format's range. -/
+def Format.kmax (fmt : Format) : ℤ := fmt.decimalExponent fmt.emax
+
+/-- The approximation is monotone whatever the constants are, scaling by a
+    nonnegative numerator and flooring by a positive power of two both being
+    monotone. -/
+theorem Format.decimalExponent_mono (fmt : Format) {a b : ℤ} (hab : a ≤ b) :
+    fmt.decimalExponent a ≤ fmt.decimalExponent b :=
+  Int.ediv_le_ediv (by positivity)
+    (mul_le_mul_of_nonneg_right hab (Int.natCast_nonneg _))
+
+/-- Hence the exponents it reaches over the format's range, which is what
+    confines the indices an implementation reads the table at below.
+    Monotonicity makes this a derivation and not a per-format check: what has to
+    be checked of a format's constants is what `decimalExponent` computes, never
+    where its range lies. -/
+theorem Format.decimal_exponent_range (fmt : Format) {e : ℤ}
+    (hlo : fmt.emin ≤ e) (hhi : e ≤ fmt.emax) :
+    fmt.kmin ≤ fmt.decimalExponent e ∧ fmt.decimalExponent e ≤ fmt.kmax :=
+  ⟨fmt.decimalExponent_mono hlo, fmt.decimalExponent_mono hhi⟩
+
+/-- binary64's decimal exponent. -/
 def decimalExponent (e : ℤ) : ℤ :=
   e * 315_653 / 2 ^ 20
+
+theorem decimalExponent_eq_binary64 (e : ℤ) :
+    decimalExponent e = binary64.decimalExponent e := rfl
 
 /-- The exponents it reaches over binary64's range, which is what confines the
     indices an implementation reads the table at below. -/
@@ -500,16 +613,86 @@ theorem decimal_exponent_range (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
 
 /-! ### The power of ten
 
-The table an implementation multiplies by, as a truncated 128-bit significand
-with a fixed-point exponent. Which entry it reads is its own business: yy reads
-`10^(-k)` and Żmij `10^(-k-1)`, so the checks below cover both, over every index
-either reaches.
+The table an implementation multiplies by, as a truncated `2·word`-bit
+significand with a fixed-point exponent. Which entry it reads is its own
+business: yy reads `10^(-k)` and Żmij `10^(-k-1)`, so the checks below cover
+both, over every index either reaches.
 -/
 
-/-- Binary exponent of 10^k used to normalize its 128-bit significand: the
+/-- Binary exponent of 10^k used to normalize its table significand: the
     fixed-point form of `⌊k·log₂10⌋ + 1`. Taking a logarithm here instead would
     make every exponent-wise check below shift a 1077-bit number down to zero
     one bit at a time. -/
+def Format.power10Exponent (fmt : Format) (k : ℤ) : ℤ :=
+  k * fmt.log2Ten.1 / 2 ^ fmt.log2Ten.2 + 1
+
+/-- Truncated normalized binary significand of 10^k, at the table width. -/
+def Format.power10Significand (fmt : Format) (k : ℤ) : ℕ :=
+  ⌊(10 : ℚ) ^ k * 2 ^ ((fmt.width : ℤ) - fmt.power10Exponent k)⌋₊
+
+/-- Numerator of the exact scaled power of ten `10^k·2^(width-pe)`, with
+    negative exponents moved to the denominator. Writing the power as a ratio of
+    naturals turns the truncation into a single `Nat` division, so the
+    exponent-wise checks below can run in the kernel. -/
+def Format.power10Num (fmt : Format) (k : ℤ) : ℕ :=
+  10 ^ k.toNat * 2 ^ ((fmt.width : ℤ) - fmt.power10Exponent k).toNat
+
+/-- Denominator of that same power of ten, carrying the negative exponents. -/
+def Format.power10Den (fmt : Format) (k : ℤ) : ℕ :=
+  10 ^ (-k).toNat * 2 ^ (fmt.power10Exponent k - (fmt.width : ℤ)).toNat
+
+theorem Format.power10_den_pos (fmt : Format) (k : ℤ) :
+    0 < fmt.power10Den k := by
+  rw [Format.power10Den]; positivity
+
+/-- The scaled exact power of ten is exactly the rational `num / den`. Only
+    exponent bookkeeping, so it holds at any width. -/
+theorem Format.power10_exact_ratio (fmt : Format) (k : ℤ) :
+    (10 : ℚ) ^ k * 2 ^ ((fmt.width : ℤ) - fmt.power10Exponent k)
+      = (fmt.power10Num k : ℚ) / (fmt.power10Den k : ℚ) := by
+  set w : ℤ := (fmt.width : ℤ) with hw
+  set pe := fmt.power10Exponent k
+  have hden : (fmt.power10Den k : ℚ) ≠ 0 :=
+    Nat.cast_ne_zero.mpr (fmt.power10_den_pos k).ne'
+  -- Each pair of exponents in the ratio adds up to the truncated one.
+  have hk : k + ((-k).toNat : ℤ) = (k.toNat : ℤ) := by omega
+  have hpe : w - pe + ((pe - w).toNat : ℤ) = ((w - pe).toNat : ℤ) := by
+    omega
+  rw [eq_div_iff hden, Format.power10Num, Format.power10Den, ← hw]
+  push_cast
+  rw [← zpow_natCast (10 : ℚ) (-k).toNat,
+    ← zpow_natCast (2 : ℚ) (pe - w).toNat,
+    ← zpow_natCast (10 : ℚ) k.toNat, ← zpow_natCast (2 : ℚ) (w - pe).toNat,
+    show (10 : ℚ) ^ k * 2 ^ (w - pe) *
+        (10 ^ ((-k).toNat : ℤ) * 2 ^ ((pe - w).toNat : ℤ))
+      = (10 ^ k * 10 ^ ((-k).toNat : ℤ)) *
+        (2 ^ (w - pe) * 2 ^ ((pe - w).toNat : ℤ)) from by ring,
+    ← zpow_add₀ (by norm_num : (10 : ℚ) ≠ 0),
+    ← zpow_add₀ (by norm_num : (2 : ℚ) ≠ 0), hk, hpe]
+
+/-- The truncation is the natural quotient `num / den`, which is what lets the
+    normalization check and the layers an implementation builds on it stay in
+    `Nat`. -/
+theorem Format.power10_significand_nat (fmt : Format) (k : ℤ) :
+    fmt.power10Significand k = fmt.power10Num k / fmt.power10Den k := by
+  rw [Format.power10Significand, fmt.power10_exact_ratio]
+  exact Nat.floor_div_eq_div _ _
+
+/-- The significand is a normalized table-width number — its top bit is set, and
+    it still fits the width — given the ratio bounds at that index. Which
+    indices satisfy those bounds is a numerical fact about the format's
+    constants, so it arrives as a hypothesis: the format that owns the index
+    range sweeps it. -/
+theorem Format.power10_significand_bounds (fmt : Format) {k : ℤ}
+    (hlo : 2 ^ (fmt.width - 1) * fmt.power10Den k ≤ fmt.power10Num k)
+    (hhi : fmt.power10Num k < 2 ^ fmt.width * fmt.power10Den k) :
+    2 ^ (fmt.width - 1) ≤ fmt.power10Significand k ∧
+      fmt.power10Significand k < 2 ^ fmt.width := by
+  rw [fmt.power10_significand_nat]
+  exact ⟨(Nat.le_div_iff_mul_le (fmt.power10_den_pos k)).mpr hlo,
+    (Nat.div_lt_iff_lt_mul (fmt.power10_den_pos k)).mpr hhi⟩
+
+/-- Binary exponent of 10^k for binary64's 128-bit table. -/
 def power10Exponent (k : ℤ) : ℤ :=
   k * 217_707 / 2 ^ 16 + 1
 
@@ -517,56 +700,50 @@ def power10Exponent (k : ℤ) : ℤ :=
 def power10Significand (k : ℤ) : ℕ :=
   ⌊(10 : ℚ) ^ k * 2 ^ (128 - power10Exponent k)⌋₊
 
-/-- Numerator of the exact scaled power of ten `10^k·2^(128-pe)`, with negative
-    exponents moved to the denominator. Writing the power as a ratio of naturals
-    turns the truncation into a single `Nat` division, so the exponent-wise
-    checks below can run in the kernel. -/
+/-- Numerator of the exact scaled power of ten `10^k·2^(128-pe)`. -/
 def power10Num (k : ℤ) : ℕ :=
   10 ^ k.toNat * 2 ^ (128 - power10Exponent k).toNat
 
-/-- Denominator of that same power of ten, carrying the negative exponents. -/
+/-- Denominator of that same power of ten. -/
 def power10Den (k : ℤ) : ℕ :=
   10 ^ (-k).toNat * 2 ^ (power10Exponent k - 128).toNat
 
-theorem power10_den_pos (k : ℤ) : 0 < power10Den k := by
-  rw [power10Den]; positivity
+theorem power10Exponent_eq_binary64 (k : ℤ) :
+    power10Exponent k = binary64.power10Exponent k := rfl
+
+theorem power10Num_eq_binary64 (k : ℤ) :
+    power10Num k = binary64.power10Num k := rfl
+
+theorem power10Den_eq_binary64 (k : ℤ) :
+    power10Den k = binary64.power10Den k := rfl
+
+theorem power10Significand_eq_binary64 (k : ℤ) :
+    power10Significand k = binary64.power10Significand k := rfl
+
+theorem power10_den_pos (k : ℤ) : 0 < power10Den k :=
+  binary64.power10_den_pos k
 
 /-- The scaled exact power of ten is exactly the rational `num / den`. -/
 theorem power10_exact_ratio (k : ℤ) :
     (10 : ℚ) ^ k * 2 ^ (128 - power10Exponent k)
-      = (power10Num k : ℚ) / (power10Den k : ℚ) := by
-  set pe := power10Exponent k
-  have hden : (power10Den k : ℚ) ≠ 0 :=
-    Nat.cast_ne_zero.mpr (power10_den_pos k).ne'
-  -- Each pair of exponents in the ratio adds up to the truncated one.
-  have hk : k + ((-k).toNat : ℤ) = (k.toNat : ℤ) := by omega
-  have hpe : 128 - pe + ((pe - 128).toNat : ℤ) = ((128 - pe).toNat : ℤ) := by
-    omega
-  rw [eq_div_iff hden, power10Num, power10Den]
-  push_cast
-  rw [← zpow_natCast (10 : ℚ) (-k).toNat,
-    ← zpow_natCast (2 : ℚ) (pe - 128).toNat,
-    ← zpow_natCast (10 : ℚ) k.toNat, ← zpow_natCast (2 : ℚ) (128 - pe).toNat,
-    show (10 : ℚ) ^ k * 2 ^ (128 - pe) *
-        (10 ^ ((-k).toNat : ℤ) * 2 ^ ((pe - 128).toNat : ℤ))
-      = (10 ^ k * 10 ^ ((-k).toNat : ℤ)) *
-        (2 ^ (128 - pe) * 2 ^ ((pe - 128).toNat : ℤ)) from by ring,
-    ← zpow_add₀ (by norm_num : (10 : ℚ) ≠ 0),
-    ← zpow_add₀ (by norm_num : (2 : ℚ) ≠ 0), hk, hpe]
+      = (power10Num k : ℚ) / (power10Den k : ℚ) :=
+  binary64.power10_exact_ratio k
 
-/-- The truncation is the natural quotient `num / den`, which is what lets the
-    normalization check and the layers an implementation builds on it stay in
-    `Nat`. -/
+/-- The truncation is the natural quotient `num / den`. -/
 theorem power10_significand_nat (k : ℤ) :
-    power10Significand k = power10Num k / power10Den k := by
-  rw [power10Significand, power10_exact_ratio]
-  exact Nat.floor_div_eq_div _ _
+    power10Significand k = power10Num k / power10Den k :=
+  binary64.power10_significand_nat k
 
 /-- The fixed-point exponent does normalize `10^k`, over `[-293, 324]`: the
     union of the ranges the two indices reach, `[-292, 324]` for `10^(-k)` and
     `[-293, 323]` for `10^(-k-1)`. Beyond it the approximation eventually drifts
     from `⌊k·log₂10⌋ + 1`, so this is where the range is pinned down. In ratio
-    form the check is two comparisons of naturals per exponent. -/
+    form the check is two comparisons of naturals per exponent.
+
+    This one stays here, rather than moving to the file of the implementation
+    that needs it, because two algorithms share it and it costs 180ms. A format
+    whose table is wide enough for the sweep to be expensive should discharge
+    `Format.power10_significand_bounds` in its own file. -/
 theorem power10_ratio_normalized :
     ∀ k ∈ Finset.Icc (-293 : ℤ) 324,
       2 ^ 127 * power10Den k ≤ power10Num k ∧
@@ -582,9 +759,7 @@ theorem power10_significand_bounds (k : ℤ) (hk : -293 ≤ k ∧ k ≤ 324) :
     2 ^ 127 ≤ power10Significand k ∧ power10Significand k < 2 ^ 128 := by
   obtain ⟨hlo, hhi⟩ :=
     power10_ratio_normalized k (by simpa [Finset.mem_Icc] using hk)
-  rw [power10_significand_nat]
-  exact ⟨(Nat.le_div_iff_mul_le (power10_den_pos k)).mpr hlo,
-    (Nat.div_lt_iff_lt_mul (power10_den_pos k)).mpr hhi⟩
+  exact binary64.power10_significand_bounds hlo hhi
 
 /-! ## Certified exact comparisons
 
@@ -796,8 +971,37 @@ and the two bounds a certificate needs of it belong here rather than in each
 implementation.
 -/
 
-/-- Only the minimum exponent carries significands below `2^52`, and the
+/-- Only the minimum exponent carries significands below `2^(prec-1)`, and the
     certificates need the smaller box everywhere else. -/
+def Format.regularWindows (fmt : Format) (g modulus : ℕ) (e : ℤ)
+    (windows : List (ℤ × ℤ)) : ModWindows where
+  g := g
+  modulus := modulus
+  f0 := if e = fmt.emin then 1 else 2 ^ (fmt.prec - 1) + 1
+  f1 := 2 ^ fmt.prec - 1
+  windows := windows
+
+/-- `not_hit` over that box: `Regular` discharges the significand bounds, so an
+    implementation supplies only its modulus being positive and its quantity
+    being the residue. -/
+theorem Format.regular_not_hit {fmt : Format} {g modulus : ℕ} {e : ℤ}
+    {windows : List (ℤ × ℤ)} {q lo hi : ℤ} {y : ℕ} (f : ℕ)
+    (hr : fmt.Regular f e) (hmodulus : 0 < modulus)
+    (hcert : (fmt.regularWindows g modulus e windows).refutedBy q = true)
+    (hmem : (lo, hi) ∈ windows) (hy : y = g * f % modulus)
+    (hlo : lo ≤ (y : ℤ)) (hhi : (y : ℤ) ≤ hi) :
+    False := by
+  refine (fmt.regularWindows g modulus e windows).not_hit f hmodulus hcert hmem
+    ?_ ?_ hy hlo hhi <;> simp only [Format.regularWindows]
+  · split_ifs with hmin
+    · exact hr.pos
+    · rcases hr.normal_or_min with h | h
+      · omega
+      · exact absurd h hmin
+  · have := hr.sig_lt
+    omega
+
+/-- binary64's significand box. -/
 def regularWindows (g modulus : ℕ) (e : ℤ) (windows : List (ℤ × ℤ)) :
     ModWindows where
   g := g
@@ -806,24 +1010,21 @@ def regularWindows (g modulus : ℕ) (e : ℤ) (windows : List (ℤ × ℤ)) :
   f1 := 2 ^ 53 - 1
   windows := windows
 
-/-- `not_hit` over that box: `Regular` discharges the significand bounds, so an
-    implementation supplies only its modulus being positive and its quantity
-    being the residue. -/
+theorem regularWindows_eq_binary64 (g modulus : ℕ) (e : ℤ)
+    (windows : List (ℤ × ℤ)) :
+    regularWindows g modulus e windows
+      = binary64.regularWindows g modulus e windows := rfl
+
+/-- `not_hit` over binary64's box. -/
 theorem regular_not_hit {g modulus : ℕ} {e : ℤ} {windows : List (ℤ × ℤ)}
     {q lo hi : ℤ} {y : ℕ} (f : ℕ) (hr : Regular f e) (hmodulus : 0 < modulus)
     (hcert : (regularWindows g modulus e windows).refutedBy q = true)
     (hmem : (lo, hi) ∈ windows) (hy : y = g * f % modulus)
     (hlo : lo ≤ (y : ℤ)) (hhi : (y : ℤ) ≤ hi) :
     False := by
-  refine (regularWindows g modulus e windows).not_hit f hmodulus hcert hmem
-    ?_ ?_ hy hlo hhi <;> simp only [regularWindows]
-  · split_ifs with hmin
-    · exact hr.pos
-    · rcases hr.1.2.2 with h | h
-      · omega
-      · exact absurd h hmin
-  · have := hr.sig_lt
-    omega
+  rw [regular_eq_binary64] at hr
+  rw [regularWindows_eq_binary64] at hcert
+  exact Format.regular_not_hit f hr hmodulus hcert hmem hy hlo hhi
 
 /-! ### Certificate search
 
@@ -856,9 +1057,12 @@ private def modCertSearch (w : ModWindows) : ℕ → ℤ → ℤ → ℤ → ℤ
       modCertSearch w n v (u % v) qc (u / v * qc + qp)
 
 /-- A multiplier refuting every window, or the best attempt at one. Untrusted:
-    what it returns is checked by `refutedBy`. -/
+    what it returns is checked by `refutedBy`. The fuel bounds the Euclidean
+    search, whose length grows with the precision: binary64 finishes within 44
+    steps and binary128 within 74, so 160 leaves both room to spare. The loop
+    exits as soon as a window is refuted, so unused fuel costs nothing. -/
 def ModWindows.search (w : ModWindows) : ℤ :=
-  modCertSearch w 80 w.modulus ((w.g : ℤ) % (w.modulus : ℤ)) 0 1
+  modCertSearch w 160 w.modulus ((w.g : ℤ) % (w.modulus : ℤ)) 0 1
 
 open Lean Elab Tactic Meta in
 /-- Close a goal `∃ q, w.refutedBy q = true`, where `w` is a definition applied
