@@ -480,7 +480,10 @@ def trimScale (e : ℤ) : ℕ := trimModulus fmt e * trimDen fmt e
 def trimEdge (e : ℤ) : ℕ := trimUnit fmt e * trimDen fmt e
 
 /-- Everything about the truncated power of ten that has to be checked per
-    exponent, as one predicate so the kernel sweeps the range once. -/
+    exponent, as one predicate so the kernel sweeps the range once.
+
+    On `num`/`den` rather than the `trimSig` of `TrimChecks`: both reduce, but
+    the `Nat.floor` over `ℚ` costs the kernel about twice as much. -/
 def trimChecksHold (e : ℤ) : Bool :=
   let num := trimNum fmt e
   let den := trimDen fmt e
