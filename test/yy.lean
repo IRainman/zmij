@@ -69,12 +69,12 @@ follow from any inequality between the parameters, so they are collected as
 per-format obligations in `Layout` and `Checks` and discharged by finite search.
 
 That boundary is what makes a second format cheap in proof and expensive only in
-compute. `correctOf` is the generic theorem; `correct` below is binary64's
+compute. `correct_of` is the generic theorem; `correct` below is binary64's
 instance of it, and `yy128.correct` is binary128's.
 
 ## Dependencies
 
-    correctOf
+    correct_of
       ← ulp_scaled_bounds
       ← exact_candidate
           ← coarse_output_roundtrips
@@ -454,7 +454,7 @@ the packed comparisons by integer arithmetic alone. Dividing `den` back out to
 state them over `ℚ` trades that for casts and field lemmas, and for restating as
 hypotheses the facts about `%` and `/` that `omega` already knows.
 
-`At` and `Checks`, at the end of this subsection, are where the per-format
+`ChecksAt` and `Checks`, at the end of this subsection, are where the per-format
 numerical obligations are collected; the analytic development resumes after
 them.
 -/
@@ -856,7 +856,7 @@ theorem exp_no_window_hit {lo hi q : ℤ} (f : ℕ) (e : ℤ)
     reach in remainder units.
 
     Defined here, before the unit-step development that motivates it, so that
-    `At` below can name both refutation obligations at once. -/
+    `ChecksAt` below can name both refutation obligations at once. -/
 def oneWindows (e : ℤ) : ModWindows :=
   fmt.regularWindows (2 * trimSig fmt e)
       (2 ^ (fmt.width + 1 - exponentShift fmt e)) e <|
@@ -879,7 +879,7 @@ def oneWindows (e : ℤ) : ModWindows :=
 
     The two `_refuted` fields are the expensive ones: one modular certificate
     each, and there is one of these records per exponent. -/
-structure At (fmt : Format) (e : ℤ) : Prop where
+structure ChecksAt (fmt : Format) (e : ℤ) : Prop where
   /-- `Int.toNat` does not clamp the shift. -/
   shift_nonneg : 0 ≤ shiftRaw fmt e
   /-- The shift leaves the four-bit digit slot intact. -/
@@ -894,11 +894,11 @@ structure At (fmt : Format) (e : ℤ) : Prop where
   /-- The unit-step bands around the midpoint are empty. -/
   one_refuted : ∃ q, (oneWindows fmt e).refutedBy q = true
 
-/-- The per-format obligation: `At` at every exponent of the format's range.
-    The domain is the format's own, so a format cannot discharge this over an
-    interval smaller than the one `Regular` admits. -/
+/-- The per-format obligation: `ChecksAt` at every exponent of the format's
+    range. The domain is the format's own, so a format cannot discharge this
+    over an interval smaller than the one `Regular` admits. -/
 def Checks (fmt : Format) : Prop :=
-  ∀ e : ℤ, fmt.emin ≤ e → e ≤ fmt.emax → At fmt e
+  ∀ e : ℤ, fmt.emin ≤ e → e ≤ fmt.emax → ChecksAt fmt e
 
 /-- Either the gap sits exactly on a boundary, a genuine exact tie, or it is
     outside the windows either side of it, where the packed comparison cannot be
@@ -1227,7 +1227,7 @@ that yy resolves the exact way.
 
 /-- What `roundD0` decides, from the stable/exceptional split alone. -/
 theorem round_d0_iff_gap (hl : Layout fmt) (f : ℕ) (e : ℤ)
-    (hr : fmt.Regular f e) (ha : At fmt e) :
+    (hr : fmt.Regular f e) (ha : ChecksAt fmt e) :
     (toDecimalCandidates fmt f e).roundD0 = true
       ↔ if f % 2 = 0 then trimGap fmt f e ≤ trimNum fmt e
         else trimGap fmt f e < trimNum fmt e := by
@@ -1273,7 +1273,7 @@ theorem round_d0_iff_gap (hl : Layout fmt) (f : ℕ) (e : ℤ)
 
 /-- `roundD0` fires exactly when the trim-down candidate round-trips. -/
 theorem round_d0_iff_roundtrips (hl : Layout fmt) (f : ℕ) (e : ℤ)
-    (hr : fmt.Regular f e) (ha : At fmt e) :
+    (hr : fmt.Regular f e) (ha : ChecksAt fmt e) :
     (toDecimalCandidates fmt f e).roundD0 = true
       ↔ Roundtrips f e (sigTen fmt f e * 10 ^ fmt.decimalExponent e) := by
   rw [round_d0_iff_gap fmt hl f e hr ha,
@@ -1286,7 +1286,7 @@ theorem round_d0_iff_roundtrips (hl : Layout fmt) (f : ℕ) (e : ℤ)
 /-- What `roundU0` decides. The packed sum `s` counts window edges below
     `gap + num`, and the coarse step is `10·2^(w-4)` of them. -/
 theorem round_u0_iff_gap (hl : Layout fmt) (f : ℕ) (e : ℤ)
-    (hr : fmt.Regular f e) (ha : At fmt e) :
+    (hr : fmt.Regular f e) (ha : ChecksAt fmt e) :
     (toDecimalCandidates fmt f e).roundU0 = true
       ↔ if f % 2 = 0 then trimScale fmt e ≤ trimGap fmt f e + trimNum fmt e
         else trimScale fmt e < trimGap fmt f e + trimNum fmt e := by
@@ -1354,7 +1354,7 @@ theorem round_u0_iff_gap (hl : Layout fmt) (f : ℕ) (e : ℤ)
 
 /-- `roundU0` fires exactly when the trim-up candidate round-trips. -/
 theorem round_u0_iff_roundtrips (hl : Layout fmt) (f : ℕ) (e : ℤ)
-    (hr : fmt.Regular f e) (ha : At fmt e) :
+    (hr : fmt.Regular f e) (ha : ChecksAt fmt e) :
     (toDecimalCandidates fmt f e).roundU0 = true
       ↔ Roundtrips f e
         ((sigTen fmt f e + 10 : ℕ) * 10 ^ fmt.decimalExponent e) := by
@@ -1560,7 +1560,7 @@ private theorem one_windows_truncated (e : ℤ)
 
 /-- Below the midpoint the truncation error cannot reach it. -/
 theorem one_residue_below_half (hl : Layout fmt) (f : ℕ) (e : ℤ)
-    (hr : fmt.Regular f e) (ha : At fmt e)
+    (hr : fmt.Regular f e) (ha : ChecksAt fmt e)
     (hτ : trimNum fmt e % trimDen fmt e ≠ 0)
     (hres : oneResidue fmt f e < 2 ^ (fmt.width - 1 - exponentShift fmt e)) :
     oneResidue fmt f e + 2 ^ (fmt.prec + 1)
@@ -1597,7 +1597,7 @@ theorem one_residue_below_half (hl : Layout fmt) (f : ℕ) (e : ℤ)
 /-- In the packed tie band, an even `sigHi` occurs only at a genuine midpoint,
     which yy resolves to even. -/
 theorem one_tie_band_even (hl : Layout fmt) (f : ℕ) (e : ℤ)
-    (hr : fmt.Regular f e) (ha : At fmt e) (hpar : sigHi fmt f e % 2 = 0)
+    (hr : fmt.Regular f e) (ha : ChecksAt fmt e) (hpar : sigHi fmt f e % 2 = 0)
     (hlo : 2 ^ (fmt.width - 1 - exponentShift fmt e) ≤ oneResidue fmt f e)
     (hhi : oneResidue fmt f e
       < 2 ^ (fmt.width - 1 - exponentShift fmt e)
@@ -1652,7 +1652,7 @@ theorem one_tie_band_even (hl : Layout fmt) (f : ℕ) (e : ℤ)
 /-- Strictly below the packed midpoint the exact gap is strictly below half a
     step. -/
 theorem one_gap_lt_half_step (hl : Layout fmt) (f : ℕ) (e : ℤ)
-    (hr : fmt.Regular f e) (ha : At fmt e)
+    (hr : fmt.Regular f e) (ha : ChecksAt fmt e)
     (hlt : oneResidue fmt f e < 2 ^ (fmt.width - 1 - exponentShift fmt e)) :
     2 * oneGap fmt f e < trimMul fmt e := by
   have hsh := ha.shift_lt_four
@@ -1681,7 +1681,7 @@ theorem one_gap_lt_half_step (hl : Layout fmt) (f : ℕ) (e : ℤ)
     has passed half a step, with an exact midpoint going up only from an odd
     `sigHi`. -/
 theorem round_u1_iff_gap (hl : Layout fmt) (f : ℕ) (e : ℤ)
-    (hr : fmt.Regular f e) (ha : At fmt e) :
+    (hr : fmt.Regular f e) (ha : ChecksAt fmt e) :
     (toDecimalCandidates fmt f e).roundU1 = true
       ↔ if sigHi fmt f e % 2 = 0 then trimMul fmt e < 2 * oneGap fmt f e
         else trimMul fmt e ≤ 2 * oneGap fmt f e := by
@@ -1743,7 +1743,7 @@ theorem dec_one_scaled (hl : Layout fmt) (f : ℕ) (e : ℤ)
 /-- `decOne` is a nearest value on the grid at `decimalExponent e`, ties to
     even. -/
 theorem dec_one_nearest (hl : Layout fmt) (f : ℕ) (e : ℤ)
-    (hr : fmt.Regular f e) (ha : At fmt e) :
+    (hr : fmt.Regular f e) (ha : ChecksAt fmt e) :
     let c := toDecimalCandidates fmt f e
     let x := value f e * 10 ^ (-fmt.decimalExponent e)
     |(c.decOne : ℚ) - x| ≤ 1 / 2 ∧
@@ -1794,7 +1794,7 @@ a decision, so no equivalence could supply it.
 
 /-- On the coarse path, yy emits a multiple of ten that round-trips. -/
 theorem coarse_output_roundtrips (hl : Layout fmt) (f : ℕ) (e : ℤ)
-    (hr : fmt.Regular f e) (ha : At fmt e) :
+    (hr : fmt.Regular f e) (ha : ChecksAt fmt e) :
     let c := toDecimalCandidates fmt f e
     (c.roundD0 || c.roundU0) = true →
     let d := (toDecimal fmt f e).1
@@ -1819,7 +1819,7 @@ theorem coarse_output_roundtrips (hl : Layout fmt) (f : ℕ) (e : ℤ)
 
 /-- On the fine path, yy emits `decOne`, a nearest value on its own grid. -/
 theorem fine_output_nearest (hl : Layout fmt) (f : ℕ) (e : ℤ)
-    (hr : fmt.Regular f e) (ha : At fmt e) :
+    (hr : fmt.Regular f e) (ha : ChecksAt fmt e) :
     let c := toDecimalCandidates fmt f e
     (c.roundD0 || c.roundU0) = false →
     let d := (toDecimal fmt f e).1
@@ -1850,7 +1850,7 @@ on the grid one decimal digit finer.
 /-- A multiple of ten that round-trips is one of yy's two coarse candidates,
     `sigTen` or `sigTen + 10`. -/
 theorem coarse_candidate_cases (hl : Layout fmt) (f : ℕ) (e : ℤ)
-    (hr : fmt.Regular f e) (ha : At fmt e) (d : ℕ) (h10 : d % 10 = 0)
+    (hr : fmt.Regular f e) (ha : ChecksAt fmt e) (d : ℕ) (h10 : d % 10 = 0)
     (hround : Roundtrips f e (d * 10 ^ fmt.decimalExponent e)) :
     d = sigTen fmt f e ∨ d = sigTen fmt f e + 10 := by
   -- The bracket is one-sided each way rather than an absolute value, so this
@@ -1878,7 +1878,7 @@ theorem coarse_candidate_cases (hl : Layout fmt) (f : ℕ) (e : ℤ)
 
 /-- If the rounding interval contains a multiple of ten, yy trims. -/
 theorem trim_of_coarse_roundtrip (hl : Layout fmt) (f : ℕ) (e : ℤ)
-    (hr : fmt.Regular f e) (ha : At fmt e) (d : ℕ) (h10 : d % 10 = 0)
+    (hr : fmt.Regular f e) (ha : ChecksAt fmt e) (d : ℕ) (h10 : d % 10 = 0)
     (hround : Roundtrips f e (d * 10 ^ fmt.decimalExponent e)) :
     let c := toDecimalCandidates fmt f e
     (c.roundD0 || c.roundU0) = true := by
@@ -1897,14 +1897,14 @@ decisions agree with the exact ones: a packed midpoint need not be an exact
 midpoint, and the trim flags are matched to the existence of an exact coarse
 candidate, not to any exact comparison.
 
-`correctOf` is the generic conclusion, in the format and the two records of
+`correct_of` is the generic conclusion, in the format and the two records of
 per-format obligations. Everything below it is binary64's instance.
 -/
 
 /-- yy implements the exact method: it trims exactly when an exact coarse
     candidate exists. -/
 theorem exact_candidate (hl : Layout fmt) (f : ℕ) (e : ℤ)
-    (hr : fmt.Regular f e) (ha : At fmt e) :
+    (hr : fmt.Regular f e) (ha : ChecksAt fmt e) :
     let (d, k) := toDecimal fmt f e
     ExactCandidate f e k d := by
   set c := toDecimalCandidates fmt f e
@@ -1925,7 +1925,7 @@ theorem exact_candidate (hl : Layout fmt) (f : ℕ) (e : ℤ)
     inequalities about the word, discharged by `decide`; `Checks` is the
     per-exponent sweep, and it is the only expensive thing about a new
     format. -/
-theorem correctOf (hl : Layout fmt) (hchk : Checks fmt) (f : ℕ) (e : ℤ)
+theorem correct_of (hl : Layout fmt) (hchk : Checks fmt) (f : ℕ) (e : ℤ)
     (hr : fmt.Regular f e) :
     let (d, k) := toDecimal fmt f e
     let (d', k') := reduceDecimal d k
@@ -1939,9 +1939,10 @@ theorem correctOf (hl : Layout fmt) (hchk : Checks fmt) (f : ℕ) (e : ℤ)
 
 /-! ## binary64
 
-The instantiation. `Layout` is two inequalities about the word; everything else
-is a sweep of binary64's 2046 exponents, and the two certificate families are
-what the sweeps cost.
+The instantiation. `Layout` is arithmetic on the constants; the remaining
+obligations are inherited from `core.lean`, proved from the concrete constants,
+or swept over binary64's 2046 exponents. The two modular certificate families
+dominate the cost.
 -/
 
 /-- binary64's raw shift, with the constants exposed so that `omega` can see
@@ -1950,7 +1951,7 @@ private theorem b64_shift_raw_eq (e : ℤ) :
     shiftRaw binary64 e
       = e + (-(e * 315_653 / 2 ^ 20) * 217_707) / 2 ^ 16 := rfl
 
-theorem binary64Layout : Layout binary64 := ⟨by decide, by decide⟩
+theorem binary64_layout : Layout binary64 := ⟨by decide, by decide⟩
 
 /-- The shift is nonnegative, so `Int.toNat` does not clamp it. The two
     fixed-point constants multiply to just over one, by a part in 2^17.4, and
@@ -2000,7 +2001,7 @@ private theorem b64_one_refuted (e : ℤ) (hlo : -1074 ≤ e) (hhi : e ≤ 971) 
     ∃ q, (oneWindows binary64 e).refutedBy q = true := by
   interval_cases e <;> one_cert
 
-theorem binary64Checks : Checks binary64 := by
+theorem binary64_checks : Checks binary64 := by
   intro e hlo hhi
   -- Restate the bounds with the literals visible; `omega` treats
   -- `binary64.emin` as an opaque atom otherwise.
@@ -2023,6 +2024,6 @@ theorem correct (f : ℕ) (e : ℤ) (hr : Regular f e) :
     let (d, k) := toDecimal binary64 f e
     let (d', k') := reduceDecimal d k
     Shortest f e d' k' ∧ CorrectlyRounded f e d' k' :=
-  correctOf binary64 binary64Layout binary64Checks f e hr
+  correct_of binary64 binary64_layout binary64_checks f e hr
 
 end yy

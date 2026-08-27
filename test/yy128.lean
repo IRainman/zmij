@@ -7,11 +7,11 @@ import yy
 
 /-! # Correctness of yy at binary128
 
-`yy.lean` proves `yy.correctOf`, that yy implements `core.lean`'s exact selection
-rule at any format satisfying two records of side conditions. This file discharges
-those records at IEEE 754 binary128 and applies the theorem. It contains no
-mathematics: every declaration is either a finite check or the one-line
-instantiation at the end.
+`yy.lean` proves `yy.correct_of`, that yy implements `core.lean`'s exact
+selection rule at any format satisfying two records of side conditions. This
+file discharges those records at IEEE 754 binary128 and applies the theorem. It
+contains no mathematics: every declaration is either a finite check or the
+one-line instantiation at the end.
 
 The split is the one from `yy.lean`'s header — algebraic identities are
 parameterized, numerical approximation properties are checked — and this file is
@@ -62,8 +62,8 @@ a normal binary128 value, yy emits a 34-digit decimal that is outside the
 half-ULP interval by a relative `2^-127`, while the 35-digit candidate it would
 have emitted on the fine path is comfortably inside. `bad_output`,
 `bad_output_not_nearest` and `fine_candidate_is_nearest` are that computation, and
-`checks_unsatisfiable` derives from it that no instantiation of `yy.correctOf` at
-binary128 exists. All are `decide +kernel`; nothing here is a `sorry`.
+`checks_unsatisfiable` derives from it that no instantiation of `yy.correct_of`
+at binary128 exists. All are `decide +kernel`; nothing here is a `sorry`.
 
 The failure is a hair's breadth: the packed comparison discards `word + 4 = 132`
 of the table's 256 bits, leaving a window of relative width `2^-127.3` against a
@@ -235,10 +235,10 @@ theorem fine_candidate_is_nearest :
       - (bad : ℤ) * 10 ^ 683)).natAbs < 10 ^ 683 := by
   decide +kernel
 
-/-- Hence `Checks binary128` is not satisfiable: `At binary128 (-2266)` would
-    give a refuting multiplier for a window the significand above lands in, and
-    `ModWindows.not_hit` turns that into `False`. There is therefore no
-    instantiation of `correctOf` at binary128 with these parameters, which is
+/-- Hence `Checks binary128` is not satisfiable: `ChecksAt binary128 (-2266)`
+    would give a refuting multiplier for a window the significand above lands
+    in, and `ModWindows.not_hit` turns that into `False`. There is therefore no
+    instantiation of `correct_of` at binary128 with these parameters, which is
     the honest reading of this file. -/
 theorem checks_unsatisfiable (hc : Checks binary128) : False := by
   obtain ⟨q, hcert⟩ := (hc (-2266) (by decide) (by decide)).exp_refuted
@@ -256,13 +256,15 @@ private theorem one_refuted (e : ℤ) (hlo : -16494 ≤ e) (hhi : e ≤ 16271) :
 
 `Checks` quantifies over the whole exponent range and so cannot be built. Every
 field of it is nevertheless established at every other exponent, which is what
-`atOf` records: `correctOf` applies at any exponent for which `At` holds, so this
-is exactly the part of binary128 that is verified.
+`checks_at` records: `correct_of` applies at any exponent for which `ChecksAt`
+holds, so this is exactly the part of binary128 that is verified.
 -/
 
-/-- Every obligation of `At binary128 e`, at every exponent but `-2266`. -/
-theorem atOf (e : ℤ) (hlo : -16494 ≤ e) (hhi : e ≤ 16271) (hne : e ≠ -2266) :
-    At binary128 e := by
+/-- Every obligation of `ChecksAt binary128 e`, at every exponent
+    but `-2266`. -/
+theorem checks_at (e : ℤ) (hlo : -16494 ≤ e) (hhi : e ≤ 16271)
+    (hne : e ≠ -2266) :
+    ChecksAt binary128 e := by
   have hlo' : (-16494 : ℤ) ≤ e := hlo
   have hhi' : e ≤ 16271 := hhi
   exact
@@ -293,10 +295,10 @@ theorem correct_away_from_bad (f : ℕ) (e : ℤ) (hr : binary128.Regular f e)
     let (d', k') := reduceDecimal d k
     Shortest f e d' k' ∧ CorrectlyRounded f e d' k' := by
   obtain ⟨hlo, hhi⟩ := hr.range
+  have ha := checks_at e hlo hhi hne
   obtain ⟨hfine, hcoarse⟩ := ulp_scaled_bounds binary128 layout e
-    (atOf e hlo hhi hne).shift_nonneg (atOf e hlo hhi hne).shift_lt_four
-    (atOf e hlo hhi hne).table (atOf e hlo hhi hne).trim
+    ha.shift_nonneg ha.shift_lt_four ha.table ha.trim
   exact exact_candidate_correct f e (binary128.decimalExponent e) hr.pos hfine
-    hcoarse (exact_candidate binary128 layout f e hr (atOf e hlo hhi hne))
+    hcoarse (exact_candidate binary128 layout f e hr ha)
 
 end yy128
