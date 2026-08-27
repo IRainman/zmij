@@ -1079,7 +1079,10 @@ def modCertTactic (search : ℤ → ℤ) : TacticM Unit := do
     | throwError "mod_cert: expected `w.refutedBy q`, got {lhs}"
   let .app _ argument := problem
     | throwError "mod_cert: {problem} is not applied to an index"
-  let some index := argument.int?
+  -- The index may arrive wrapped, as when the window family is applied to an
+  -- exponent bundled with its format; the literal is then the last argument of
+  -- the constructor.
+  let some index := argument.int? <|> argument.getAppArgs.back?.bind (·.int?)
     | throwError "mod_cert: the index {argument} is not a literal"
   let q ← Term.exprToSyntax (toExpr (search index))
   evalTactic (← `(tactic| exact ⟨$q, by decide +kernel⟩))

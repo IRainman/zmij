@@ -109,7 +109,7 @@ private theorem dec_exp_eq (e : ℤ) :
     binary128.decimalExponent e = e * 20_201_781 / 2 ^ 26 := rfl
 
 private theorem shift_raw_eq (e : ℤ) :
-    shiftRaw binary128 e
+    shiftRaw (⟨e⟩ : FPExp binary128)
       = e + (-(e * 20_201_781 / 2 ^ 26) * 55_732_705) / 2 ^ 24 := rfl
 
 /-- The decimal exponent's range, which bounds the table indices the sweep below
@@ -122,8 +122,8 @@ private theorem dec_exp_range (e : ℤ) (hlo : -16494 ≤ e) (hhi : e ≤ 16271)
 /-- The shift leaves the four-bit digit slot intact. A magnitude fact, so the
     constants give it to `omega` directly. -/
 private theorem shift_lt_four (e : ℤ) (hlo : -16494 ≤ e) (hhi : e ≤ 16271) :
-    exponentShift binary128 e < 4 := by
-  show (shiftRaw binary128 e).toNat < 4
+    exponentShift (⟨e⟩ : FPExp binary128) < 4 := by
+  show (shiftRaw (⟨e⟩ : FPExp binary128)).toNat < 4
   rw [shift_raw_eq]
   omega
 
@@ -132,7 +132,8 @@ private theorem shift_lt_four (e : ℤ) (hlo : -16494 ≤ e) (hhi : e ≤ 16271)
     one, by a part in `2^27.5`, which leaves `omega`'s rational relaxation room
     to admit a shift of `-1`. Ruling that out is Diophantine, hence checked. -/
 private theorem shift_nonneg_sweep :
-    ∀ e ∈ Finset.Icc (-16494 : ℤ) 16271, 0 ≤ shiftRaw binary128 e := by
+    ∀ e ∈ Finset.Icc (-16494 : ℤ) 16271,
+      0 ≤ shiftRaw (⟨e⟩ : FPExp binary128) := by
   decide +kernel
 
 /-! ## The table
@@ -150,7 +151,7 @@ private theorem table_sweep :
   decide +kernel
 
 private theorem table (e : ℤ) (hlo : -16494 ≤ e) (hhi : e ≤ 16271) :
-    TableNormalized binary128 e := by
+    TableNormalized (⟨e⟩ : FPExp binary128) := by
   obtain ⟨h1, h2⟩ := dec_exp_range e hlo hhi
   exact table_sweep (-binary128.decimalExponent e)
     (by simp only [Finset.mem_Icc]; omega)
@@ -163,32 +164,31 @@ measured from either end of the window unit.
 -/
 
 private theorem trim_sweep :
-    ∀ e ∈ Finset.Icc (-16494 : ℤ) 16271, trimChecksHold binary128 e = true := by
+    ∀ e ∈ Finset.Icc (-16494 : ℤ) 16271,
+      trimChecksHold (⟨e⟩ : FPExp binary128) = true := by
   decide +kernel
 
 /-! ## The certificates
 
-One modular question per exponent per family. `modCertTactic` reads the last
-argument of the applied problem, so the format argument does not disturb it and
-each family still costs one `elab` line.
+One modular question per exponent per family. `modCertTactic` reads the index
+out of the goal, unwrapping the bundled exponent, so each family still costs
+one `elab` line.
 -/
 
-/-- Close `∃ q, (expWindows binary128 e).refutedBy q = true` for a literal
-    exponent. -/
+/-- Close `∃ q, (expWindows e).refutedBy q = true` for a literal exponent. -/
 elab "exp_cert128" : tactic =>
-  modCertTactic fun e => (expWindows binary128 e).search
+  modCertTactic fun e => (expWindows (⟨e⟩ : FPExp binary128)).search
 
-/-- Close `∃ q, (oneWindows binary128 e).refutedBy q = true` for a literal
-    exponent. -/
+/-- Close `∃ q, (oneWindows e).refutedBy q = true` for a literal exponent. -/
 elab "one_cert128" : tactic =>
-  modCertTactic fun e => (oneWindows binary128 e).search
+  modCertTactic fun e => (oneWindows (⟨e⟩ : FPExp binary128)).search
 
 private theorem exp_refuted_below (e : ℤ) (hlo : -16494 ≤ e) (hhi : e ≤ -2267) :
-    ∃ q, (expWindows binary128 e).refutedBy q = true := by
+    ∃ q, (expWindows (⟨e⟩ : FPExp binary128)).refutedBy q = true := by
   interval_cases e <;> exp_cert128
 
 private theorem exp_refuted_above (e : ℤ) (hlo : -2265 ≤ e) (hhi : e ≤ 16271) :
-    ∃ q, (expWindows binary128 e).refutedBy q = true := by
+    ∃ q, (expWindows (⟨e⟩ : FPExp binary128)).refutedBy q = true := by
   interval_cases e <;> exp_cert128
 
 /-! ## The counterexample at `e = -2266`
@@ -214,7 +214,7 @@ theorem bad_regular : binary128.Regular bad (-2266) := by
   refine ⟨⟨by decide, by decide, Or.inl (by decide)⟩, by decide, by decide⟩
 
 /-- What yy emits there: the trim-down candidate, a multiple of ten. -/
-theorem bad_output : toDecimal binary128 bad (-2266)
+theorem bad_output : toDecimal bad (⟨-2266⟩ : FPExp binary128)
     = (44795683542663963852361293387747210, -683) := by
   decide +kernel
 
@@ -241,15 +241,16 @@ theorem fine_candidate_is_nearest :
     instantiation of `correct_of` at binary128 with these parameters, which is
     the honest reading of this file. -/
 theorem checks_unsatisfiable (hc : Checks binary128) : False := by
-  obtain ⟨q, hcert⟩ := (hc (-2266) (by decide) (by decide)).exp_refuted
-  refine (expWindows binary128 (-2266)).not_hit bad (by decide +kernel) hcert
-    (lo := (expWindows binary128 (-2266)).windows[1]!.1)
-    (hi := (expWindows binary128 (-2266)).windows[1]!.2)
+  obtain ⟨q, hcert⟩ := (hc ⟨-2266⟩ (by decide) (by decide)).exp_refuted
+  refine (expWindows (⟨-2266⟩ : FPExp binary128)).not_hit bad
+    (by decide +kernel) hcert
+    (lo := (expWindows (⟨-2266⟩ : FPExp binary128)).windows[1]!.1)
+    (hi := (expWindows (⟨-2266⟩ : FPExp binary128)).windows[1]!.2)
     (by decide +kernel) (by decide +kernel) (by decide +kernel) rfl
     (by decide +kernel) (by decide +kernel)
 
 private theorem one_refuted (e : ℤ) (hlo : -16494 ≤ e) (hhi : e ≤ 16271) :
-    ∃ q, (oneWindows binary128 e).refutedBy q = true := by
+    ∃ q, (oneWindows (⟨e⟩ : FPExp binary128)).refutedBy q = true := by
   interval_cases e <;> one_cert128
 
 /-! ## What is available away from `e = -2266`
@@ -260,11 +261,11 @@ field of it is nevertheless established at every other exponent, which is what
 holds, so this is exactly the part of binary128 that is verified.
 -/
 
-/-- Every obligation of `ChecksAt binary128 e`, at every exponent
+/-- Every obligation of `ChecksAt e` at binary128, at every exponent
     but `-2266`. -/
 theorem checks_at (e : ℤ) (hlo : -16494 ≤ e) (hhi : e ≤ 16271)
     (hne : e ≠ -2266) :
-    ChecksAt binary128 e := by
+    ChecksAt (⟨e⟩ : FPExp binary128) := by
   have hlo' : (-16494 : ℤ) ≤ e := hlo
   have hhi' : e ≤ 16271 := hhi
   exact
@@ -272,7 +273,7 @@ theorem checks_at (e : ℤ) (hlo : -16494 ≤ e) (hhi : e ≤ 16271)
         shift_nonneg_sweep e (by simp only [Finset.mem_Icc]; omega)
       shift_lt_four := shift_lt_four e hlo' hhi'
       table := table e hlo' hhi'
-      trim := trim_checks_of_hold binary128 e
+      trim := trim_checks_of_hold _
         (trim_sweep e (by simp only [Finset.mem_Icc]; omega))
       exp_refuted := by
         rcases lt_trichotomy e (-2266) with h | h | h
@@ -291,13 +292,13 @@ theorem checks_at (e : ℤ) (hlo : -16494 ≤ e) (hhi : e ≤ 16271)
     shows the statement is false at `-2266`. -/
 theorem correct_away_from_bad (f : ℕ) (e : ℤ) (hr : binary128.Regular f e)
     (hne : e ≠ -2266) :
-    let (d, k) := toDecimal binary128 f e
+    let (d, k) := toDecimal f (⟨e⟩ : FPExp binary128)
     let (d', k') := reduceDecimal d k
     Shortest f e d' k' ∧ CorrectlyRounded f e d' k' := by
   obtain ⟨hlo, hhi⟩ := hr.range
   have ha := checks_at e hlo hhi hne
-  obtain ⟨hfine, hcoarse⟩ := ulp_scaled_bounds binary128 layout e ha
+  obtain ⟨hfine, hcoarse⟩ := ulp_scaled_bounds layout ⟨e⟩ ha
   exact exact_candidate_correct f e (binary128.decimalExponent e) hr.pos hfine
-    hcoarse (exact_candidate binary128 layout f e hr ha)
+    hcoarse (exact_candidate layout f ⟨e⟩ hr ha)
 
 end yy128
