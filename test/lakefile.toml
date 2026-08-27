@@ -9,3 +9,10 @@ scope = "leanprover-community"
 name = "zmij"
 srcDir = "."
 roots = ["core", "yy", "zmij"]
+
+# binary128's finite checks run for about ten minutes, so they are opt-in:
+# `lake build yy128`. Absent from defaultTargets, `lake build` is unaffected.
+[[lean_lib]]
+name = "yy128"
+srcDir = "."
+roots = ["yy128"]
