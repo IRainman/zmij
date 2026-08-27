@@ -862,6 +862,9 @@ struct data {
            u64(d) << 24 | u64(c) << 16 | u64(b) << +8 | u64(a);
   }
 
+  // Keep first: arm64 folds a register index into ldrb only at offset zero.
+  exp_shift_table exp_shifts;
+
   ZMIJ_CONST_DECL uint64_t threshold = 1e15;
   // +6 is needed for boundary cases found by verify.py.
   ZMIJ_CONST_DECL uint64_t biased_half = (uint64_t(1) << 63) + 6;
@@ -894,7 +897,6 @@ struct data {
   uint128 zeros = splat64(::zeros);
 #endif    // ZMIJ_USE_SSE
 
-  exp_shift_table exp_shifts;
   exp_string_table exp_strings;
   alignas(64) pow10_significand_table pow10_significands;
   fixed_layout_table fixed_layouts;
