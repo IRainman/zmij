@@ -1972,12 +1972,23 @@ auto to_decimal_big(Float value) noexcept -> dec_fp<uint128_t> {
 
   // trim_up iff value + half_ulp reaches the next ten, i.e. c + half_ulp
   // reaches ten; compared as c >= ten - half_ulp so the sum can't overflow
-  // 128 bits. A boundary (gap in {0, 1}) breaks to even, guarded by
-  // dec_exp == 0 for the exact gap == 0 case.
+  // 128 bits.
   uint128_t ten = uint128_t(10) << 124;  // the next ten in c units
   bool trim_up = c >= ten - half_ulp;    // c + half_ulp >= ten
   uint128_t gap = ten - half_ulp - c;    // wraps large if c + half_ulp > ten
-  if (gap <= 1 && (dec_exp == 0 || gap == 1)) trim_up = even;
+  if (gap <= 1) {
+    // Within one unit of the boundary the decision is taken one bit below c.
+    // That bit cannot be packed in: the digit needs four, so ten in units of
+    // 2**125 would not fit in 128. Reading it here halves the band of gaps the
+    // error bound cannot decide, which is what the binary128 proof needs.
+    uint64_t ulp_bit;
+    pow10::extract(p10_sig, pow10::result_limbs, shift - 124, &ulp_bit, 1);
+    int low = int(uint64_t(fractional >> 3) & 1) + int(ulp_bit & 1);
+    int refined = (gap == 1 ? 2 : 0) - low;  // the gap at the finer unit
+    trim_up = refined <= 0;
+    // One short of the boundary, or on it, which is exact only at dec_exp == 0.
+    if (refined == 1 || (refined == 0 && dec_exp == 0)) trim_up = even;
+  }
 
   uint128_t dec_sig = trim_down || trim_up
                           ? integral - last_digit + trim_up * 10
