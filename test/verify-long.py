@@ -101,9 +101,7 @@ Due to approximation errors, critical boundary conditions arise:
 For performance, the algorithm packs the last decimal digit of `integral` (top
 4 bits) with the high 124 bits of `fractional` into a single 128-bit integer
 compared against 0.5ulp. Dropping `fractional`'s low 4 bits costs a little
-precision, so the boundary conditions above need extra care. Both trim
-comparisons recover some of it near their boundary, where the packed value
-alone does not decide: condition 2 reads all four dropped bits, condition 3 one.
+precision, so the boundary conditions above need extra care.
 """
 
 from dataclasses import dataclass
@@ -201,15 +199,8 @@ def to_decimal(bin_sig: int, bin_exp: int, fmt: Format) -> Tuple[int, int]:
 
     trim_up = c >= ten - half_ulp
     gap = (ten - half_ulp - c) & mask128
-    if gap <= 1:
-        # Within one unit of the boundary the decision is taken one bit below
-        # c, which cannot be packed in: ten in units of 2**125 would not fit in
-        # 128 bits.
-        low = ((fractional >> 3) & 1) + ((pow10 >> (shift - 124)) & 1)
-        refined = (2 if gap == 1 else 0) - low
-        trim_up = refined <= 0
-        if refined == 1 or (refined == 0 and dec_exp == 0):
-            trim_up = even
+    if gap <= 1 and (dec_exp == 0 or gap == 1):
+        trim_up = even
 
     if trim_down or trim_up:
         dec_sig = integral - last_digit + (10 if trim_up else 0)
@@ -381,8 +372,8 @@ def trim_band(p: Params, c: int, bits: int = 124) -> Tuple[int, int, int]:
     pins the last digit while R ranges over one LSB.
 
     `bits` is how many of `fractional`'s high bits `c` retains: 124 for the
-    packed comparison, 125 and 128 for the two refinements, each narrowing the
-    window to one unit at its own precision.
+    packed 124-bit comparison, 128 for the full-precision refinement, which
+    narrows the window to a single `fractional` unit.
     """
     lsb = 1 << (p.shift - bits)
     base = (c >> bits) * (1 << p.shift) + (c & ((1 << bits) - 1)) * lsb
@@ -398,7 +389,7 @@ def assert_trim(p: Params, sig_min: int, sig_max: int, c: int, sign: int,
     A & B == A == B, so no false ties (misrounds) and no missed ties.
 
     `bits` selects the comparison precision (see trim_band): 124 for the packed
-    comparison, 125 and 128 for the two refinements.
+    comparison, 128 for the full-precision refinement.
     """
     den, lo, hi = trim_band(p, c, bits)
     approx = count_mod_mul_solutions(p.pow10, den, sig_min, sig_max, lo, hi)
@@ -437,15 +428,13 @@ def find_edge_case_3(p: Params, sig_min: int, sig_max: int) -> None:
 
     Flooring pow10 (hence also half_ulp) can only lower the algorithm's c, so a
     genuine tie is expected one LSB below the true threshold ten - half_ulp, at
-    gap == 1, the position the even override treats as the tie. The comparison
-    runs one bit below the packed c, so both sides carry that bit and the
-    search is at 125; the set-equality assertion confirms it.
+    gap == 1, the position the even override treats as the tie. We search at
+    c == ten - half_ulp - 1, and the set-equality assertion confirms it.
     """
     if p.exact:
         return
-    half_ulp = 2 * p.half_ulp + ((p.pow10 >> (p.shift - 124)) & 1)
-    assert_trim(p, sig_min, sig_max, (10 << 125) - half_ulp - 1, +1,
-                "trim_up", bits=125)
+    assert_trim(p, sig_min, sig_max, (10 << 124) - p.half_ulp - 1, +1,
+                "trim_up")
 
 
 def find_edge_cases(fmt: Format) -> None:
