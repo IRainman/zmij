@@ -2187,7 +2187,7 @@ private theorem b64_shift_lt_four (e : ℤ) (hlo : -1074 ≤ e) (hhi : e ≤ 971
 private theorem b64_table (e : ℤ) (hlo : -1074 ≤ e) (hhi : e ≤ 971) :
     TableNormalized (⟨e⟩ : FPExp binary64) := by
   have hk := decimal_exponent_range e ⟨hlo, hhi⟩
-  exact power10_ratio_normalized (-decimalExponent e)
+  exact power10_ratio_normalized (-binary64.decimalExponent e)
     (by simp only [Finset.mem_Icc]; omega)
 
 private theorem b64_trim_checks :

@@ -103,12 +103,12 @@ shift stays in `[6, 9]`.
 /-- Shift chosen to align the binary exponent with the power of ten, including
     Żmij's nine bits of headroom. -/
 def exponentShift (e : ℤ) : ℕ :=
-  Int.toNat (e + (-(decimalExponent e + 1) * 217_707) / 2 ^ 16 + 10)
+  Int.toNat (e + (-(binary64.decimalExponent e + 1) * 217_707) / 2 ^ 16 + 10)
 
 /-- The top 128 bits of Żmij's 192-bit product: `⌊f·2^s·p10 / 2^64⌋`. -/
 def scaledSignificand (f : ℕ) (e : ℤ) : ℕ :=
-  f * 2 ^ exponentShift e * power10Significand (-(decimalExponent e + 1))
-    / 2 ^ 64
+  f * 2 ^ exponentShift e
+    * power10Significand (-(binary64.decimalExponent e + 1)) / 2 ^ 64
 
 /-- The integral part of the scaled value, Żmij's shorter candidate: the product
     with the nine headroom bits and the fraction shifted off. -/
@@ -123,7 +123,7 @@ def fractionalPart (f : ℕ) (e : ℤ) : ℕ :=
     the two comparisons below from strict into non-strict exactly when a tie is
     allowed to round. -/
 def halfUlp (f : ℕ) (e : ℤ) : ℕ :=
-  power10Significand (-(decimalExponent e + 1)) / 2 ^ 64
+  power10Significand (-(binary64.decimalExponent e + 1)) / 2 ^ 64
       / 2 ^ (10 - exponentShift e)
     + (1 - f % 2)
 
@@ -152,7 +152,7 @@ def toDecimalCandidates (f : ℕ) (e : ℤ) : DecimalCandidates :=
   -- truncation is a quarter, whose digit 2.5 has to go to even.
   let digit : ℕ := if frac = 2 ^ 62 then 2 else (frac * 10 + biasedHalf) / 2 ^ 64
 
-  { k := decimalExponent e
+  { k := binary64.decimalExponent e
     integral := integralPart f e + (if roundUp then 1 else 0)
     digit := digit
     roundUp := roundUp
@@ -174,8 +174,8 @@ than about magnitudes, so both are checked over the exponent range.
 
 /-- The shift before clamping, which is what the checks below enumerate. -/
 theorem exponent_shift_eq (e : ℤ) :
-    (exponentShift e : ℤ)
-      = max 0 (e + (-(decimalExponent e + 1) * 217_707) / 2 ^ 16 + 10) := by
+    (exponentShift e : ℤ) = max 0
+      (e + (-(binary64.decimalExponent e + 1) * 217_707) / 2 ^ 16 + 10) := by
   rw [exponentShift]
   omega
 
@@ -184,8 +184,9 @@ theorem exponent_shift_eq (e : ℤ) :
     `10 - s` a positive shift in `halfUlp`. -/
 theorem exponent_shift_bounds :
     ∀ e ∈ Finset.Icc (-1074 : ℤ) 971,
-      6 ≤ e + (-(decimalExponent e + 1) * 217_707) / 2 ^ 16 + 10 ∧
-        e + (-(decimalExponent e + 1) * 217_707) / 2 ^ 16 + 10 ≤ 9 := by
+      6 ≤ e + (-(binary64.decimalExponent e + 1) * 217_707) / 2 ^ 16 + 10 ∧
+        e + (-(binary64.decimalExponent e + 1) * 217_707) / 2 ^ 16 + 10
+          ≤ 9 := by
   -- This and the two checks like it below enumerate 2046 exponents each.
   -- `+kernel` keeps them out of the elaborator, whose recursion and
   -- exponentiation guards they would otherwise trip.
@@ -202,8 +203,8 @@ theorem exponent_shift_range (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
     scale the same fixed-point quotient, so once the shift is known not to have
     been clamped this is arithmetic, whatever the decimal exponent is. -/
 theorem exponent_shift_align (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
-    (exponentShift e : ℤ) - 9 - power10Exponent (-(decimalExponent e + 1))
-      = e := by
+    (exponentShift e : ℤ) - 9
+      - power10Exponent (-(binary64.decimalExponent e + 1)) = e := by
   have hb := exponent_shift_bounds e (by simpa [Finset.mem_Icc] using he)
   have heq := exponent_shift_eq e
   unfold power10Exponent
@@ -231,13 +232,13 @@ reads the same quotient 64 bits lower.
 -/
 
 /-- Numerator of the exact power of ten Żmij multiplies by. -/
-def num (e : ℤ) : ℕ := power10Num (-(decimalExponent e + 1))
+def num (e : ℤ) : ℕ := power10Num (-(binary64.decimalExponent e + 1))
 
 /-- Its denominator. -/
-def den (e : ℤ) : ℕ := power10Den (-(decimalExponent e + 1))
+def den (e : ℤ) : ℕ := power10Den (-(binary64.decimalExponent e + 1))
 
 /-- Its 128-bit truncation, the `p10` of the implementation. -/
-def p10 (e : ℤ) : ℕ := power10Significand (-(decimalExponent e + 1))
+def p10 (e : ℤ) : ℕ := power10Significand (-(binary64.decimalExponent e + 1))
 
 theorem den_pos (e : ℤ) : 0 < den e := power10_den_pos _
 
@@ -368,8 +369,9 @@ theorem step_pow (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
 /-- `step` clears the denominator in `power10_exact_ratio`, leaving `num`
     times the binary-decimal scaling factor. -/
 theorem step_eq (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
-    (step e : ℚ) = (num e : ℚ) * (2 ^ (-e) * 10 ^ (decimalExponent e + 1)) := by
-  set k := decimalExponent e
+    (step e : ℚ)
+      = (num e : ℚ) * (2 ^ (-e) * 10 ^ (binary64.decimalExponent e + 1)) := by
+  set k := binary64.decimalExponent e
   set pe := power10Exponent (-(k + 1))
   have hd : (0 : ℚ) < (den e : ℚ) := by exact_mod_cast den_pos e
   have hnum : (10 : ℚ) ^ (-(k + 1)) * 2 ^ (128 - pe) * den e = num e := by
@@ -400,9 +402,10 @@ theorem step_eq (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
     sends it to `num` itself: one ULP on the grid at `k+1` is exactly one
     `num`. -/
 theorem half_ulp_scaled (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
-    ulp e * 10 ^ (-(decimalExponent e + 1)) / 2 * (((2 : ℕ) : ℚ) * (step e : ℚ))
+    ulp e * 10 ^ (-(binary64.decimalExponent e + 1)) / 2
+        * (((2 : ℕ) : ℚ) * (step e : ℚ))
       = ((num e : ℕ) : ℚ) := by
-  set k := decimalExponent e
+  set k := binary64.decimalExponent e
   have h10 : (10 : ℚ) ^ (-(k + 1)) * 10 ^ (k + 1) = 1 := by
     rw [← zpow_add₀ (by norm_num : (10 : ℚ) ≠ 0)]; simp
   have h2 : (2 : ℚ) ^ e * 2 ^ (-e) = 1 := by
@@ -417,7 +420,7 @@ theorem half_ulp_scaled (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
     scaled value to the integer `f·num`, so every candidate distance is an
     integer. -/
 theorem value_scaled (f : ℕ) (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
-    value f e * 10 ^ (-(decimalExponent e + 1)) * (step e : ℚ)
+    value f e * 10 ^ (-(binary64.decimalExponent e + 1)) * (step e : ℚ)
       = ((f * num e : ℤ) : ℚ) := by
   have h := half_ulp_scaled e he
   rw [ulp] at h
@@ -431,15 +434,15 @@ theorem value_scaled (f : ℕ) (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
     `ℚ`. -/
 theorem roundtrips_iff_dist (f : ℕ) (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) {c : ℕ}
     {dist : ℤ} (hc : (c : ℤ) * step e + dist = f * num e) :
-    Roundtrips f e (c * 10 ^ (decimalExponent e + 1))
+    Roundtrips f e (c * 10 ^ (binary64.decimalExponent e + 1))
       ↔ if f % 2 = 0 then -(num e : ℤ) ≤ 2 * dist ∧ 2 * dist ≤ num e
         else -(num e : ℤ) < 2 * dist ∧ 2 * dist < num e := by
   obtain ⟨hle, hlt, -⟩ := scaled_cmp_of_int_eq (c := c) (m := step e) (a := 2)
     (b := num e) (dist := dist)
-    (x := value f e * 10 ^ (-(decimalExponent e + 1)))
-    (thr := ulp e * 10 ^ (-(decimalExponent e + 1)) / 2)
+    (x := value f e * 10 ^ (-(binary64.decimalExponent e + 1)))
+    (thr := ulp e * 10 ^ (-(binary64.decimalExponent e + 1)) / 2)
     (step_pos e) two_pos (value_scaled f e he) (half_ulp_scaled e he) hc
-  refine (roundtrips_iff_scaled f e (decimalExponent e + 1) c).trans ?_
+  refine (roundtrips_iff_scaled f e (binary64.decimalExponent e + 1) c).trans ?_
   split_ifs
   · exact hle.trans (by omega)
   · exact hlt.trans (by omega)
@@ -578,7 +581,7 @@ theorem err_bounds (f : ℕ) (e : ℤ) (hr : binary64.Regular f e) :
 /-- The power of ten is normalized in cleared form too. -/
 theorem num_bounds (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
     2 ^ 127 * den e ≤ num e ∧ num e < 2 ^ 128 * den e :=
-  power10_ratio_normalized (-(decimalExponent e + 1))
+  power10_ratio_normalized (-(binary64.decimalExponent e + 1))
     (by simp only [Finset.mem_Icc]; have := decimal_exponent_range e he; omega)
 
 /-- In particular one ULP is positive, which is what makes both coarse
@@ -716,7 +719,8 @@ private theorem exp_windows_refuted (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
 
 /-- A doubled gap landing in a refuted window is impossible: it is the residue
     of `2·num·f` modulo two coarse steps. -/
-private theorem no_window_hit {lo hi q : ℤ} (f : ℕ) (e : ℤ) (hr : binary64.Regular f e)
+private theorem no_window_hit {lo hi q : ℤ} (f : ℕ) (e : ℤ)
+    (hr : binary64.Regular f e)
     (hcert : (expWindows e).refutedBy q = true)
     (hmem : (lo, hi) ∈ (expWindows e).windows)
     (hlo : lo ≤ 2 * (rest f e : ℤ)) (hhi : 2 * (rest f e : ℤ) ≤ hi) :
@@ -728,7 +732,8 @@ private theorem no_window_hit {lo hi q : ℤ} (f : ℕ) (e : ℤ) (hr : binary64
     the integral part one short of the exact one, which happens exactly when the
     scaled value is an integer, and Żmij's carry recovers it; anything beyond
     that would be an overshoot in the first window. -/
-theorem gap_le_step (f : ℕ) (e : ℤ) (hr : binary64.Regular f e) : gap f e ≤ step e := by
+theorem gap_le_step (f : ℕ) (e : ℤ) (hr : binary64.Regular f e) :
+    gap f e ≤ step e := by
   by_contra hcon
   obtain ⟨q, hcert⟩ := exp_windows_refuted e hr.range
   have hs := (exponent_shift_range e hr.range).2
@@ -766,7 +771,8 @@ theorem rest_eq (f : ℕ) (e : ℤ) (hr : binary64.Regular f e) :
     tie, or it is more than one fraction unit's reach away from it. A gap of
     exactly one step puts the doubled gap at `2·step`, past every window, so
     interiority covers that case rather than a certificate. -/
-private theorem gap_tie_or_far {b : ℤ} (f : ℕ) (e : ℤ) (hr : binary64.Regular f e)
+private theorem gap_tie_or_far {b : ℤ} (f : ℕ) (e : ℤ)
+    (hr : binary64.Regular f e)
     (hb : 4 * (edge e : ℤ) < b ∧ b + 4 * (edge e : ℤ) < 2 * (step e : ℤ))
     (hbelow : (b - 4 * (edge e : ℤ), b - 1) ∈ (expWindows e).windows)
     (habove : (b + 1, b + 4 * (edge e : ℤ)) ∈ (expWindows e).windows) :
@@ -850,7 +856,7 @@ theorem half_bounds (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
     0 < half e ∧ half e < 2 ^ 64 := by
   obtain ⟨hs6, hs9⟩ := exponent_shift_range e he
   obtain ⟨hlo, hhi⟩ :=
-    power10_significand_bounds (-(decimalExponent e + 1))
+    power10_significand_bounds (-(binary64.decimalExponent e + 1))
       (by have := decimal_exponent_range e he; omega)
   have hlo' : (2 : ℕ) ^ 127 ≤ p10 e := hlo
   have hhi' : p10 e < 2 ^ 128 := hhi
@@ -1022,7 +1028,8 @@ theorem successor_scaled (f : ℕ) (e : ℤ) (hs : exponentShift e ≤ 9) :
     a gap is never negative. -/
 theorem round_down_iff_roundtrips (f : ℕ) (e : ℤ) (hr : binary64.Regular f e) :
     (toDecimalCandidates f e).roundDown = true
-      ↔ Roundtrips f e (integralPart f e * 10 ^ (decimalExponent e + 1)) := by
+      ↔ Roundtrips f e
+          (integralPart f e * 10 ^ (binary64.decimalExponent e + 1)) := by
   rw [round_down_iff_gap f e hr,
     roundtrips_iff_dist f e hr.range
       (integral_scaled f e (exponent_shift_range e hr.range).2)]
@@ -1033,7 +1040,9 @@ theorem round_down_iff_roundtrips (f : ℕ) (e : ℤ) (hr : binary64.Regular f e
     passes a whole step. -/
 theorem round_up_iff_roundtrips (f : ℕ) (e : ℤ) (hr : binary64.Regular f e) :
     (toDecimalCandidates f e).roundUp = true
-      ↔ Roundtrips f e ((integralPart f e + 1 : ℕ) * 10 ^ (decimalExponent e + 1)) := by
+      ↔ Roundtrips f e
+          ((integralPart f e + 1 : ℕ)
+            * 10 ^ (binary64.decimalExponent e + 1)) := by
   have hle := gap_le_step f e hr
   have hnum := num_pos e hr.range
   rw [round_up_iff_gap f e hr,
@@ -1130,7 +1139,8 @@ private theorem res_le_of_err (f : ℕ) (e : ℤ) {a : ℕ}
     _ = den e * (a * unit e) := by rw [edge]; ring
 
 /-- And conversely, up to what the power-of-ten truncation can contribute. -/
-private theorem res_ge_of_err (f : ℕ) (e : ℤ) (hr : binary64.Regular f e) {a : ℕ}
+private theorem res_ge_of_err (f : ℕ) (e : ℤ)
+    (hr : binary64.Regular f e) {a : ℕ}
     (h : a * edge e ≤ 20 * err f e) :
     a * unit e ≤ 20 * (f * p10 e % unit e) + 20 * 2 ^ 53 := by
   have htau : f * (num e % den e) ≤ 2 ^ 53 * den e := by
@@ -1216,7 +1226,8 @@ private theorem no_res_hit {lo hi q : ℤ} {windows : List (ℤ × ℤ)} (f : �
 
 /-- No significand pairs one of the six low fractions with a truncation
     that reaches the boundary. -/
-private theorem no_digit_low (f : ℕ) (e : ℤ) (hr : binary64.Regular f e) {w j : ℕ}
+private theorem no_digit_low (f : ℕ) (e : ℤ)
+    (hr : binary64.Regular f e) {w j : ℕ}
     (hmem : (w, j) ∈ digitLowEdges) (hφ : fractionalPart f e = w)
     (hb : 20 * (f * p10 e % unit e) ≤ 4 * j * unit e) : False := by
   obtain ⟨q, hcert⟩ := digit_low_refuted e hr.range
@@ -1239,7 +1250,8 @@ private theorem no_digit_low (f : ℕ) (e : ℤ) (hr : binary64.Regular f e) {w 
 
 /-- Nor with one of the five high fractions, the quarter included: there the
     truncation has to vanish, and it does not. -/
-private theorem no_digit_high (f : ℕ) (e : ℤ) (hr : binary64.Regular f e) {w j : ℕ}
+private theorem no_digit_high (f : ℕ) (e : ℤ)
+    (hr : binary64.Regular f e) {w j : ℕ}
     (hmem : (w, j) ∈ digitHighEdges) (hφ : fractionalPart f e = w)
     (hb : 4 * j * unit e ≤ 20 * (f * p10 e % unit e) + 20 * 2 ^ 53)
     (hpos : 0 < err f e) : False := by
@@ -1495,14 +1507,16 @@ theorem grid_bounds (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
 
 /-- The grid at `k` is the one at `k+1` scaled by ten. -/
 private theorem grid_pow (e : ℤ) :
-    (10 : ℚ) ^ (-decimalExponent e) = 10 * 10 ^ (-(decimalExponent e + 1)) := by
-  rw [show -decimalExponent e = -(decimalExponent e + 1) + 1 from by ring,
+    (10 : ℚ) ^ (-binary64.decimalExponent e)
+      = 10 * 10 ^ (-(binary64.decimalExponent e + 1)) := by
+  rw [show -binary64.decimalExponent e
+        = -(binary64.decimalExponent e + 1) + 1 from by ring,
     zpow_add_one₀ (by norm_num : (10 : ℚ) ≠ 0)]
   ring
 
 /-- The value on the grid at `k`, cleared by `step`. -/
 theorem value_scaled_grid (f : ℕ) (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
-    value f e * 10 ^ (-decimalExponent e) * (step e : ℚ)
+    value f e * 10 ^ (-binary64.decimalExponent e) * (step e : ℚ)
       = ((10 * (f * num e) : ℕ) : ℚ) := by
   have h := value_scaled f e he
   rw [grid_pow]
@@ -1511,7 +1525,7 @@ theorem value_scaled_grid (f : ℕ) (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
 
 /-- Half a ULP on the grid at `k`, cleared: five `num`. -/
 theorem half_ulp_grid (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
-    ulp e * 10 ^ (-decimalExponent e) / 2 * (step e : ℚ)
+    ulp e * 10 ^ (-binary64.decimalExponent e) / 2 * (step e : ℚ)
       = ((5 * num e : ℕ) : ℚ) := by
   have h := half_ulp_scaled e he
   rw [grid_pow]
@@ -1521,8 +1535,8 @@ theorem half_ulp_grid (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
 /-- One ULP is at least one step of the grid at `k` and less than ten. This is
     the one obligation of the exact method that is about `k` alone. -/
 theorem ulp_scaled_bounds (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
-    1 ≤ ulp e * 10 ^ (-decimalExponent e)
-      ∧ ulp e * 10 ^ (-decimalExponent e) < 10 := by
+    1 ≤ ulp e * 10 ^ (-binary64.decimalExponent e)
+      ∧ ulp e * 10 ^ (-binary64.decimalExponent e) < 10 := by
   obtain ⟨hnum, hstep⟩ := grid_bounds e he
   refine ulp_steps_of_int_eq (t := 10 * num e) (step_pos e) ?_ hstep (by omega)
   have h := half_ulp_grid e he
@@ -1542,10 +1556,10 @@ theorem to_decimal_fst (f : ℕ) (e : ℤ) :
 /-- A coarse candidate seen on the grid at `k`: ten times its significand one
     grid up. -/
 private theorem roundtrips_ten (f : ℕ) (e : ℤ) (c d : ℕ) (h : d = c * 10) :
-    Roundtrips f e (d * 10 ^ decimalExponent e)
-      ↔ Roundtrips f e (c * 10 ^ (decimalExponent e + 1)) := by
-  rw [show (d : ℚ) * 10 ^ decimalExponent e
-      = (c : ℚ) * 10 ^ (decimalExponent e + 1) from by
+    Roundtrips f e (d * 10 ^ binary64.decimalExponent e)
+      ↔ Roundtrips f e (c * 10 ^ (binary64.decimalExponent e + 1)) := by
+  rw [show (d : ℚ) * 10 ^ binary64.decimalExponent e
+      = (c : ℚ) * 10 ^ (binary64.decimalExponent e + 1) from by
     rw [zpow_add_one₀ (by norm_num : (10 : ℚ) ≠ 0), h]
     push_cast
     ring]
@@ -1564,9 +1578,10 @@ other multiple of ten, and the rounding interval is too narrow to hold one.
     Cleared by `step`, the lower one sits `10·gap` below the scaled value, and
     that gap is under one step of the coarse grid, let alone one step plus half
     a ULP. This bracket is all `coarse_roundtrip_adjacent` needs. -/
-theorem coarse_candidate_cases (f : ℕ) (e : ℤ) (hr : binary64.Regular f e) (d : ℕ)
+theorem coarse_candidate_cases (f : ℕ) (e : ℤ)
+    (hr : binary64.Regular f e) (d : ℕ)
     (h10 : d % 10 = 0)
-    (hround : Roundtrips f e (d * 10 ^ decimalExponent e)) :
+    (hround : Roundtrips f e (d * 10 ^ binary64.decimalExponent e)) :
     d = integralPart f e * 10 ∨ d = integralPart f e * 10 + 10 := by
   have hmul : (0 : ℚ) < (step e : ℚ) := by exact_mod_cast step_pos e
   have hval := value_scaled_grid f e hr.range
@@ -1579,15 +1594,16 @@ theorem coarse_candidate_cases (f : ℕ) (e : ℤ) (hr : binary64.Regular f e) (
   have hgaple : (gap f e : ℚ) ≤ (step e : ℚ) := by
     exact_mod_cast gap_le_step f e hr
   push_cast at hval hhalf
-  exact coarse_roundtrip_adjacent f e (decimalExponent e)
+  exact coarse_roundtrip_adjacent f e (binary64.decimalExponent e)
     (ulp_scaled_bounds e hr.range).2 (by omega) h10
     (le_of_mul_le_mul_right (by push_cast; linarith) hmul)
     (lt_of_mul_lt_mul_right (by push_cast; linarith) hmul.le) hround
 
 /-- If the rounding interval contains a multiple of ten, Żmij trims. -/
-theorem trim_of_coarse_roundtrip (f : ℕ) (e : ℤ) (hr : binary64.Regular f e) (d : ℕ)
+theorem trim_of_coarse_roundtrip (f : ℕ) (e : ℤ)
+    (hr : binary64.Regular f e) (d : ℕ)
     (h10 : d % 10 = 0)
-    (hround : Roundtrips f e (d * 10 ^ decimalExponent e)) :
+    (hround : Roundtrips f e (d * 10 ^ binary64.decimalExponent e)) :
     ((toDecimalCandidates f e).roundUp
       || (toDecimalCandidates f e).roundDown) = true := by
   rw [Bool.or_eq_true]
@@ -1603,7 +1619,8 @@ theorem coarse_output_roundtrips (f : ℕ) (e : ℤ) (hr : binary64.Regular f e)
     (htrim : ((toDecimalCandidates f e).roundUp
       || (toDecimalCandidates f e).roundDown) = true) :
     (toDecimal f e).1 % 10 = 0
-      ∧ Roundtrips f e ((toDecimal f e).1 * 10 ^ decimalExponent e) := by
+      ∧ Roundtrips f e
+          ((toDecimal f e).1 * 10 ^ binary64.decimalExponent e) := by
   have hd : (toDecimal f e).1
       = (integralPart f e
           + (if (toDecimalCandidates f e).roundUp then 1 else 0)) * 10 := by
@@ -1627,7 +1644,7 @@ theorem coarse_output_roundtrips (f : ℕ) (e : ℤ) (hr : binary64.Regular f e)
 theorem fine_output_nearest (f : ℕ) (e : ℤ) (hr : binary64.Regular f e)
     (htrim : ((toDecimalCandidates f e).roundUp
       || (toDecimalCandidates f e).roundDown) = false) :
-    let x := value f e * 10 ^ (-decimalExponent e)
+    let x := value f e * 10 ^ (-binary64.decimalExponent e)
     |((toDecimal f e).1 : ℚ) - x| ≤ 1 / 2
       ∧ (|((toDecimal f e).1 : ℚ) - x| = 1 / 2 → (toDecimal f e).1 % 2 = 0) := by
   intro x
@@ -1672,7 +1689,7 @@ its one special case is a packed midpoint rather than an exact one.
 theorem exact_candidate (f : ℕ) (e : ℤ) (hr : binary64.Regular f e) :
     let (d, k) := toDecimal f e
     ExactCandidate f e k d := by
-  show ExactCandidate f e (decimalExponent e) (toDecimal f e).1
+  show ExactCandidate f e (binary64.decimalExponent e) (toDecimal f e).1
   by_cases htrim : ((toDecimalCandidates f e).roundUp
       || (toDecimalCandidates f e).roundDown) = true
   · exact Or.inl (coarse_output_roundtrips f e hr htrim)
@@ -1690,7 +1707,7 @@ theorem correct (f : ℕ) (e : ℤ) (hr : binary64.Regular f e) :
     let (d', k') := reduceDecimal d k
     Shortest f e d' k' ∧ CorrectlyRounded f e d' k' := by
   obtain ⟨hfine, hcoarse⟩ := ulp_scaled_bounds e hr.range
-  exact exact_candidate_correct f e (decimalExponent e) hr.pos hfine hcoarse
-    (exact_candidate f e hr)
+  exact exact_candidate_correct f e (binary64.decimalExponent e) hr.pos
+    hfine hcoarse (exact_candidate f e hr)
 
 end zmij

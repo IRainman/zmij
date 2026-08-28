@@ -574,16 +574,12 @@ theorem Format.decimal_exponent_range (fmt : Format) {e : ℤ}
     fmt.kmin ≤ fmt.decimalExponent e ∧ fmt.decimalExponent e ≤ fmt.kmax :=
   ⟨fmt.decimal_exponent_mono hlo, fmt.decimal_exponent_mono hhi⟩
 
-/-- binary64's decimal exponent. -/
-def decimalExponent (e : ℤ) : ℤ :=
-  e * 315_653 / 2 ^ 20
-
-/-- The exponents it reaches over binary64's range, which is what confines the
-    indices an implementation reads the table at below. -/
+/-- The exponents binary64 reaches, which is what confines the indices an
+    implementation reads the table at below. Stated with literals rather than
+    `kmin`/`kmax`, which is what the callers' `omega` needs. -/
 theorem decimal_exponent_range (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
-    -324 ≤ decimalExponent e ∧ decimalExponent e ≤ 292 := by
-  unfold decimalExponent
-  omega
+    -324 ≤ binary64.decimalExponent e ∧ binary64.decimalExponent e ≤ 292 :=
+  binary64.decimal_exponent_range he.1 he.2
 
 /-! ### The power of ten
 
