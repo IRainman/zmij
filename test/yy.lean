@@ -465,10 +465,6 @@ bounds are then linear in products `omega` treats as atoms, so each follows from
 the packed comparisons by integer arithmetic alone. Dividing `den` back out to
 state them over `ℚ` trades that for casts and field lemmas, and for restating as
 hypotheses the facts about `%` and `/` that `omega` already knows.
-
-`ChecksAt` and `Checks`, at the end of this subsection, are where the per-format
-numerical obligations are collected; the analytic development resumes after
-them.
 -/
 
 /-- The exact distance from a candidate to the scaled value, with the
@@ -486,6 +482,7 @@ theorem trim_gap_eq (f : ℕ) (e : FPExp fmt) :
     trimGap f e
       = trimDen e * trimResidue f e + trimErr f e := rfl
 
+/-- The comparison's modulus with the denominator cleared. -/
 def trimScale (e : FPExp fmt) : ℕ := trimModulus e * trimDen e
 
 /-- One window unit with the denominator cleared. -/
@@ -787,10 +784,9 @@ residue is the gap, and any violation forces it into a window of width below
 solutions with `floor_sum`; here a refutation certificate reaches the same
 conclusion with one small check per window.
 
-A Nadezhin-style separation proof, as used in Schubfach, was considered but
-still requires a finite Diophantine check over the significand range. The direct
-modular-window formulation below matches yy more closely and is substantially
-simpler.
+A Nadezhin-style separation, as used in Schubfach, still bottoms out in a finite
+Diophantine check over the significand range, and fits yy less closely than the
+modular windows below.
 
 `expWindows` is stated against the format, so the same definition poses the
 question at either width; only the cost of answering it changes.
