@@ -654,28 +654,24 @@ theorem Format.power10_significand_bounds (fmt : Format) {k : ℤ}
   exact ⟨(Nat.le_div_iff_mul_le (fmt.power10_den_pos k)).mpr hlo,
     (Nat.div_lt_iff_lt_mul (fmt.power10_den_pos k)).mpr hhi⟩
 
-/-- Binary exponent of 10^k for binary64's 128-bit table. -/
-def power10Exponent (k : ℤ) : ℤ :=
-  k * 217_707 / 2 ^ 16 + 1
-
 /-- Truncated 128-bit normalized binary significand of 10^k. -/
 def power10Significand (k : ℤ) : ℕ :=
-  ⌊(10 : ℚ) ^ k * 2 ^ (128 - power10Exponent k)⌋₊
+  ⌊(10 : ℚ) ^ k * 2 ^ (128 - binary64.power10Exponent k)⌋₊
 
 /-- Numerator of the exact scaled power of ten `10^k·2^(128-pe)`. -/
 def power10Num (k : ℤ) : ℕ :=
-  10 ^ k.toNat * 2 ^ (128 - power10Exponent k).toNat
+  10 ^ k.toNat * 2 ^ (128 - binary64.power10Exponent k).toNat
 
 /-- Denominator of that same power of ten. -/
 def power10Den (k : ℤ) : ℕ :=
-  10 ^ (-k).toNat * 2 ^ (power10Exponent k - 128).toNat
+  10 ^ (-k).toNat * 2 ^ (binary64.power10Exponent k - 128).toNat
 
 theorem power10_den_pos (k : ℤ) : 0 < power10Den k :=
   binary64.power10_den_pos k
 
 /-- The scaled exact power of ten is exactly the rational `num / den`. -/
 theorem power10_exact_ratio (k : ℤ) :
-    (10 : ℚ) ^ k * 2 ^ (128 - power10Exponent k)
+    (10 : ℚ) ^ k * 2 ^ (128 - binary64.power10Exponent k)
       = (power10Num k : ℚ) / (power10Den k : ℚ) :=
   binary64.power10_exact_ratio k
 

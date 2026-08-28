@@ -204,10 +204,10 @@ theorem exponent_shift_range (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
     been clamped this is arithmetic, whatever the decimal exponent is. -/
 theorem exponent_shift_align (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
     (exponentShift e : ℤ) - 9
-      - power10Exponent (-(binary64.decimalExponent e + 1)) = e := by
+      - binary64.power10Exponent (-(binary64.decimalExponent e + 1)) = e := by
   have hb := exponent_shift_bounds e (by simpa [Finset.mem_Icc] using he)
   have heq := exponent_shift_eq e
-  unfold power10Exponent
+  simp only [Format.power10Exponent, binary64] at hb heq ⊢
   omega
 
 /-! ## Żmij's arithmetic model
@@ -372,7 +372,7 @@ theorem step_eq (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
     (step e : ℚ)
       = (num e : ℚ) * (2 ^ (-e) * 10 ^ (binary64.decimalExponent e + 1)) := by
   set k := binary64.decimalExponent e
-  set pe := power10Exponent (-(k + 1))
+  set pe := binary64.power10Exponent (-(k + 1))
   have hd : (0 : ℚ) < (den e : ℚ) := by exact_mod_cast den_pos e
   have hnum : (10 : ℚ) ^ (-(k + 1)) * 2 ^ (128 - pe) * den e = num e := by
     rw [power10_exact_ratio, ← num, ← den, div_mul_cancel₀ _ (ne_of_gt hd)]
