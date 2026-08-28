@@ -469,7 +469,7 @@ its binary64 spelling, which is what lets the implementation files name these
 without a format argument.
 -/
 
-/-! ### The format -/
+/-! ### Floating-point formats -/
 
 /-- A binary format, as the layers below need it: precision, exponent range, the
     bit width an implementation computes in, and fixed-point approximations of
@@ -595,9 +595,6 @@ theorem Format.decimal_exponent_range (fmt : Format) {e : ℤ}
 def decimalExponent (e : ℤ) : ℤ :=
   e * 315_653 / 2 ^ 20
 
-theorem decimal_exponent_eq_binary64 (e : ℤ) :
-    decimalExponent e = binary64.decimalExponent e := rfl
-
 /-- The exponents it reaches over binary64's range, which is what confines the
     indices an implementation reads the table at below. -/
 theorem decimal_exponent_range (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
@@ -700,18 +697,6 @@ def power10Num (k : ℤ) : ℕ :=
 /-- Denominator of that same power of ten. -/
 def power10Den (k : ℤ) : ℕ :=
   10 ^ (-k).toNat * 2 ^ (power10Exponent k - 128).toNat
-
-theorem power10_exponent_eq_binary64 (k : ℤ) :
-    power10Exponent k = binary64.power10Exponent k := rfl
-
-theorem power10_num_eq_binary64 (k : ℤ) :
-    power10Num k = binary64.power10Num k := rfl
-
-theorem power10_den_eq_binary64 (k : ℤ) :
-    power10Den k = binary64.power10Den k := rfl
-
-theorem power10_significand_eq_binary64 (k : ℤ) :
-    power10Significand k = binary64.power10Significand k := rfl
 
 theorem power10_den_pos (k : ℤ) : 0 < power10Den k :=
   binary64.power10_den_pos k
