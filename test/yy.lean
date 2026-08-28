@@ -249,7 +249,12 @@ def toDecimalCandidates (f : ℕ) (e : FPExp fmt) : DecimalCandidates :=
   }
 
 /-- Converts a regularly spaced binary floating-point value f·2^e to a decimal
-    significand and exponent using yy's full path. -/
+    significand and exponent using yy's full path.
+
+    yy is a binary64 algorithm, so this is yy at binary64 and zmij's extension
+    of it at the wider formats, which is where zmij runs this path. The
+    extension is `packedBits` and nothing else: it makes the trim-down
+    comparison four bits finer. -/
 def toDecimal (f : ℕ) (e : FPExp fmt) : ℕ × ℤ :=
   let c := toDecimalCandidates f e
   (if c.roundD0 || c.roundU0 then c.decTen else c.decOne, c.k)
