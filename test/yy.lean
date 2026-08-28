@@ -2234,7 +2234,7 @@ theorem binary64_checks : Checks binary64 := by
 /-- yy is correct on regularly spaced positive binary64 values: after removing
     trailing zeros its output is a shortest decimal representation that
     round-trips, and it is correctly rounded on its own decimal grid. -/
-theorem correct (f : ℕ) (e : ℤ) (hr : Regular f e) :
+theorem correct (f : ℕ) (e : ℤ) (hr : binary64.Regular f e) :
     let (d, k) := toDecimal f (⟨e⟩ : FPExp binary64)
     let (d', k') := reduceDecimal d k
     Shortest f e d' k' ∧ CorrectlyRounded f e d' k' :=

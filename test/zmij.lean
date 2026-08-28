@@ -557,18 +557,18 @@ theorem checks (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
   exact hcert
 
 /-- The fraction's truncation error, at its largest over the significands. -/
-theorem err_le (f : ℕ) (e : ℤ) (hr : Regular f e) :
+theorem err_le (f : ℕ) (e : ℤ) (hr : binary64.Regular f e) :
     err f e ≤ den e * (unit e - 1) + (2 ^ 53 - 1) * (num e % den e) := by
   have h1 : f * p10 e % unit e ≤ unit e - 1 := by
     have := Nat.mod_lt (f * p10 e) (unit_pos e)
     omega
-  have h2 : f ≤ 2 ^ 53 - 1 := by have := hr.sig_lt; omega
+  have h2 : f ≤ 2 ^ 53 - 1 := by have : f < 2 ^ 53 := hr.sig_lt; omega
   rw [err]
   exact Nat.add_le_add (Nat.mul_le_mul_left _ h1) (Nat.mul_le_mul_right _ h2)
 
 /-- The two error bounds the comparisons are decided by, at this
     significand. -/
-theorem err_bounds (f : ℕ) (e : ℤ) (hr : Regular f e) :
+theorem err_bounds (f : ℕ) (e : ℤ) (hr : binary64.Regular f e) :
     2 * err f e < errHalf e + 2 * edge e
       ∧ 2 * err f e + errHalf e < 4 * edge e := by
   have hle := err_le f e hr
@@ -637,7 +637,7 @@ exactly what excluding the boundary from the windows says.
 /-- The gap is under one coarse step by all but the errors' reach: the fraction
     accounts for all but one unit of the step, and the two truncations for less
     than one unit plus `2^53` denominators. -/
-theorem gap_lt_step_add (f : ℕ) (e : ℤ) (hr : Regular f e) :
+theorem gap_lt_step_add (f : ℕ) (e : ℤ) (hr : binary64.Regular f e) :
     gap f e < step e + 2 ^ 53 * den e := by
   have hs := (exponent_shift_range e hr.range).2
   have hden := den_pos e
@@ -656,7 +656,7 @@ theorem gap_lt_step_add (f : ℕ) (e : ℤ) (hr : Regular f e) :
     rw [edge, Nat.mul_comm (unit e) (den e)]
     exact mul_lt_mul_of_pos_left (Nat.mod_lt _ (unit_pos e)) hden
   have h2 : f * (num e % den e) < 2 ^ 53 * den e :=
-    Nat.mul_lt_mul'' (by have := hr.sig_lt; omega) hτ
+    Nat.mul_lt_mul'' (by have : f < 2 ^ 53 := hr.sig_lt; omega) hτ
   rw [err] at hgap
   omega
 
@@ -672,7 +672,7 @@ private theorem mod_of_add_mul {a q r m : ℕ} (h : a = m * q + r) (hlt : r < m)
 
 /-- The doubled gap, less a whole step where it took one, is the residue of
     `2·num·f` in two steps. -/
-theorem rest_mod (f : ℕ) (e : ℤ) (hr : Regular f e) :
+theorem rest_mod (f : ℕ) (e : ℤ) (hr : binary64.Regular f e) :
     2 * num e * f % (2 * step e) = 2 * rest f e := by
   have hid := integral_add_gap f e (exponent_shift_range e hr.range).2
   have hden := den_pos e
@@ -716,7 +716,7 @@ private theorem exp_windows_refuted (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
 
 /-- A doubled gap landing in a refuted window is impossible: it is the residue
     of `2·num·f` modulo two coarse steps. -/
-private theorem no_window_hit {lo hi q : ℤ} (f : ℕ) (e : ℤ) (hr : Regular f e)
+private theorem no_window_hit {lo hi q : ℤ} (f : ℕ) (e : ℤ) (hr : binary64.Regular f e)
     (hcert : (expWindows e).refutedBy q = true)
     (hmem : (lo, hi) ∈ (expWindows e).windows)
     (hlo : lo ≤ 2 * (rest f e : ℤ)) (hhi : 2 * (rest f e : ℤ) ≤ hi) :
@@ -728,7 +728,7 @@ private theorem no_window_hit {lo hi q : ℤ} (f : ℕ) (e : ℤ) (hr : Regular 
     the integral part one short of the exact one, which happens exactly when the
     scaled value is an integer, and Żmij's carry recovers it; anything beyond
     that would be an overshoot in the first window. -/
-theorem gap_le_step (f : ℕ) (e : ℤ) (hr : Regular f e) : gap f e ≤ step e := by
+theorem gap_le_step (f : ℕ) (e : ℤ) (hr : binary64.Regular f e) : gap f e ≤ step e := by
   by_contra hcon
   obtain ⟨q, hcert⟩ := exp_windows_refuted e hr.range
   have hs := (exponent_shift_range e hr.range).2
@@ -754,7 +754,7 @@ theorem gap_le_step (f : ℕ) (e : ℤ) (hr : Regular f e) : gap f e ≤ step e 
 
 /-- With the gap inside a step, the residue is the doubled gap itself, except
     where the gap is exactly a step and it wraps to zero. -/
-theorem rest_eq (f : ℕ) (e : ℤ) (hr : Regular f e) :
+theorem rest_eq (f : ℕ) (e : ℤ) (hr : binary64.Regular f e) :
     rest f e = gap f e ∨ (gap f e = step e ∧ rest f e = 0) := by
   have hle := gap_le_step f e hr
   rw [rest]
@@ -766,7 +766,7 @@ theorem rest_eq (f : ℕ) (e : ℤ) (hr : Regular f e) :
     tie, or it is more than one fraction unit's reach away from it. A gap of
     exactly one step puts the doubled gap at `2·step`, past every window, so
     interiority covers that case rather than a certificate. -/
-private theorem gap_tie_or_far {b : ℤ} (f : ℕ) (e : ℤ) (hr : Regular f e)
+private theorem gap_tie_or_far {b : ℤ} (f : ℕ) (e : ℤ) (hr : binary64.Regular f e)
     (hb : 4 * (edge e : ℤ) < b ∧ b + 4 * (edge e : ℤ) < 2 * (step e : ℤ))
     (hbelow : (b - 4 * (edge e : ℤ), b - 1) ∈ (expWindows e).windows)
     (habove : (b + 1, b + 4 * (edge e : ℤ)) ∈ (expWindows e).windows) :
@@ -786,7 +786,7 @@ private theorem gap_tie_or_far {b : ℤ} (f : ℕ) (e : ℤ) (hr : Regular f e)
     omega
 
 /-- The trim-down dichotomy, about the boundary `num`. -/
-theorem down_tie_or_far (f : ℕ) (e : ℤ) (hr : Regular f e) :
+theorem down_tie_or_far (f : ℕ) (e : ℤ) (hr : binary64.Regular f e) :
     2 * (gap f e : ℤ) = num e
       ∨ (num e : ℤ) + 4 * edge e < 2 * (gap f e : ℤ)
       ∨ 2 * (gap f e : ℤ) + 4 * (edge e : ℤ) < num e := by
@@ -798,7 +798,7 @@ theorem down_tie_or_far (f : ℕ) (e : ℤ) (hr : Regular f e) :
 
 /-- The trim-up dichotomy, about the boundary `2·step - num`, which Żmij's carry
     reads as the fraction and the half ULP summing past `2^64`. -/
-theorem up_tie_or_far (f : ℕ) (e : ℤ) (hr : Regular f e) :
+theorem up_tie_or_far (f : ℕ) (e : ℤ) (hr : binary64.Regular f e) :
     2 * (gap f e : ℤ) + num e = 2 * (step e : ℤ)
       ∨ 2 * (step e : ℤ) + 4 * edge e < 2 * (gap f e : ℤ) + num e
       ∨ 2 * (gap f e : ℤ) + (num e : ℤ) + 4 * edge e < 2 * step e := by
@@ -880,7 +880,7 @@ theorem half_bounds (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
     below `2^64`, so no significand can do it. This is what keeps Żmij's carry
     from firing on an odd significand at a tie, where the upper candidate does
     not round-trip. -/
-theorem fraction_add_half_ne (f : ℕ) (e : ℤ) (hr : Regular f e) :
+theorem fraction_add_half_ne (f : ℕ) (e : ℤ) (hr : binary64.Regular f e) :
     fractionalPart f e + half e ≠ 2 ^ 64 := by
   intro hS
   have hs := (exponent_shift_range e hr.range).2
@@ -942,7 +942,7 @@ theorem fraction_add_half_ne (f : ℕ) (e : ℤ) (hr : Regular f e) :
     the two truncations, and inside that margin `down_tie_or_far` leaves only an
     exact tie, where the fraction equals the half ULP exactly and the `+1`
     for even `f` resolves it the way the specification does. -/
-theorem round_down_iff_gap (f : ℕ) (e : ℤ) (hr : Regular f e) :
+theorem round_down_iff_gap (f : ℕ) (e : ℤ) (hr : binary64.Regular f e) :
     (toDecimalCandidates f e).roundDown = true
       ↔ if f % 2 = 0 then 2 * gap f e ≤ num e else 2 * gap f e < num e := by
   have hs := (exponent_shift_range e hr.range).2
@@ -968,7 +968,7 @@ theorem round_down_iff_gap (f : ℕ) (e : ℤ) (hr : Regular f e) :
     addition, which is the fraction and the half ULP summing past `2^64`;
     `fraction_add_half_ne` rules out landing on `2^64` itself, and one short of
     it `up_tie_or_far` again leaves only an exact tie. -/
-theorem round_up_iff_gap (f : ℕ) (e : ℤ) (hr : Regular f e) :
+theorem round_up_iff_gap (f : ℕ) (e : ℤ) (hr : binary64.Regular f e) :
     (toDecimalCandidates f e).roundUp = true
       ↔ if f % 2 = 0 then 2 * step e ≤ 2 * gap f e + num e
         else 2 * step e < 2 * gap f e + num e := by
@@ -1020,7 +1020,7 @@ theorem successor_scaled (f : ℕ) (e : ℤ) (hs : exponentShift e ≤ 9) :
     bound on `gap` by `num`, the gap being that candidate's distance from the
     scaled value, and the lower end of the round-trip interval is free because
     a gap is never negative. -/
-theorem round_down_iff_roundtrips (f : ℕ) (e : ℤ) (hr : Regular f e) :
+theorem round_down_iff_roundtrips (f : ℕ) (e : ℤ) (hr : binary64.Regular f e) :
     (toDecimalCandidates f e).roundDown = true
       ↔ Roundtrips f e (integralPart f e * 10 ^ (decimalExponent e + 1)) := by
   rw [round_down_iff_gap f e hr,
@@ -1031,7 +1031,7 @@ theorem round_down_iff_roundtrips (f : ℕ) (e : ℤ) (hr : Regular f e) :
 /-- `roundUp` fires exactly when the successor round-trips. Its distance is
     signed, and the upper end of the interval is free because the gap never
     passes a whole step. -/
-theorem round_up_iff_roundtrips (f : ℕ) (e : ℤ) (hr : Regular f e) :
+theorem round_up_iff_roundtrips (f : ℕ) (e : ℤ) (hr : binary64.Regular f e) :
     (toDecimalCandidates f e).roundUp = true
       ↔ Roundtrips f e ((integralPart f e + 1 : ℕ) * 10 ^ (decimalExponent e + 1)) := by
   have hle := gap_le_step f e hr
@@ -1079,7 +1079,7 @@ def digitDist (f : ℕ) (e : ℤ) : ℤ :=
 /-- The truncation stays under one fraction unit with room to spare: the
     remainder below the unit accounts for nearly all of it and the power-of-ten
     truncation for at most `2^53` denominators, which one unit dwarfs. -/
-theorem err_lt (f : ℕ) (e : ℤ) (hr : Regular f e) :
+theorem err_lt (f : ℕ) (e : ℤ) (hr : binary64.Regular f e) :
     20 * err f e < 21 * edge e := by
   have hden := den_pos e
   have hunit : 20 * 2 ^ 53 ≤ unit e := by
@@ -1101,7 +1101,7 @@ theorem err_lt (f : ℕ) (e : ℤ) (hr : Regular f e) :
       _ = unit e * den e := by ring
   -- The power-of-ten truncation is smaller still, by a whole unit.
   have htau : 20 * (f * (num e % den e)) + unit e ≤ edge e := by
-    have h1 : 20 * f ≤ unit e := by have := hr.sig_lt; omega
+    have h1 : 20 * f ≤ unit e := by have : f < 2 ^ 53 := hr.sig_lt; omega
     have h2 : num e % den e ≤ den e - 1 := by
       have := Nat.mod_lt (num e) hden
       omega
@@ -1130,11 +1130,11 @@ private theorem res_le_of_err (f : ℕ) (e : ℤ) {a : ℕ}
     _ = den e * (a * unit e) := by rw [edge]; ring
 
 /-- And conversely, up to what the power-of-ten truncation can contribute. -/
-private theorem res_ge_of_err (f : ℕ) (e : ℤ) (hr : Regular f e) {a : ℕ}
+private theorem res_ge_of_err (f : ℕ) (e : ℤ) (hr : binary64.Regular f e) {a : ℕ}
     (h : a * edge e ≤ 20 * err f e) :
     a * unit e ≤ 20 * (f * p10 e % unit e) + 20 * 2 ^ 53 := by
   have htau : f * (num e % den e) ≤ 2 ^ 53 * den e := by
-    have h1 : f ≤ 2 ^ 53 := by have := hr.sig_lt; omega
+    have h1 : f ≤ 2 ^ 53 := by have : f < 2 ^ 53 := hr.sig_lt; omega
     have h2 : num e % den e ≤ den e := le_of_lt (Nat.mod_lt _ (den_pos e))
     exact Nat.mul_le_mul h1 h2
   refine Nat.le_of_mul_le_mul_left ?_ (den_pos e)
@@ -1206,7 +1206,7 @@ private theorem digit_high_refuted (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
     point of `res`, which is the residue of `f·p10` modulo one coarse step, so
     a refuted window rules the pair out. -/
 private theorem no_res_hit {lo hi q : ℤ} {windows : List (ℤ × ℤ)} (f : ℕ)
-    (e : ℤ) (hr : Regular f e)
+    (e : ℤ) (hr : binary64.Regular f e)
     (hcert : (regularWindows (p10 e) (unit e * 2 ^ 64) e windows).refutedBy q
       = true)
     (hmem : (lo, hi) ∈ windows)
@@ -1216,7 +1216,7 @@ private theorem no_res_hit {lo hi q : ℤ} {windows : List (ℤ × ℤ)} (f : �
 
 /-- No significand pairs one of the six low fractions with a truncation
     that reaches the boundary. -/
-private theorem no_digit_low (f : ℕ) (e : ℤ) (hr : Regular f e) {w j : ℕ}
+private theorem no_digit_low (f : ℕ) (e : ℤ) (hr : binary64.Regular f e) {w j : ℕ}
     (hmem : (w, j) ∈ digitLowEdges) (hφ : fractionalPart f e = w)
     (hb : 20 * (f * p10 e % unit e) ≤ 4 * j * unit e) : False := by
   obtain ⟨q, hcert⟩ := digit_low_refuted e hr.range
@@ -1239,7 +1239,7 @@ private theorem no_digit_low (f : ℕ) (e : ℤ) (hr : Regular f e) {w j : ℕ}
 
 /-- Nor with one of the five high fractions, the quarter included: there the
     truncation has to vanish, and it does not. -/
-private theorem no_digit_high (f : ℕ) (e : ℤ) (hr : Regular f e) {w j : ℕ}
+private theorem no_digit_high (f : ℕ) (e : ℤ) (hr : binary64.Regular f e) {w j : ℕ}
     (hmem : (w, j) ∈ digitHighEdges) (hφ : fractionalPart f e = w)
     (hb : 4 * j * unit e ≤ 20 * (f * p10 e % unit e) + 20 * 2 ^ 53)
     (hpos : 0 < err f e) : False := by
@@ -1348,7 +1348,7 @@ private theorem digit_mid_even {φ d : ℕ} (hφ : φ < 2 ^ 64) (hd : d ≤ 10)
 /-- Żmij's digit is a nearest one on the grid at `k`, ties to even. Away from a
     boundary the `+6` cannot matter; at one the fraction is one of eleven
     constants, and all but the quarter are refuted. -/
-theorem digit_nearest (f : ℕ) (e : ℤ) (hr : Regular f e) :
+theorem digit_nearest (f : ℕ) (e : ℤ) (hr : binary64.Regular f e) :
     (-(step e : ℤ) ≤ digitDist f e ∧ digitDist f e ≤ step e)
       ∧ (digitDist f e = step e ∨ digitDist f e = -(step e : ℤ)
           → (toDecimalCandidates f e).digit % 2 = 0) := by
@@ -1564,7 +1564,7 @@ other multiple of ten, and the rounding interval is too narrow to hold one.
     Cleared by `step`, the lower one sits `10·gap` below the scaled value, and
     that gap is under one step of the coarse grid, let alone one step plus half
     a ULP. This bracket is all `coarse_roundtrip_adjacent` needs. -/
-theorem coarse_candidate_cases (f : ℕ) (e : ℤ) (hr : Regular f e) (d : ℕ)
+theorem coarse_candidate_cases (f : ℕ) (e : ℤ) (hr : binary64.Regular f e) (d : ℕ)
     (h10 : d % 10 = 0)
     (hround : Roundtrips f e (d * 10 ^ decimalExponent e)) :
     d = integralPart f e * 10 ∨ d = integralPart f e * 10 + 10 := by
@@ -1585,7 +1585,7 @@ theorem coarse_candidate_cases (f : ℕ) (e : ℤ) (hr : Regular f e) (d : ℕ)
     (lt_of_mul_lt_mul_right (by push_cast; linarith) hmul.le) hround
 
 /-- If the rounding interval contains a multiple of ten, Żmij trims. -/
-theorem trim_of_coarse_roundtrip (f : ℕ) (e : ℤ) (hr : Regular f e) (d : ℕ)
+theorem trim_of_coarse_roundtrip (f : ℕ) (e : ℤ) (hr : binary64.Regular f e) (d : ℕ)
     (h10 : d % 10 = 0)
     (hround : Roundtrips f e (d * 10 ^ decimalExponent e)) :
     ((toDecimalCandidates f e).roundUp
@@ -1599,7 +1599,7 @@ theorem trim_of_coarse_roundtrip (f : ℕ) (e : ℤ) (hr : Regular f e) (d : ℕ
 
 /-- Trimmed output is a multiple of ten that round-trips: it is whichever of the
     two coarse candidates fired. -/
-theorem coarse_output_roundtrips (f : ℕ) (e : ℤ) (hr : Regular f e)
+theorem coarse_output_roundtrips (f : ℕ) (e : ℤ) (hr : binary64.Regular f e)
     (htrim : ((toDecimalCandidates f e).roundUp
       || (toDecimalCandidates f e).roundDown) = true) :
     (toDecimal f e).1 % 10 = 0
@@ -1624,7 +1624,7 @@ theorem coarse_output_roundtrips (f : ℕ) (e : ℤ) (hr : Regular f e)
 /-- Untrimmed output is a nearest candidate on the grid at `k`, ties to even:
     the integral part accounts for ten times its own distance and the digit for
     the rest, which is `digit_nearest`. -/
-theorem fine_output_nearest (f : ℕ) (e : ℤ) (hr : Regular f e)
+theorem fine_output_nearest (f : ℕ) (e : ℤ) (hr : binary64.Regular f e)
     (htrim : ((toDecimalCandidates f e).roundUp
       || (toDecimalCandidates f e).roundDown) = false) :
     let x := value f e * 10 ^ (-decimalExponent e)
@@ -1669,7 +1669,7 @@ its one special case is a packed midpoint rather than an exact one.
     candidate exists. One direction is `trim_of_coarse_roundtrip`; the other
     holds because trimmed output is itself a multiple of ten that
     round-trips. -/
-theorem exact_candidate (f : ℕ) (e : ℤ) (hr : Regular f e) :
+theorem exact_candidate (f : ℕ) (e : ℤ) (hr : binary64.Regular f e) :
     let (d, k) := toDecimal f e
     ExactCandidate f e k d := by
   show ExactCandidate f e (decimalExponent e) (toDecimal f e).1
@@ -1685,7 +1685,7 @@ theorem exact_candidate (f : ℕ) (e : ℤ) (hr : Regular f e) :
 /-- Żmij is correct on regularly spaced positive binary64 values: after removing
     trailing zeros its output is a shortest decimal representation that
     round-trips, and it is correctly rounded on its own decimal grid. -/
-theorem correct (f : ℕ) (e : ℤ) (hr : Regular f e) :
+theorem correct (f : ℕ) (e : ℤ) (hr : binary64.Regular f e) :
     let (d, k) := toDecimal f e
     let (d', k') := reduceDecimal d k
     Shortest f e d' k' ∧ CorrectlyRounded f e d' k' := by

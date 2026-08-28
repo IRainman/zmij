@@ -537,26 +537,9 @@ theorem Format.Regular.normal_or_min {fmt : Format} {f : ℕ} {e : ℤ}
 /-! Below, binary64's own layer. Each definition is spelled out rather than
 applied to `binary64`, and tied to the generic one by `rfl`. The wrappers would
 be shorter, but `unfold` and `simp only` in the implementation files need to see
-the literal constants and the structure literal, and stop at a wrapper. -/
-
-/-- Regularly spaced positive binary64 values. -/
-def Regular (f : ℕ) (e : ℤ) : Prop :=
-  (0 < f ∧ f < 2 ^ 53 ∧ (2 ^ 52 < f ∨ e = -1074)) ∧
-  (-1074 ≤ e ∧ e ≤ 971)
-
-theorem regular_eq_binary64 (f : ℕ) (e : ℤ) :
-    Regular f e = binary64.Regular f e := rfl
-
-/-- A regular value has a positive significand. -/
-theorem Regular.pos {f : ℕ} {e : ℤ} (hr : Regular f e) : 0 < f := hr.1.1
-
-/-- A regular value has a significand below `2^53`. -/
-theorem Regular.sig_lt {f : ℕ} {e : ℤ} (hr : Regular f e) : f < 2 ^ 53 :=
-  hr.1.2.1
-
-/-- A regular value's exponent lies in binary64's range. -/
-theorem Regular.range {f : ℕ} {e : ℤ} (hr : Regular f e) :
-    -1074 ≤ e ∧ e ≤ 971 := hr.2
+the literal constants and the structure literal, and stop at a wrapper.
+`Regular` gets no such spelling: it is only ever passed along or projected from,
+never unfolded. -/
 
 /-! ### The decimal exponent -/
 
@@ -1022,12 +1005,12 @@ theorem regular_windows_eq_binary64 (g modulus : ℕ) (e : ℤ)
 
 /-- `not_hit` over binary64's box. -/
 theorem regular_not_hit {g modulus : ℕ} {e : ℤ} {windows : List (ℤ × ℤ)}
-    {q lo hi : ℤ} {y : ℕ} (f : ℕ) (hr : Regular f e) (hmodulus : 0 < modulus)
+    {q lo hi : ℤ} {y : ℕ} (f : ℕ) (hr : binary64.Regular f e)
+    (hmodulus : 0 < modulus)
     (hcert : (regularWindows g modulus e windows).refutedBy q = true)
     (hmem : (lo, hi) ∈ windows) (hy : y = g * f % modulus)
     (hlo : lo ≤ (y : ℤ)) (hhi : (y : ℤ) ≤ hi) :
     False := by
-  rw [regular_eq_binary64] at hr
   rw [regular_windows_eq_binary64] at hcert
   exact Format.regular_not_hit f hr hmodulus hcert hmem hy hlo hhi
 
