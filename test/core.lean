@@ -665,32 +665,6 @@ theorem Format.power10_significand_bounds (fmt : Format) {k : ℤ}
   exact ⟨(Nat.le_div_iff_mul_le (fmt.power10_den_pos k)).mpr hlo,
     (Nat.div_lt_iff_lt_mul (fmt.power10_den_pos k)).mpr hhi⟩
 
-/-- Truncated 128-bit normalized binary significand of 10^k. -/
-def power10Significand (k : ℤ) : ℕ :=
-  ⌊(10 : ℚ) ^ k * 2 ^ (128 - binary64.power10Exponent k)⌋₊
-
-/-- Numerator of the exact scaled power of ten `10^k·2^(128-pe)`. -/
-def power10Num (k : ℤ) : ℕ :=
-  10 ^ k.toNat * 2 ^ (128 - binary64.power10Exponent k).toNat
-
-/-- Denominator of that same power of ten. -/
-def power10Den (k : ℤ) : ℕ :=
-  10 ^ (-k).toNat * 2 ^ (binary64.power10Exponent k - 128).toNat
-
-theorem power10_den_pos (k : ℤ) : 0 < power10Den k :=
-  binary64.power10_den_pos k
-
-/-- The scaled exact power of ten is exactly the rational `num / den`. -/
-theorem power10_exact_ratio (k : ℤ) :
-    (10 : ℚ) ^ k * 2 ^ (128 - binary64.power10Exponent k)
-      = (power10Num k : ℚ) / (power10Den k : ℚ) :=
-  binary64.power10_exact_ratio k
-
-/-- The truncation is the natural quotient `num / den`. -/
-theorem power10_significand_nat (k : ℤ) :
-    power10Significand k = power10Num k / power10Den k :=
-  binary64.power10_significand_nat k
-
 /-- The fixed-point exponent does normalize `10^k`, over `[-293, 324]`: the
     union of the ranges the two indices reach, `[-292, 324]` for `10^(-k)` and
     `[-293, 323]` for `10^(-k-1)`. Beyond it the approximation eventually drifts
@@ -703,8 +677,8 @@ theorem power10_significand_nat (k : ℤ) :
     `Format.power10_significand_bounds` in its own file. -/
 theorem power10_ratio_normalized :
     ∀ k ∈ Finset.Icc (-293 : ℤ) 324,
-      2 ^ 127 * power10Den k ≤ power10Num k ∧
-        power10Num k < 2 ^ 128 * power10Den k := by
+      2 ^ 127 * binary64.power10Den k ≤ binary64.power10Num k ∧
+        binary64.power10Num k < 2 ^ 128 * binary64.power10Den k := by
   -- This enumerates 618 exponents. `+kernel` keeps it out of the elaborator,
   -- whose recursion and exponentiation guards it would otherwise trip.
   decide +kernel
@@ -713,7 +687,8 @@ theorem power10_ratio_normalized :
     which is what makes `power10Exponent` an exponent for a 128-bit significand,
     and it still fits in 128 bits. -/
 theorem power10_significand_bounds (k : ℤ) (hk : -293 ≤ k ∧ k ≤ 324) :
-    2 ^ 127 ≤ power10Significand k ∧ power10Significand k < 2 ^ 128 := by
+    2 ^ 127 ≤ binary64.power10Significand k
+      ∧ binary64.power10Significand k < 2 ^ 128 := by
   obtain ⟨hlo, hhi⟩ :=
     power10_ratio_normalized k (by simpa [Finset.mem_Icc] using hk)
   exact binary64.power10_significand_bounds hlo hhi

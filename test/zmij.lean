@@ -108,7 +108,7 @@ def exponentShift (e : ℤ) : ℕ :=
 /-- The top 128 bits of Żmij's 192-bit product: `⌊f·2^s·p10 / 2^64⌋`. -/
 def scaledSignificand (f : ℕ) (e : ℤ) : ℕ :=
   f * 2 ^ exponentShift e
-    * power10Significand (-(binary64.decimalExponent e + 1)) / 2 ^ 64
+    * binary64.power10Significand (-(binary64.decimalExponent e + 1)) / 2 ^ 64
 
 /-- The integral part of the scaled value, Żmij's shorter candidate: the product
     with the nine headroom bits and the fraction shifted off. -/
@@ -123,7 +123,7 @@ def fractionalPart (f : ℕ) (e : ℤ) : ℕ :=
     the two comparisons below from strict into non-strict exactly when a tie is
     allowed to round. -/
 def halfUlp (f : ℕ) (e : ℤ) : ℕ :=
-  power10Significand (-(binary64.decimalExponent e + 1)) / 2 ^ 64
+  binary64.power10Significand (-(binary64.decimalExponent e + 1)) / 2 ^ 64
       / 2 ^ (10 - exponentShift e)
     + (1 - f % 2)
 
@@ -232,20 +232,23 @@ reads the same quotient 64 bits lower.
 -/
 
 /-- Numerator of the exact power of ten Żmij multiplies by. -/
-def num (e : ℤ) : ℕ := power10Num (-(binary64.decimalExponent e + 1))
+def num (e : ℤ) : ℕ :=
+  binary64.power10Num (-(binary64.decimalExponent e + 1))
 
 /-- Its denominator. -/
-def den (e : ℤ) : ℕ := power10Den (-(binary64.decimalExponent e + 1))
+def den (e : ℤ) : ℕ :=
+  binary64.power10Den (-(binary64.decimalExponent e + 1))
 
 /-- Its 128-bit truncation, the `p10` of the implementation. -/
-def p10 (e : ℤ) : ℕ := power10Significand (-(binary64.decimalExponent e + 1))
+def p10 (e : ℤ) : ℕ :=
+  binary64.power10Significand (-(binary64.decimalExponent e + 1))
 
-theorem den_pos (e : ℤ) : 0 < den e := power10_den_pos _
+theorem den_pos (e : ℤ) : 0 < den e := binary64.power10_den_pos _
 
 /-- The truncation is natural-number division, which is what keeps this whole
     layer in `Nat`. -/
 theorem p10_nat (e : ℤ) : p10 e = num e / den e :=
-  power10_significand_nat _
+  binary64.power10_significand_nat _
 
 /-- `den·p10 + τ = num`: the truncated power of ten and the bits it dropped. -/
 theorem num_split (e : ℤ) : den e * p10 e + num e % den e = num e := by
@@ -375,7 +378,9 @@ theorem step_eq (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
   set pe := binary64.power10Exponent (-(k + 1))
   have hd : (0 : ℚ) < (den e : ℚ) := by exact_mod_cast den_pos e
   have hnum : (10 : ℚ) ^ (-(k + 1)) * 2 ^ (128 - pe) * den e = num e := by
-    rw [power10_exact_ratio, ← num, ← den, div_mul_cancel₀ _ (ne_of_gt hd)]
+    rw [show (128 : ℤ) = (binary64.p10Width : ℤ) from rfl,
+      binary64.power10_exact_ratio, ← num, ← den,
+      div_mul_cancel₀ _ (ne_of_gt hd)]
   -- The inverse scale turns the power-of-ten factor into `2^(137-s)`, which is
   -- where the shift alignment is spent.
   have hscale : (10 : ℚ) ^ (-(k + 1)) * 2 ^ (128 - pe)
