@@ -91,7 +91,7 @@ namespace zmij
 The algorithm, as Żmij computes it. One 192-bit multiply of the significand by
 the 128-bit power of ten, keeping the top 128 bits; the integral part and the
 fraction are read out of that product at a fixed bit position, and the three
-decisions are comparisons on those two words.
+decisions are comparisons on those two values.
 
 The extra shift is the nine bits of headroom Żmij leaves below the integral
 part, which `exponentShift` folds in. Nine is not forced: 3 keeps the shift
@@ -118,7 +118,7 @@ def integralPart (f : ℕ) (e : ℤ) : ℕ := scaledSignificand f e / 2 ^ 73
 def fractionalPart (f : ℕ) (e : ℤ) : ℕ :=
   scaledSignificand f e / 2 ^ 9 % 2 ^ 64
 
-/-- Half a ULP in the same units, truncated to the high word of the power of
+/-- Half a ULP in the same units, truncated to the top 64 bits of the power of
     ten, plus one when `f` is even. That `+1` is the tie rule: it turns each of
     the two comparisons below from strict into non-strict exactly when a tie is
     allowed to round. -/
@@ -129,7 +129,7 @@ def halfUlp (f : ℕ) (e : ℤ) : ℕ :=
 
 /-- Rounding constant for the derived digit: half of `2^64`, nudged up by six.
     The nudge covers the truncation in `fractionalPart`; it moves the digit
-    boundary by less than one unit of that word. -/
+    boundary by less than one of its units. -/
 def biasedHalf : ℕ := 2 ^ 63 + 6
 
 structure DecimalCandidates where
@@ -211,8 +211,8 @@ theorem exponent_shift_align (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
 
 /-! ## Żmij's arithmetic model
 
-Żmij's three decisions are comparisons of machine words. What follows rebuilds
-those words as exact naturals: the scale they are read in, what their
+Żmij's three decisions are comparisons of 64-bit integers. What follows
+rebuilds them as exact naturals: the scale they are read in, what their
 truncations discard, and how that scale relates to the rationals the
 specification is stated over.
 -/
@@ -227,7 +227,7 @@ fraction Żmij compares is measured in units of `unit·den = 2^(73-s)·den`.
 Two divisions of the implementation compose into one here. `integralPart`
 shifts the 192-bit product down by 64 and then by 73, which is a single
 division by `2^(137-s)` once the shift is factored out, and `fractionalPart`
-reads the same quotient one word lower.
+reads the same quotient 64 bits lower.
 -/
 
 /-- Numerator of the exact power of ten Żmij multiplies by. -/
@@ -282,7 +282,7 @@ theorem integral_quotient (f : ℕ) (e : ℤ) (hs : exponentShift e ≤ 9) :
   congr 1
   omega
 
-/-- The fraction is the same quotient read one word lower. -/
+/-- The fraction is the same quotient read 64 bits lower. -/
 theorem fraction_quotient (f : ℕ) (e : ℤ) (hs : exponentShift e ≤ 9) :
     fractionalPart f e = f * p10 e / unit e % 2 ^ 64 := by
   have h : scaledSignificand f e / 2 ^ 9 = f * p10 e / unit e := by
@@ -293,7 +293,7 @@ theorem fraction_quotient (f : ℕ) (e : ℤ) (hs : exponentShift e ≤ 9) :
   rw [fractionalPart, h]
 
 /-- What that division left behind, the residue of the cleared product in one
-    coarse step. The fraction word is its top and the truncation its bottom, and
+    coarse step. The fraction is its top and the truncation its bottom, and
     both of the digit's boundaries constrain the two together, so both are
     stated about this. -/
 def res (f : ℕ) (e : ℤ) : ℕ := f * p10 e % (unit e * 2 ^ 64)
@@ -320,15 +320,15 @@ theorem integral_add_gap (f : ℕ) (e : ℤ) (hs : exponentShift e ≤ 9) :
 
 /-! ### What the truncations discard
 
-Both of Żmij's comparisons are between a truncated 64-bit word and the exact
+Both of Żmij's comparisons are between a truncated 64-bit value and the exact
 quantity it stands for, so each needs the size of what was dropped. The gap is
 the fraction in cleared units plus a remainder below one such unit, and one
 ULP is twice half a ULP in the same units plus a remainder below one. Those two
 remainders are the whole error budget the certificates below have to close.
 -/
 
-/-- The residue splits at the fraction's own unit: the fraction word above it,
-    the remainder the fraction word dropped below. -/
+/-- The residue splits at the fraction's own unit: the fraction above it,
+    the remainder the fraction dropped below. -/
 theorem res_split (f : ℕ) (e : ℤ) (hs : exponentShift e ≤ 9) :
     res f e = unit e * fractionalPart f e + f * p10 e % unit e := by
   have hdiv : f * p10 e % (unit e * 2 ^ 64) / unit e
@@ -358,7 +358,7 @@ integers. This is the only place `ℚ` appears.
 -/
 
 /-- One coarse step is the alignment shift with the denominator: the fraction's
-    unit and the word above it compose into `2^(137-s)`. -/
+    unit and the 64 bits above it compose into `2^(137-s)`. -/
 theorem step_pow (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
     step e = 2 ^ (137 - exponentShift e) * den e := by
   rw [step, unit, ← pow_add,
@@ -448,7 +448,7 @@ theorem roundtrips_iff_dist (f : ℕ) (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971)
 
 Both coarse flags compare Żmij's truncated fraction with its truncated half
 ULP. Cleared, one fraction unit is `edge = 2^(73-s)·den`: the fraction stands
-for that much of the gap apiece, the half-ULP word for twice that much of one
+for that much of the gap apiece, the half ULP for twice that much of one
 ULP apiece, and each of the two truncations leaves a remainder below one unit,
 `err` from the gap and `errHalf` from the ULP. Those two remainders are the
 whole budget the certificates below have to close.
@@ -475,11 +475,11 @@ def half (e : ℤ) : ℕ := p10 e / (2 * unit e)
 def err (f : ℕ) (e : ℤ) : ℕ :=
   den e * (f * p10 e % unit e) + f * (num e % den e)
 
-/-- What the truncated half-ULP word discards from one ULP. -/
+/-- What the truncated half ULP discards from one ULP. -/
 def errHalf (e : ℤ) : ℕ :=
   den e * (p10 e % (2 * unit e)) + num e % den e
 
-/-- Żmij's half-ULP word is the truncated half ULP plus one for even `f`. That
+/-- Żmij's `halfUlp` is the truncated half ULP plus one for even `f`. That
     `+1` is the tie rule: it turns each comparison below from strict into
     non-strict exactly when a tie is allowed to round. -/
 theorem half_ulp_eq (f : ℕ) (e : ℤ) (hs : exponentShift e ≤ 9) :
@@ -511,7 +511,7 @@ theorem num_eq_edge_half (e : ℤ) :
           + (den e * (p10 e % (2 * unit e)) + num e % den e) := by ring
 
 /-- The half-ULP truncation discards less than two fraction units, so the
-    fraction reaching one unit past that word settles the comparison by
+    fraction reaching one unit past the half ULP settles the comparison by
     itself. -/
 theorem err_half_lt (e : ℤ) : errHalf e < 2 * edge e := by
   have hden := den_pos e
@@ -528,7 +528,7 @@ theorem err_half_lt (e : ℤ) : errHalf e < 2 * edge e := by
 
 /-- Everything about the truncated power of ten that has to be checked per
     exponent rather than derived from magnitudes: the fraction's error stays
-    within two fraction units of the half-ULP word's, and the two together stay
+    within two fraction units of the half ULP's, and the two together stay
     under four. Both are stated at the largest error any significand can carry,
     and the first is tight, with two to spare at `e = -90`. -/
 def checksHold (e : ℤ) : Bool :=
@@ -797,7 +797,7 @@ theorem down_tie_or_far (f : ℕ) (e : ℤ) (hr : Regular f e) :
     (by simp [expWindows, regularWindows])
 
 /-- The trim-up dichotomy, about the boundary `2·step - num`, which Żmij's carry
-    reads as the fraction and the half-ULP word summing past `2^64`. -/
+    reads as the fraction and the half ULP summing past `2^64`. -/
 theorem up_tie_or_far (f : ℕ) (e : ℤ) (hr : Regular f e) :
     2 * (gap f e : ℤ) + num e = 2 * (step e : ℤ)
       ∨ 2 * (step e : ℤ) + 4 * edge e < 2 * (gap f e : ℤ) + num e
@@ -844,7 +844,7 @@ private theorem two_unit_eq (e : ℤ) (hs : exponentShift e ≤ 9) :
     pow_succ]
   ring
 
-/-- The half-ULP word is positive and below `2^64`: the power of ten is
+/-- The truncated half ULP is positive and below `2^64`: the power of ten is
     normalized and the shift truncates it by between `2^65` and `2^68`. -/
 theorem half_bounds (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
     0 < half e ∧ half e < 2 ^ 64 := by
@@ -873,7 +873,7 @@ theorem half_bounds (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
       _ ≤ 2 ^ 64 * 2 ^ 65 := by norm_num
       _ ≤ 2 ^ 64 * (2 * unit e) := Nat.mul_le_mul_left _ hbig
 
-/-- The fraction and the half-ULP word never sum to exactly `2^64`. Where they
+/-- The fraction and the half ULP never sum to exactly `2^64`. Where they
     did, the dichotomy would make the value an exact tie with both truncations
     vanishing, and the power of ten being exact then forces
     `(2f+1)·half = (c+1)·2^64`; but `2f+1` is odd and `half` is positive and
@@ -896,8 +896,8 @@ theorem fraction_add_half_ne (f : ℕ) (e : ℤ) (hr : Regular f e) :
         = edge e * (fractionalPart f e + half e) from by ring, hS, step_eq_edge]
   have hzero : 2 * err f e + errHalf e = 0 := by
     rcases up_tie_or_far f e hr with h | h | h <;> omega
-  -- An exact power of ten with nothing below the half-ULP word, so one ULP is
-  -- exactly twice that word and the gap is exactly the fraction.
+  -- An exact power of ten with nothing below the half ULP, so one ULP is
+  -- exactly twice it and the gap is exactly the fraction.
   have hτ : num e % den e = 0 := by rw [errHalf] at hzero; omega
   have hsig : p10 e % (2 * unit e) = 0 := by
     rw [errHalf] at hzero
@@ -940,7 +940,7 @@ theorem fraction_add_half_ne (f : ℕ) (e : ℤ) (hr : Regular f e) :
 
 /-- What `roundDown` decides. The comparison is the exact bound on `gap` up to
     the two truncations, and inside that margin `down_tie_or_far` leaves only an
-    exact tie, where the fraction equals the half-ULP word exactly and the `+1`
+    exact tie, where the fraction equals the half ULP exactly and the `+1`
     for even `f` resolves it the way the specification does. -/
 theorem round_down_iff_gap (f : ℕ) (e : ℤ) (hr : Regular f e) :
     (toDecimalCandidates f e).roundDown = true
@@ -965,7 +965,7 @@ theorem round_down_iff_gap (f : ℕ) (e : ℤ) (hr : Regular f e) :
     split_ifs <;> omega
 
 /-- What `roundUp` decides. Żmij detects it as the carry out of a 64-bit
-    addition, which is the fraction and the half-ULP word summing past `2^64`;
+    addition, which is the fraction and the half ULP summing past `2^64`;
     `fraction_add_half_ne` rules out landing on `2^64` itself, and one short of
     it `up_tie_or_far` again leaves only an exact tie. -/
 theorem round_up_iff_gap (f : ℕ) (e : ℤ) (hr : Regular f e) :
@@ -1043,27 +1043,27 @@ theorem round_up_iff_roundtrips (f : ℕ) (e : ℤ) (hr : Regular f e) :
 
 /-! ## The derived digit
 
-Ten times the fraction word, rounded, is Żmij's last digit, and the `+6` in
+Ten times the fraction, rounded, is Żmij's last digit, and the `+6` in
 `biasedHalf` is the rest of the error budget: it stands in for the part of the
-gap the fraction word dropped, which is worth up to ten of the units the digit
+gap the fraction dropped, which is worth up to ten of the units the digit
 is decided in. So the digit is a nearest one except within ten units of a digit
 boundary, where a `+6` can be wrong by six either way.
 
 What closes those cases is how rigid they are. Reaching a boundary asks twenty
-times the fraction word to come within twenty of a multiple of `2^64`, and since
-the fraction word also fixes the digit, that leaves eleven possible fraction
-words in all, each an explicit constant. Each one fixes how much of the
-truncation the `+6` would have to have got right, which is a bound on the
-remainder below one fraction unit, and the certificates below say no significand
-meets it. Of these eleven exceptional fraction words, only the exact midpoint at
-a quarter survives, where the truncation vanishes and the digit is two: that is
-the tie, and Żmij's special case rounds it to even.
+times the fraction to come within twenty of a multiple of `2^64`, and since the
+fraction also fixes the digit, that leaves eleven possible fractions in all,
+each an explicit constant. Each one fixes how much of the truncation the `+6`
+would have to have got right, which is a bound on the remainder below one
+fraction unit, and the certificates below say no significand meets it. Of these
+eleven exceptional fractions, only the exact midpoint at a quarter survives,
+where the truncation vanishes and the digit is two: that is the tie, and Żmij's
+special case rounds it to even.
 -/
 
 /-! ### The digit error
 
 The digit's distance from the value splits the way `res_split` splits the
-residue: into the fraction word, which the digit is computed from, and the
+residue: into the fraction, which the digit is computed from, and the
 remainder below one fraction unit, which the `+6` stands in for. That remainder
 is what the boundary cases below turn on, so it is bounded first, at twenty of
 it under twenty-one units, the twenty being the ten of the base-ten multiply
@@ -1151,14 +1151,14 @@ private theorem res_ge_of_err (f : ℕ) (e : ℤ) (hr : Regular f e) {a : ℕ}
 
 /-! ### Refuting the digit windows
 
-Each of the eleven fraction words that can reach a digit boundary asks the
+Each of the eleven fractions that can reach a digit boundary asks the
 truncation to reach a definite distance, and each such demand is a window of
 residues of `f·p10` modulo one coarse step. The generic machinery of
 `ModWindows` refutes every one of those windows over the exponent range, one
 exponent at a time.
 -/
 
-/-- The six fraction words that can reach a digit boundary from below, each with
+/-- The six fractions that can reach a digit boundary from below, each with
     how far the truncation would have to reach for it to happen, in fifths of a
     fraction unit. -/
 private def digitLowEdges : List (ℕ × ℕ) :=
@@ -1202,7 +1202,7 @@ private theorem digit_high_refuted (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
   obtain ⟨hlo, hhi⟩ := he
   interval_cases e <;> digit_high_cert
 
-/-- A fraction word together with a bound on the remainder below the unit is a
+/-- A fraction together with a bound on the remainder below the unit is a
     point of `res`, which is the residue of `f·p10` modulo one coarse step, so
     a refuted window rules the pair out. -/
 private theorem no_res_hit {lo hi q : ℤ} {windows : List (ℤ × ℤ)} (f : ℕ)
@@ -1214,7 +1214,7 @@ private theorem no_res_hit {lo hi q : ℤ} {windows : List (ℤ × ℤ)} (f : �
   regular_not_hit f hr (by have := unit_pos e; positivity) hcert hmem
     (by rw [res, Nat.mul_comm]) hlo hhi
 
-/-- No significand pairs one of the six low fraction words with a truncation
+/-- No significand pairs one of the six low fractions with a truncation
     that reaches the boundary. -/
 private theorem no_digit_low (f : ℕ) (e : ℤ) (hr : Regular f e) {w j : ℕ}
     (hmem : (w, j) ∈ digitLowEdges) (hφ : fractionalPart f e = w)
@@ -1237,7 +1237,7 @@ private theorem no_digit_low (f : ℕ) (e : ℤ) (hr : Regular f e) {w j : ℕ}
   exact no_res_hit f e hr hcert hmem'
     (by rw [hres]; omega) (by rw [hres]; omega)
 
-/-- Nor with one of the five high words, the quarter included: there the
+/-- Nor with one of the five high fractions, the quarter included: there the
     truncation has to vanish, and it does not. -/
 private theorem no_digit_high (f : ℕ) (e : ℤ) (hr : Regular f e) {w j : ℕ}
     (hmem : (w, j) ∈ digitHighEdges) (hφ : fractionalPart f e = w)
@@ -1290,14 +1290,14 @@ private theorem no_digit_high (f : ℕ) (e : ℤ) (hr : Regular f e) {w j : ℕ}
 
 /-! ### Nearest at the digit
 
-What is left is finite arithmetic on the fraction word and the digit it
+What is left is finite arithmetic on the fraction and the digit it
 produces. The biased quotient bounds how far the two can be out of step;
-reaching either boundary pins the fraction word to an entry of the tables above,
+reaching either boundary pins the fraction to an entry of the tables above,
 where the certificates rule it out; and the one exact midpoint Żmij does not
 special-case has an even digit. `digit_nearest` assembles these.
 -/
 
-/-- The biased quotient bounds the offset of twenty times the fraction word from
+/-- The biased quotient bounds the offset of twenty times the fraction from
     the digit boundary below it: the `+6` is worth twelve of those units, so the
     offset can fall short of that boundary by at most twelve and of the one
     above by at least thirteen. -/
@@ -1308,8 +1308,8 @@ private theorem digit_offset_bounds {φ d m : ℕ} {v : ℤ} (hφ : φ < 2 ^ 64)
   omega
 
 /-- Falling short of the boundary below makes the offset a negative multiple of
-    four, and since the fraction word fixes the digit too, each of its three
-    values leaves two possible fraction words. -/
+    four, and since the fraction fixes the digit too, each of its three
+    values leaves two possible fractions. -/
 private theorem digit_low_cases {φ d : ℕ} {v : ℤ} (hφ : φ < 2 ^ 64)
     (hd : d ≤ 10) (hv : v = 20 * φ + 2 ^ 64 - 2 * d * 2 ^ 64)
     (hlo : -12 ≤ v) (hhi : v < 0) :
@@ -1346,7 +1346,7 @@ private theorem digit_mid_even {φ d : ℕ} (hφ : φ < 2 ^ 64) (hd : d ≤ 10)
   interval_cases d <;> omega
 
 /-- Żmij's digit is a nearest one on the grid at `k`, ties to even. Away from a
-    boundary the `+6` cannot matter; at one the fraction word is one of eleven
+    boundary the `+6` cannot matter; at one the fraction is one of eleven
     constants, and all but the quarter are refuted. -/
 theorem digit_nearest (f : ℕ) (e : ℤ) (hr : Regular f e) :
     (-(step e : ℤ) ≤ digitDist f e ∧ digitDist f e ≤ step e)
@@ -1363,7 +1363,7 @@ theorem digit_nearest (f : ℕ) (e : ℤ) (hr : Regular f e) :
   have hφlt : φ < 2 ^ 64 := by
     rw [← hφ, fractionalPart]
     exact Nat.mod_lt _ (by norm_num)
-  -- Twenty times the fraction word, less the boundary below it: the whole
+  -- Twenty times the fraction, less the boundary below it: the whole
   -- argument is a comparison of this offset against the truncation.
   obtain ⟨v, hv⟩ : ∃ v : ℤ, v = 20 * φ + 2 ^ 64 - 2 * d * 2 ^ 64 := ⟨_, rfl⟩
   have hidlo : digitDist f e + step e = edge e * v + 20 * err f e := by
@@ -1451,7 +1451,7 @@ theorem digit_nearest (f : ℕ) (e : ℤ) (hr : Regular f e) :
     exact ⟨⟨by omega, by omega⟩, fun h => by omega⟩
   -- Everywhere else the offset clears the truncation on both sides. The one
   -- exception is a vanishing offset, which is an exact midpoint: there the
-  -- fraction word is three quarters and the digit is eight.
+  -- fraction is three quarters and the digit is eight.
   have hedgev : 0 ≤ edge e * v := mul_nonneg (le_of_lt hedge) (by omega)
   have hbelow : B < 0 := by
     have h : edge e * (v - 2 ^ 65) ≤ edge e * (-21) :=
@@ -1460,7 +1460,7 @@ theorem digit_nearest (f : ℕ) (e : ℤ) (hr : Regular f e) :
     linarith
   have habove : 0 ≤ A := by rw [hA]; omega
   refine ⟨⟨by omega, by omega⟩, fun h => ?_⟩
-  -- A midpoint forces the offset to vanish, and only one fraction word does.
+  -- A midpoint forces the offset to vanish, and only one fraction does.
   have hv0 : v = 0 := by
     have hz : edge e * v = 0 := by rw [hA] at habove hidlo; omega
     rcases mul_eq_zero.mp hz with h' | h'

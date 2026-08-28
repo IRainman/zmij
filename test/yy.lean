@@ -165,10 +165,10 @@ def scaledSignificand (f : ℕ) (e : FPExp fmt) : ℕ :=
   let p10 := fmt.power10Significand (-k)
   f * 2 ^ (h + 1) * p10 / 2 ^ fmt.width
 
-/-- High word of the decimal significand. -/
+/-- High half of the decimal significand. -/
 def sigHi (f : ℕ) (e : FPExp fmt) : ℕ := scaledSignificand f e / 2 ^ fmt.width
 
-/-- Low word of the decimal significand. -/
+/-- Low half of the decimal significand. -/
 def sigLo (f : ℕ) (e : FPExp fmt) : ℕ := scaledSignificand f e % 2 ^ fmt.width
 
 /-- yy's `ten`: `sigHi` with its last decimal digit cleared. -/
@@ -306,7 +306,8 @@ def stepResidue (m f : ℕ) (e : FPExp fmt) : ℕ := 2 * f * trimSig e % m
 /-- The remainder above the multiple-of-ten candidate. -/
 def trimResidue (f : ℕ) (e : FPExp fmt) : ℕ := stepResidue (trimModulus e) f e
 
-/-- `scaledSignificand` is the shifted product with the low word dropped. -/
+/-- `scaledSignificand` is the shifted product with its low `width` bits
+    dropped. -/
 theorem scaled_significand_eq (f : ℕ) (e : FPExp fmt) :
     scaledSignificand f e =
       2 ^ exponentShift e * (2 * f * trimSig e) / 2 ^ fmt.width := by
@@ -315,7 +316,7 @@ theorem scaled_significand_eq (f : ℕ) (e : FPExp fmt) :
   rw [pow_succ]
   ring
 
-/-- `sigHi` is the top word of the shifted product. -/
+/-- `sigHi` is the same product with `p10Width` bits dropped. -/
 theorem sig_hi_eq (f : ℕ) (e : FPExp fmt) :
     sigHi f e
       = 2 ^ exponentShift e * (2 * f * trimSig e) / 2 ^ fmt.p10Width := by
@@ -325,7 +326,7 @@ theorem sig_hi_eq (f : ℕ) (e : FPExp fmt) :
   show fmt.width + fmt.width = 2 * fmt.width
   ring
 
-/-- `sigLo` is the second word of the shifted product. -/
+/-- `sigLo` is the `width` bits between the two. -/
 theorem sig_lo_eq (f : ℕ) (e : FPExp fmt) :
     sigLo f e
       = 2 ^ exponentShift e * (2 * f * trimSig e) % 2 ^ fmt.p10Width
@@ -1371,7 +1372,7 @@ theorem round_u0_iff_roundtrips (hl : Layout fmt) (f : ℕ) (e : FPExp fmt)
 
 /-! ## The unit-step decision
 
-`decOne` is `sigHi` rounded to nearest using the discarded word `sigLo`. In
+`decOne` is `sigHi` rounded to nearest using the discarded `sigLo`. In
 the scale `trimMul = 2^(p10Width-h)·den`, `sigHi` sits `oneGap` below the scaled
 value and rounding up adds one whole `trimMul`. The `roundU1` test bounds the
 remainder relative to half a unit step, with only the bits below `sigLo` unseen.
