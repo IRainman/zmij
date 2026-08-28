@@ -472,7 +472,7 @@ without a format argument.
 /-! ### The format -/
 
 /-- A binary format, as the layers below need it: precision, exponent range, the
-    machine word an implementation packs into, and fixed-point approximations of
+    bit width an implementation computes in, and fixed-point approximations of
     `log₁₀2` and `log₂10` as a numerator over a power of two. Those two
     approximations are the only part of a format that has to be checked rather
     than derived, and how far they can be trusted is what pins down the exponent
@@ -481,34 +481,28 @@ structure Format where
   prec : ℕ
   emin : ℤ
   emax : ℤ
-  word : ℕ
+  width : ℕ
   log10Two : ℕ × ℕ
   log2Ten  : ℕ × ℕ
 
-/-- Width of the power-of-ten table: an implementation multiplies by a
-    `2·word`-bit power of ten and keeps the high word. -/
-abbrev Format.width (fmt : Format) : ℕ := 2 * fmt.word
+abbrev Format.p10Width (fmt : Format) : ℕ := 2 * fmt.width
 
 /-- IEEE 754 binary64. -/
 def binary64 : Format where
   prec := 53
   emin := -1074
   emax := 971
-  word := 64
+  width := 64
   log10Two := (315_653, 20)
   log2Ten  := (217_707, 16)
 
-/-- IEEE 754 binary128. The fixed-point logarithms need wider denominators than
-    binary64's: `315653/2^20` first disagrees with `⌊e·log₁₀2⌋` at `e = -16407`,
-    and `217707/2^16` with `⌈k·log₂10⌉` at `k = -4886`, both inside binary128's
-    range. These are the smallest power-of-two denominators exact over the whole
-    of it. Their product still exceeds one, as binary64's does, which is what
-    keeps `exponentShift` in `[0, 4)`. -/
+/-- IEEE 754 binary128. binary64's fixed-point logarithms are not exact over
+    this range; the denominators below are the smallest that are. -/
 def binary128 : Format where
   prec := 113
   emin := -16494
   emax := 16271
-  word := 128
+  width := 128
   log10Two := (20_201_781, 26)
   log2Ten  := (55_732_705, 24)
 
@@ -613,10 +607,9 @@ theorem decimal_exponent_range (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
 
 /-! ### The power of ten
 
-The table an implementation multiplies by, as a truncated `2·word`-bit
-significand with a fixed-point exponent. Which entry it reads is its own
-business: yy reads `10^(-k)` and Żmij `10^(-k-1)`, so the checks below cover
-both, over every index either reaches.
+`10^k` as a truncated `p10Width`-bit significand with a fixed-point exponent.
+Which entry gets read varies from caller to caller, so the checks below cover
+every index any of them reaches.
 -/
 
 /-- Binary exponent of 10^k used to normalize its table significand: the
@@ -628,18 +621,18 @@ def Format.power10Exponent (fmt : Format) (k : ℤ) : ℤ :=
 
 /-- Truncated normalized binary significand of 10^k, at the table width. -/
 def Format.power10Significand (fmt : Format) (k : ℤ) : ℕ :=
-  ⌊(10 : ℚ) ^ k * 2 ^ ((fmt.width : ℤ) - fmt.power10Exponent k)⌋₊
+  ⌊(10 : ℚ) ^ k * 2 ^ ((fmt.p10Width : ℤ) - fmt.power10Exponent k)⌋₊
 
-/-- Numerator of the exact scaled power of ten `10^k·2^(width-pe)`, with
+/-- Numerator of the exact scaled power of ten `10^k·2^(p10Width-pe)`, with
     negative exponents moved to the denominator. Writing the power as a ratio of
     naturals turns the truncation into a single `Nat` division, which is what
     keeps the exponent-wise checks below cheap in the kernel. -/
 def Format.power10Num (fmt : Format) (k : ℤ) : ℕ :=
-  10 ^ k.toNat * 2 ^ ((fmt.width : ℤ) - fmt.power10Exponent k).toNat
+  10 ^ k.toNat * 2 ^ ((fmt.p10Width : ℤ) - fmt.power10Exponent k).toNat
 
 /-- Denominator of that same power of ten, carrying the negative exponents. -/
 def Format.power10Den (fmt : Format) (k : ℤ) : ℕ :=
-  10 ^ (-k).toNat * 2 ^ (fmt.power10Exponent k - (fmt.width : ℤ)).toNat
+  10 ^ (-k).toNat * 2 ^ (fmt.power10Exponent k - (fmt.p10Width : ℤ)).toNat
 
 theorem Format.power10_den_pos (fmt : Format) (k : ℤ) :
     0 < fmt.power10Den k := by
@@ -648,9 +641,9 @@ theorem Format.power10_den_pos (fmt : Format) (k : ℤ) :
 /-- The scaled exact power of ten is exactly the rational `num / den`. Only
     exponent bookkeeping, so it holds at any width. -/
 theorem Format.power10_exact_ratio (fmt : Format) (k : ℤ) :
-    (10 : ℚ) ^ k * 2 ^ ((fmt.width : ℤ) - fmt.power10Exponent k)
+    (10 : ℚ) ^ k * 2 ^ ((fmt.p10Width : ℤ) - fmt.power10Exponent k)
       = (fmt.power10Num k : ℚ) / (fmt.power10Den k : ℚ) := by
-  set w : ℤ := (fmt.width : ℤ) with hw
+  set w : ℤ := (fmt.p10Width : ℤ) with hw
   set pe := fmt.power10Exponent k
   have hden : (fmt.power10Den k : ℚ) ≠ 0 :=
     Nat.cast_ne_zero.mpr (fmt.power10_den_pos k).ne'
@@ -684,10 +677,10 @@ theorem Format.power10_significand_nat (fmt : Format) (k : ℤ) :
     constants, so it arrives as a hypothesis: the format that owns the index
     range sweeps it. -/
 theorem Format.power10_significand_bounds (fmt : Format) {k : ℤ}
-    (hlo : 2 ^ (fmt.width - 1) * fmt.power10Den k ≤ fmt.power10Num k)
-    (hhi : fmt.power10Num k < 2 ^ fmt.width * fmt.power10Den k) :
-    2 ^ (fmt.width - 1) ≤ fmt.power10Significand k ∧
-      fmt.power10Significand k < 2 ^ fmt.width := by
+    (hlo : 2 ^ (fmt.p10Width - 1) * fmt.power10Den k ≤ fmt.power10Num k)
+    (hhi : fmt.power10Num k < 2 ^ fmt.p10Width * fmt.power10Den k) :
+    2 ^ (fmt.p10Width - 1) ≤ fmt.power10Significand k ∧
+      fmt.power10Significand k < 2 ^ fmt.p10Width := by
   rw [fmt.power10_significand_nat]
   exact ⟨(Nat.le_div_iff_mul_le (fmt.power10_den_pos k)).mpr hlo,
     (Nat.div_lt_iff_lt_mul (fmt.power10_den_pos k)).mpr hhi⟩

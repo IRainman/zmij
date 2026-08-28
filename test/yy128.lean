@@ -65,7 +65,7 @@ have emitted on the fine path is comfortably inside. `bad_output`,
 `checks_unsatisfiable` derives from it that no instantiation of `yy.correct_of`
 at binary128 exists. All are `decide +kernel`; nothing here is a `sorry`.
 
-The failure is a hair's breadth: the packed comparison discards `word + 4 = 132`
+The failure is a hair's breadth: the packed comparison drops `width + 4 = 132`
 of the table's 256 bits, leaving a window of relative width `2^-127.3` against a
 significand box of `2^113`, so the expected number of undecidable cases is
 `2^-15` per window per exponent. Over 32,766 exponents that is a handful, and one
@@ -93,7 +93,7 @@ set_option maxRecDepth 100000
 
 /-! ## The layout
 
-The packing conditions, both with room to spare at `(prec, word) = (113, 128)`.
+The packing conditions, both with room to spare at `(prec, width) = (113, 128)`.
 -/
 
 theorem layout : Layout binary128 := ⟨by decide, by decide⟩
