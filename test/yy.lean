@@ -853,7 +853,9 @@ Diophantine check over the significand range, and fits yy less closely than the
 modular windows below.
 
 `expWindows` is stated against the format, so the same definition poses the
-question at either width; only the cost of answering it changes.
+question at either width. The answer need not be a certificate, though:
+`ExpAvoids` below is the per-significand form of it, which is what lets
+binary128's one occupied window be handled at all.
 -/
 
 /-- Scaling the window residue by `den` and adding back the truncation error
@@ -918,6 +920,129 @@ theorem exp_no_window_hit {lo hi q : ℤ} (f : ℕ) (e : FPExp fmt)
         exact Nat.mul_pos (by positivity) (trim_den_pos e))
     hcert hmem (trim_gap_mod f e hwrap).symm hlo hhi
 
+/-- What a refuting multiplier buys at one significand: its gap misses every
+    exceptional window. Stated per significand rather than as the certificate
+    itself, so that an exponent whose box no single multiplier covers can reach
+    the same conclusion another way. -/
+def ExpAvoids (f : ℕ) (e : FPExp fmt) : Prop :=
+  trimGap f e < trimScale e →
+    ∀ lo hi : ℤ, (lo, hi) ∈ (expWindows e).windows →
+      (trimGap f e : ℤ) < lo ∨ hi < (trimGap f e : ℤ)
+
+/-- A certificate for the whole box gives it at every significand. -/
+theorem exp_avoids_of_cert {q : ℤ} (f : ℕ) (e : FPExp fmt)
+    (hr : fmt.Regular f e) (hcert : (expWindows e).refutedBy q = true) :
+    ExpAvoids f e := by
+  intro hwrap lo hi hmem
+  by_contra hcon
+  push Not at hcon
+  exact exp_no_window_hit f e hr hcert hmem hwrap hcon.1 hcon.2
+
+/-! ### Recentring on an occupant
+
+A multiplier can only refute a window that nothing occupies, and the refutation
+is an interval hull, so shrinking the box around an occupant does not help
+either: the hull barely moves and goes on trapping the same multiple. What does
+work is to stop indexing the progression by the significand and index it by the
+distance from the occupant instead. The occupant is then at distance zero,
+outside every box, and the windows move with it, becoming signed offsets from
+its own residue.
+
+One certificate per side is still too much to ask — the hull spans the whole box
+at a width that leaves no room — but the distances split into dyadic blocks, and
+each block is a box small enough to refute. There are `prec` of them per side
+and they are needed at one exponent, so the cost does not show.
+-/
+
+/-- The residue `expWindows` reads at a significand. -/
+def expResidue (b : ℕ) (e : FPExp fmt) : ℕ := 2 * trimNum e * b % trimScale e
+
+/-- `expWindows` seen by the significands a distance `2^i ≤ d < 2^(i+1)` above
+    `b`, indexed by that distance and with the windows measured from `b`'s own
+    residue. -/
+def expWindowsAbove (b i : ℕ) (e : FPExp fmt) : ModWindows :=
+  { expWindows e with
+    f0 := 2 ^ i
+    f1 := 2 ^ (i + 1) - 1
+    windows := (expWindows e).windows.map fun p =>
+      (p.1 - expResidue b e, p.2 - expResidue b e) }
+
+/-- And by those below, where the distance runs the other way, so the offsets
+    are negated. -/
+def expWindowsBelow (b i : ℕ) (e : FPExp fmt) : ModWindows :=
+  { expWindows e with
+    f0 := 2 ^ i
+    f1 := 2 ^ (i + 1) - 1
+    windows := (expWindows e).windows.map fun p =>
+      (expResidue b e - p.2, expResidue b e - p.1) }
+
+/-- Certificates for every block around `b` do what one for the whole box
+    would, at every significand but `b` itself. -/
+theorem exp_avoids_of_blocks {b : ℕ} (f : ℕ) (e : FPExp fmt)
+    (hr : fmt.Regular f e) (hne : f ≠ b) (hbp : b < 2 ^ fmt.prec)
+    (ha : ∀ i < fmt.prec, ∃ q, (expWindowsAbove b i e).refutedBy q = true)
+    (hb : ∀ i < fmt.prec, ∃ q, (expWindowsBelow b i e).refutedBy q = true) :
+    ExpAvoids f e := by
+  intro hwrap lo hi hmem
+  by_contra hcon
+  push Not at hcon
+  obtain ⟨hlo, hhi⟩ := hcon
+  have hfp : f < 2 ^ fmt.prec := hr.sig_lt
+  have hmod : 0 < trimScale e := by
+    rw [trimScale, trimModulus]
+    exact Nat.mul_pos (by positivity) (trim_den_pos e)
+  -- Both residues as offsets from their own multiple of the modulus, so that
+  -- the difference of the two is the residue at the distance between them.
+  have hyf : (trimGap f e : ℤ) = 2 * trimNum e * f
+      - trimScale e * ((2 * trimNum e * f / trimScale e : ℕ) : ℤ) := by
+    rw [← trim_gap_mod f e hwrap, cast_mod_eq_sub]
+    push_cast
+    ring
+  have hyb : (expResidue b e : ℤ) = 2 * trimNum e * b
+      - trimScale e * ((2 * trimNum e * b / trimScale e : ℕ) : ℤ) := by
+    rw [expResidue, cast_mod_eq_sub]
+    push_cast
+    ring
+  -- The distance and the block it falls in.
+  have hblock : ∀ d : ℕ, d ≠ 0 → d < 2 ^ fmt.prec →
+      Nat.log 2 d < fmt.prec ∧ 2 ^ Nat.log 2 d ≤ d
+        ∧ d ≤ 2 ^ (Nat.log 2 d + 1) - 1 := by
+    intro d hd0 hdp
+    have := Nat.lt_pow_succ_log_self (b := 2) (by norm_num) d
+    exact ⟨Nat.log_lt_of_lt_pow hd0 hdp, Nat.pow_log_le_self 2 hd0, by omega⟩
+  rcases lt_trichotomy f b with hfb | hfb | hfb
+  · obtain ⟨hip, hd0, hd1⟩ := hblock (b - f) (by omega) (by omega)
+    obtain ⟨q, hcert⟩ := hb _ hip
+    have hy : (expResidue b e : ℤ) - trimGap f e
+        = ((2 * trimNum e : ℕ) : ℤ) * ((b - f : ℕ) : ℤ)
+          - ((trimScale e : ℕ) : ℤ)
+            * (((2 * trimNum e * b / trimScale e : ℕ) : ℤ)
+              - ((2 * trimNum e * f / trimScale e : ℕ) : ℤ)) := by
+      rw [show ((b - f : ℕ) : ℤ) = (b : ℤ) - f from by omega, hyf, hyb]
+      push_cast
+      ring
+    exact (expWindowsBelow b _ e).not_hit_rep (b - f) hmod hcert
+      (lo := (expResidue b e : ℤ) - hi) (hi := (expResidue b e : ℤ) - lo)
+      (List.mem_map_of_mem (f := fun p : ℤ × ℤ =>
+        ((expResidue b e : ℤ) - p.2, (expResidue b e : ℤ) - p.1)) hmem)
+      hd0 hd1 hy (by omega) (by omega)
+  · exact hne hfb
+  · obtain ⟨hip, hd0, hd1⟩ := hblock (f - b) (by omega) (by omega)
+    obtain ⟨q, hcert⟩ := ha _ hip
+    have hy : (trimGap f e : ℤ) - expResidue b e
+        = ((2 * trimNum e : ℕ) : ℤ) * ((f - b : ℕ) : ℤ)
+          - ((trimScale e : ℕ) : ℤ)
+            * (((2 * trimNum e * f / trimScale e : ℕ) : ℤ)
+              - ((2 * trimNum e * b / trimScale e : ℕ) : ℤ)) := by
+      rw [show ((f - b : ℕ) : ℤ) = (f : ℤ) - b from by omega, hyf, hyb]
+      push_cast
+      ring
+    exact (expWindowsAbove b _ e).not_hit_rep (f - b) hmod hcert
+      (lo := lo - (expResidue b e : ℤ)) (hi := hi - (expResidue b e : ℤ))
+      (List.mem_map_of_mem (f := fun p : ℤ × ℤ =>
+        (p.1 - (expResidue b e : ℤ), p.2 - (expResidue b e : ℤ))) hmem)
+      hd0 hd1 hy (by omega) (by omega)
+
 /-- The undecided bands of the unit step, as windows on the doubled residue.
     The truncation error is below `2^(prec+1)·den`, so `2^(prec+1)` bounds its
     reach in remainder units.
@@ -939,6 +1064,18 @@ def oneWindows (e : FPExp fmt) : ModWindows :=
         [(half - 2 ^ (fmt.prec + 1), half),
           (w + half - 2 ^ (fmt.prec + 1), w + half - 1)]
 
+/-- What the exceptional windows exist to establish: at `f`, both trim
+    comparisons decide what the exact ones do. A significand no certificate
+    excludes has to supply this directly, which at a concrete exponent and
+    significand is a closed computation. -/
+def TrimsAgree (f : ℕ) (e : FPExp fmt) : Prop :=
+  ((toDecimalCandidates f e).roundD0 = true
+      ↔ if f % 2 = 0 then trimGap f e ≤ trimNum e
+        else trimGap f e < trimNum e)
+    ∧ ((toDecimalCandidates f e).roundU0 = true
+      ↔ if f % 2 = 0 then trimScale e ≤ trimGap f e + trimNum e
+        else trimScale e < trimGap f e + trimNum e)
+
 /-- Everything that has to hold of a format at one exponent for yy to be
     correct there. Every field is a numerical fact about the format's constants
     at that exponent, so a format discharges them by sweeping its range; none of
@@ -956,8 +1093,10 @@ structure ChecksAt (e : FPExp fmt) : Prop where
   /-- The truncated power of ten is narrow, and its error fits the bits the
       packed comparison discards, from either end of the window unit. -/
   trim : TrimChecks e
-  /-- The coarse windows either side of both boundaries are empty. -/
-  exp_refuted : ∃ q, (expWindows e).refutedBy q = true
+  /-- Every significand either misses the coarse windows either side of both
+      boundaries, or is one no certificate excludes and decides correctly
+      anyway. -/
+  exp_refuted : ∀ f, fmt.Regular f e → ExpAvoids f e ∨ TrimsAgree f e
   /-- The unit-step bands around the midpoint are empty. -/
   one_refuted : ∃ q, (oneWindows e).refutedBy q = true
 
@@ -971,8 +1110,7 @@ def Checks (fmt : Format) : Prop :=
     outside the windows either side of it, where the packed comparison cannot be
     wrong. -/
 private theorem gap_tie_or_far {b hi edge : ℤ} (f : ℕ) (e : FPExp fmt)
-    (hr : fmt.Regular f e)
-    (hexp : ∃ q, (expWindows e).refutedBy q = true)
+    (havoid : ExpAvoids f e)
     (hcap : hi < (trimScale e : ℤ))
     (hbelow : (b - edge, b - 1) ∈ (expWindows e).windows)
     (habove : (b + 1, hi) ∈ (expWindows e).windows) :
@@ -981,17 +1119,15 @@ private theorem gap_tie_or_far {b hi edge : ℤ} (f : ℕ) (e : FPExp fmt)
   by_contra hcon
   push Not at hcon
   obtain ⟨hne, hhi, hlo⟩ := hcon
-  obtain ⟨q, hcert⟩ := hexp
   have hwrap : trimGap f e < trimScale e := by omega
   rcases lt_or_ge (trimGap f e : ℤ) b with h | h
-  · exact exp_no_window_hit f e hr hcert hbelow hwrap (by omega) (by omega)
-  · exact exp_no_window_hit f e hr hcert habove hwrap (by omega) (by omega)
+  · rcases havoid hwrap _ _ hbelow with hx | hx <;> omega
+  · rcases havoid hwrap _ _ habove with hx | hx <;> omega
 
 /-- The trim-down dichotomy, about the boundary `num`. -/
 theorem d0_gap_tie_or_far (hl : Layout fmt) (f : ℕ) (e : FPExp fmt)
-    (hr : fmt.Regular f e) (hnorm : TableNormalized e)
-    (hc : TrimChecks e)
-    (hexp : ∃ q, (expWindows e).refutedBy q = true) :
+    (hnorm : TableNormalized e) (hc : TrimChecks e)
+    (havoid : ExpAvoids f e) :
     trimGap f e = trimNum e
       ∨ trimNum e + trimEdge e < trimGap f e
       ∨ trimGap f e + trimEdge e < trimNum e := by
@@ -999,7 +1135,7 @@ theorem d0_gap_tie_or_far (hl : Layout fmt) (f : ℕ) (e : FPExp fmt)
   have hle := trim_edge_le_edge_u e
   have hnarrow := trim_two_num_lt_scale e hc
   have := gap_tie_or_far (b := (trimNum e : ℤ)) (edge := (trimEdge e : ℤ))
-    (hi := (trimNum e : ℤ) + trimEdge e) f e hr hexp (by omega)
+    (hi := (trimNum e : ℤ) + trimEdge e) f e havoid (by omega)
     (by simp [expWindows, Format.regularWindows])
     (by simp [expWindows, Format.regularWindows])
   omega
@@ -1007,9 +1143,8 @@ theorem d0_gap_tie_or_far (hl : Layout fmt) (f : ℕ) (e : FPExp fmt)
 /-- The trim-up dichotomy, the same statement about the boundary
     `scale - num`. -/
 theorem u0_sum_tie_or_far (hl : Layout fmt) (f : ℕ) (e : FPExp fmt)
-    (hr : fmt.Regular f e) (hnorm : TableNormalized e)
-    (hc : TrimChecks e)
-    (hexp : ∃ q, (expWindows e).refutedBy q = true) :
+    (hnorm : TableNormalized e) (hc : TrimChecks e)
+    (havoid : ExpAvoids f e) :
     trimGap f e + trimNum e = trimScale e
       ∨ trimScale e + trimEdgeU e ≤ trimGap f e + trimNum e
       ∨ trimGap f e + trimNum e + trimEdgeU e < trimScale e := by
@@ -1017,22 +1152,20 @@ theorem u0_sum_tie_or_far (hl : Layout fmt) (f : ℕ) (e : FPExp fmt)
   have hnarrow := trim_two_num_lt_scale e hc
   have := gap_tie_or_far (b := (trimScale e : ℤ) - trimNum e)
     (edge := (trimEdgeU e : ℤ))
-    (hi := (trimScale e : ℤ) - trimNum e + trimEdgeU e - 1) f e hr
-    hexp (by omega)
+    (hi := (trimScale e : ℤ) - trimNum e + trimEdgeU e - 1) f e
+    havoid (by omega)
     (by simp [expWindows, Format.regularWindows])
     (by simp [expWindows, Format.regularWindows])
   omega
 
 /-- An exact tie in the trim-up comparison needs `k = 0` when the power of ten
     is exact: that is the residue the fifth window refutes elsewhere. -/
-theorem u0_exact_tie_k_zero (f : ℕ) (e : FPExp fmt) (hr : fmt.Regular f e)
-    (hnorm : TableNormalized e)
-    (hexp : ∃ q, (expWindows e).refutedBy q = true)
+theorem u0_exact_tie_k_zero (f : ℕ) (e : FPExp fmt)
+    (hnorm : TableNormalized e) (havoid : ExpAvoids f e)
     (hτ : trimNum e % trimDen e = 0)
     (htie : trimGap f e + trimNum e = trimScale e) :
     fmt.decimalExponent e = 0 := by
   by_contra hk
-  obtain ⟨q, hcert⟩ := hexp
   have hnum : 0 < trimNum e :=
     lt_of_lt_of_le (Nat.mul_pos (by positivity) (trim_den_pos e)) hnorm.1
   -- The fifth window is present exactly under these two hypotheses.
@@ -1041,7 +1174,7 @@ theorem u0_exact_tie_k_zero (f : ℕ) (e : FPExp fmt) (hr : fmt.Regular f e)
     refine List.mem_append_right _ ?_
     rw [ite_eq_left ⟨hτ, hk⟩]
     exact List.mem_singleton_self _
-  exact exp_no_window_hit f e hr hcert hmem (by omega) (by omega) (by omega)
+  rcases havoid (by omega) _ _ hmem with hx | hx <;> omega
 
 /-- At `k = 0` the power of ten is exactly `2^(2w-1)`, a whole number of window
     units, so the trim-up comparison discards nothing and its ties are exact. -/
@@ -1065,8 +1198,7 @@ theorem u0_err_drop_u_k_zero (hl : Layout fmt) (f : ℕ) (e : FPExp fmt)
 /-- The trim-up comparison sees an exact tie only where the power of ten is
     exact, and that needs `k = 0`. -/
 theorem u0_tie_k_zero (f : ℕ) (e : FPExp fmt) (hr : fmt.Regular f e)
-    (hnorm : TableNormalized e)
-    (hexp : ∃ q, (expWindows e).refutedBy q = true)
+    (hnorm : TableNormalized e) (havoid : ExpAvoids f e)
     (hzero : trimErr f e + trimDropU f e = 0)
     (htie : trimGap f e + trimNum e = trimScale e) :
     fmt.decimalExponent e = 0 := by
@@ -1074,7 +1206,7 @@ theorem u0_tie_k_zero (f : ℕ) (e : FPExp fmt) (hr : fmt.Regular f e)
     rw [trimErr] at hzero; omega
   rcases Nat.mul_eq_zero.mp herr with h | h
   · have := hr.pos; omega
-  · exact u0_exact_tie_k_zero f e hr hnorm hexp h htie
+  · exact u0_exact_tie_k_zero f e hnorm havoid h htie
 
 /-! ### Exact scaling
 
@@ -1303,6 +1435,9 @@ theorem round_d0_iff_gap (hl : Layout fmt) (f : ℕ) (e : FPExp fmt)
       ↔ if f % 2 = 0 then trimGap f e ≤ trimNum e
         else trimGap f e < trimNum e := by
   have hsh := ha.shift_lt_four
+  rcases ha.exp_refuted f hr with havoid | hagree
+  swap
+  · exact hagree.1
   -- yy's test is `c ≤ p` for even `f` and `c < p` for odd `f`, that is
   -- `c < p + 1` and `c < p + 0`.
   have hflag : (toDecimalCandidates f e).roundD0
@@ -1323,7 +1458,7 @@ theorem round_d0_iff_gap (hl : Layout fmt) (f : ℕ) (e : FPExp fmt)
   rw [hpacked, trim_packed_iff, trim_packed_iff]
   have herr := trim_err_le_drop f e hr ha.trim
   have hdrop := trim_drop_lt_err_add_edge f e hr
-  rcases d0_gap_tie_or_far hl f e hr ha.table ha.trim ha.exp_refuted with
+  rcases d0_gap_tie_or_far hl f e ha.table ha.trim havoid with
     htie | hfar
   · -- A genuine exact tie, accepted for even `f` and rejected for odd `f` by
     -- the packed comparison and the exact one alike.
@@ -1362,6 +1497,9 @@ theorem round_u0_iff_gap (hl : Layout fmt) (f : ℕ) (e : FPExp fmt)
       ↔ if f % 2 = 0 then trimScale e ≤ trimGap f e + trimNum e
         else trimScale e < trimGap f e + trimNum e := by
   have hsh := ha.shift_lt_four
+  rcases ha.exp_refuted f hr with havoid | hagree
+  swap
+  · exact hagree.2
   have hflag : (toDecimalCandidates f e).roundU0
       = (if trimResidue f e / trimUnitU e
               + trimSig e / trimUnitU e + 1
@@ -1383,7 +1521,7 @@ theorem round_u0_iff_gap (hl : Layout fmt) (f : ℕ) (e : FPExp fmt)
   rw [hflag]
   set s := trimResidue f e / trimUnitU e
     + trimSig e / trimUnitU e with hs
-  rcases u0_sum_tie_or_far hl f e hr ha.table ha.trim ha.exp_refuted with
+  rcases u0_sum_tie_or_far hl f e ha.table ha.trim havoid with
     htie | hhi | hlo
   -- An exact tie: the packed sum is either one edge short of the step or
   -- exactly on it with nothing discarded, both branches yy takes for even `f`.
@@ -1399,7 +1537,7 @@ theorem round_u0_iff_gap (hl : Layout fmt) (f : ℕ) (e : FPExp fmt)
     · have heq : s = 10 * 2 ^ (fmt.width - 4) := by omega
       rw [heq] at hid
       rw [ite_eq_right (by omega), ite_eq_left
-        ⟨u0_tie_k_zero f e hr ha.table ha.exp_refuted (by omega) htie, heq⟩]
+        ⟨u0_tie_k_zero f e hr ha.table havoid (by omega) htie, heq⟩]
       split_ifs with hpar <;> simp only [decide_eq_true_eq] <;> omega
   -- More than one edge above the boundary, so the plain test fires.
   · have hge : 10 * 2 ^ (fmt.width - 4) < s + 1 := by
@@ -2088,7 +2226,9 @@ theorem binary64_checks : Checks binary64 := by
       table := b64_table e hlo' hhi'
       trim := trim_checks_of_hold _
         (b64_trim_checks e (by simp only [Finset.mem_Icc]; omega))
-      exp_refuted := b64_exp_refuted e hlo' hhi'
+      exp_refuted := fun f hr =>
+        Or.inl (exp_avoids_of_cert f _ hr
+          (b64_exp_refuted e hlo' hhi').choose_spec)
       one_refuted := b64_one_refuted e hlo' hhi' }
 
 /-- yy is correct on regularly spaced positive binary64 values: after removing

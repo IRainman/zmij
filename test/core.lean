@@ -928,6 +928,34 @@ private theorem window_bounds {g modulus f0 f1 lo hi q p r f j y : ℤ}
         le_trans (mul_le_mul_of_nonpos_right hf0 hr0) (le_max_left _ _)⟩
   exact ⟨by linarith [hfr.2], by linarith [hfr.1]⟩
 
+/-- A residue as a signed offset from the multiple of the modulus below it. -/
+theorem cast_mod_eq_sub (a n : ℕ) :
+    ((a % n : ℕ) : ℤ) = a - n * ((a / n : ℕ) : ℤ) := by
+  have h : ((n * (a / n) + a % n : ℕ) : ℤ) = (a : ℤ) := by
+    exact_mod_cast Nat.div_add_mod a n
+  rw [Nat.cast_add, Nat.cast_mul] at h
+  linarith
+
+/-- What a certificate says, at any representative of the residue class. The
+    canonical one is what an implementation usually has, but a window recentred
+    on a known occupant measures offsets from it, and those run negative on one
+    side. -/
+theorem ModWindows.not_hit_rep (w : ModWindows) (f : ℕ)
+    (hmodulus : 0 < w.modulus) {q : ℤ} (hcert : w.refutedBy q = true)
+    {lo hi : ℤ} (hmem : (lo, hi) ∈ w.windows) {y j : ℤ}
+    (hf0 : w.f0 ≤ f) (hf1 : f ≤ w.f1)
+    (hy : y = w.g * f - w.modulus * j) (hlo : lo ≤ y) (hhi : y ≤ hi) :
+    False := by
+  have hwindow := List.all_eq_true.mp hcert _ hmem
+  simp only [modWindowRefuted, decide_eq_true_eq] at hwindow
+  obtain ⟨hq, hgap0, hgap1⟩ := hwindow
+  obtain ⟨hb0, hb1⟩ :=
+    window_bounds (f0 := (w.f0 : ℤ)) (f1 := (w.f1 : ℤ))
+      (p := (2 * ((w.g : ℤ) * q) + w.modulus) / (2 * w.modulus))
+      (r := (w.g : ℤ) * q - w.modulus * _) hq rfl
+      (by exact_mod_cast hf0) (by exact_mod_cast hf1) hy hlo hhi
+  exact window_gap_absurd (by exact_mod_cast hmodulus) hb0 hb1 hgap0 hgap1
+
 /-- What a certificate says: no significand in range has its residue in any
     window the multiplier refutes. Everything an implementation has to supply is
     the identification of its own quantity with the residue. -/
@@ -937,24 +965,13 @@ theorem ModWindows.not_hit (w : ModWindows) (f : ℕ) (hmodulus : 0 < w.modulus)
     (hy : y = w.g * f % w.modulus)
     (hlo : lo ≤ (y : ℤ)) (hhi : (y : ℤ) ≤ hi) :
     False := by
-  have hwindow := List.all_eq_true.mp hcert _ hmem
-  simp only [modWindowRefuted, decide_eq_true_eq] at hwindow
-  obtain ⟨hq, hgap0, hgap1⟩ := hwindow
-  have hz : ((w.modulus * (w.g * f / w.modulus) + w.g * f % w.modulus : ℕ) : ℤ)
-      = ((w.g * f : ℕ) : ℤ) := by
-    exact_mod_cast Nat.div_add_mod (w.g * f) w.modulus
   -- The residue identity, with the quotient as the multiple of the modulus.
   have hyz : (y : ℤ)
       = w.g * f - w.modulus * ((w.g * f / w.modulus : ℕ) : ℤ) := by
-    rw [hy]
-    push_cast at hz ⊢
-    linarith
-  obtain ⟨hb0, hb1⟩ :=
-    window_bounds (f0 := (w.f0 : ℤ)) (f1 := (w.f1 : ℤ))
-      (p := (2 * ((w.g : ℤ) * q) + w.modulus) / (2 * w.modulus))
-      (r := (w.g : ℤ) * q - w.modulus * _) hq rfl
-      (by exact_mod_cast hf0) (by exact_mod_cast hf1) hyz hlo hhi
-  exact window_gap_absurd (by exact_mod_cast hmodulus) hb0 hb1 hgap0 hgap1
+    rw [hy, cast_mod_eq_sub]
+    push_cast
+    ring
+  exact w.not_hit_rep f hmodulus hcert hmem hf0 hf1 hyz hlo hhi
 
 /-! ### The significand box
 
@@ -974,6 +991,21 @@ def Format.regularWindows (fmt : Format) (g modulus : ℕ) (e : ℤ)
   f1 := 2 ^ fmt.prec - 1
   windows := windows
 
+/-- `Regular` puts the significand in the box. Separate from `regular_not_hit`
+    because a problem recentred on one significand asks the same of the rest. -/
+theorem Format.regular_box {fmt : Format} {g modulus : ℕ} {e : ℤ}
+    {windows : List (ℤ × ℤ)} {f : ℕ} (hr : fmt.Regular f e) :
+    (fmt.regularWindows g modulus e windows).f0 ≤ f
+      ∧ f ≤ (fmt.regularWindows g modulus e windows).f1 := by
+  constructor <;> simp only [Format.regularWindows]
+  · split_ifs with hmin
+    · exact hr.pos
+    · rcases hr.normal_or_min with h | h
+      · omega
+      · exact absurd h hmin
+  · have := hr.sig_lt
+    omega
+
 /-- `not_hit` over that box: `Regular` discharges the significand bounds, so an
     implementation supplies only its modulus being positive and its quantity
     being the residue. -/
@@ -983,16 +1015,11 @@ theorem Format.regular_not_hit {fmt : Format} {g modulus : ℕ} {e : ℤ}
     (hcert : (fmt.regularWindows g modulus e windows).refutedBy q = true)
     (hmem : (lo, hi) ∈ windows) (hy : y = g * f % modulus)
     (hlo : lo ≤ (y : ℤ)) (hhi : (y : ℤ) ≤ hi) :
-    False := by
-  refine (fmt.regularWindows g modulus e windows).not_hit f hmodulus hcert hmem
-    ?_ ?_ hy hlo hhi <;> simp only [Format.regularWindows]
-  · split_ifs with hmin
-    · exact hr.pos
-    · rcases hr.normal_or_min with h | h
-      · omega
-      · exact absurd h hmin
-  · have := hr.sig_lt
-    omega
+    False :=
+  have hbox := Format.regular_box (g := g) (modulus := modulus)
+    (windows := windows) hr
+  (fmt.regularWindows g modulus e windows).not_hit f hmodulus hcert hmem
+    hbox.1 hbox.2 hy hlo hhi
 
 /-- binary64's significand box. -/
 def regularWindows (g modulus : ℕ) (e : ℤ) (windows : List (ℤ × ℤ)) :

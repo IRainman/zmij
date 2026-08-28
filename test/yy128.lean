@@ -51,30 +51,23 @@ significand box only grows to `2^113`, so certificates are found sooner — with
 74 Euclidean steps, against binary64's 44. The cost is entirely that there are
 sixteen times as many of them and each is four times as wide.
 
-## Status: `Checks binary128` is still out of reach
+## The one exponent that needs more than a certificate
 
-This file does not prove binary128's analogue of `yy.correct`. Not because the
-statement is false: the four-bit refinement the trim-down comparison performs at
-this format decides the significand that used to be misrounded here. What is
-left is that `Checks binary128` cannot be built, because at `e = -2266` one
-significand's gap lands inside a coarse window and no multiplier refutes it.
-`checks_unsatisfiable` is that argument and `bad_output_round_trips` records
-that yy is right there anyway, so the obstruction is the refutation rather than
-the algorithm.
+At `e = -2266` a significand's gap lands inside a coarse window, so no
+multiplier refutes the box there and `exp_refuted` cannot be a certificate. The
+margin is thin by construction: dropping `width + 4 = 132` of the table's 256
+bits leaves a window of relative width `2^-127.3` against a significand box of
+`2^113`, so the expected number of occupants is `2^-15` per window per exponent.
+Over 32,766 exponents that is a handful, and one of them is real. binary64 has
+the same structure with a `2^-11.3` margin over 2,046 exponents and no such
+case, which is why it needs none of what follows.
 
-The window that catches it belongs to the trim-up comparison, the one that
-still packs the last digit and so keeps the full unit `2^(width + 4 - h)`; the
-occupant sits at 0.59 of that band and would miss one even a single bit
-narrower. The margin is thin by construction: dropping `width + 4 = 132` of the
-table's 256 bits leaves a window of relative width `2^-127.3` against a
-significand box of `2^113`, so the expected number of undecidable cases is
-`2^-15` per window per exponent. Over 32,766 exponents that is a handful, and
-one of them is real. binary64 has the same structure with a `2^-11.3` margin
-over 2,046 exponents and no such case, which is why `yy.correct` is a theorem.
-
-Everything else is verified: `correct_away_from_bad` is binary64's sentence at
-binary128 for every exponent but `-2266`, over the same sweeps. Nothing about
-binary64 is affected — `yy.correct` does not depend on this file.
+The occupant is `bad`, and yy is right there — the window records that the
+coarse comparison's error bound does not *establish* as much. So the exponent is
+split: `bad` supplies `TrimsAgree` by evaluation, and `exp_avoids_of_blocks`
+covers the rest of the box with 113 certificates per side, over the distances
+from `bad` rather than the significands themselves. Both are confined to this
+one exponent, and the rest of the range is unaffected.
 -/
 
 namespace yy128
@@ -187,71 +180,82 @@ private theorem exp_refuted_above (e : ℤ) (hlo : -2265 ≤ e) (hhi : e ≤ 162
     ∃ q, (expWindows (⟨e⟩ : FPExp binary128)).refutedBy q = true := by
   interval_cases e <;> exp_cert128
 
-/-! ## The unrefuted window at `e = -2266`
-
-The certificate at `e = -2266` cannot be found because there is nothing to
-find: one significand in the box lands inside a coarse window, the band just
-above `scale - num`. The facts below are what remains of `exp_refuted` there,
-and they are checked, not assumed.
-
-The significand is `2^112 < f < 2^113`, a normal binary128 value at an exponent
-well inside the range, so `binary128.Regular f (-2266)` holds. yy trims up and
-emits the multiple of ten `decTen`, which is the right answer; the window says
-only that the coarse comparison's error bound does not establish as much.
--/
-
-/-- The significand whose gap occupies the trim-up window. -/
-def bad : ℕ := 6098265699439592702088126713856255
-
-/-- It is a regularly spaced binary128 value. -/
-theorem bad_regular : binary128.Regular bad (-2266) := by
-  refine ⟨⟨by decide, by decide, Or.inl (by decide)⟩, by decide, by decide⟩
-
-/-- What yy emits there: the trim-up candidate, a multiple of ten. -/
-theorem bad_output : toDecimal bad (⟨-2266⟩ : FPExp binary128)
-    = (44795683542663963852361293387747210, -683) := by
-  decide +kernel
-
-/-- And that output round-trips. Scaled to integers: the value is
-    `bad·2^-2266`, the output is `d·10^-683`, and a half ULP is `2^-2267`, so
-    round-tripping means `2·|d·2^2266 - bad·10^683| ≤ 10^683`. It holds
-    strictly, so the decimal is inside the interval rather than on its edge. -/
-theorem bad_output_round_trips :
-    (2 * ((44795683542663963852361293387747210 : ℤ) * 2 ^ 2266
-      - (bad : ℤ) * 10 ^ 683)).natAbs < 10 ^ 683 := by
-  decide +kernel
-
-/-- `Checks binary128` is nevertheless not satisfiable: `ChecksAt binary128
-    (-2266)` would give a refuting multiplier for the window `bad` lands in, and
-    `ModWindows.not_hit` turns that into `False`. There is therefore no
-    instantiation of `correct_of` at binary128, and by `bad_output_round_trips`
-    that is a limit of the refutation and not of yy. -/
-theorem checks_unsatisfiable (hc : Checks binary128) : False := by
-  obtain ⟨q, hcert⟩ := (hc ⟨-2266⟩ (by decide) (by decide)).exp_refuted
-  refine (expWindows (⟨-2266⟩ : FPExp binary128)).not_hit bad
-    (by decide +kernel) hcert
-    (lo := (expWindows (⟨-2266⟩ : FPExp binary128)).windows[3]!.1)
-    (hi := (expWindows (⟨-2266⟩ : FPExp binary128)).windows[3]!.2)
-    (by decide +kernel) (by decide +kernel) (by decide +kernel) rfl
-    (by decide +kernel) (by decide +kernel)
-
 private theorem one_refuted (e : ℤ) (hlo : -16494 ≤ e) (hhi : e ≤ 16271) :
     ∃ q, (oneWindows (⟨e⟩ : FPExp binary128)).refutedBy q = true := by
   interval_cases e <;> one_cert128
 
-/-! ## What is available away from `e = -2266`
+/-! ## The occupied window at `e = -2266` -/
 
-`Checks` quantifies over the whole exponent range and so cannot be built. Every
-field of it is nevertheless established at every other exponent, which is what
-`checks_at` records: `correct_of` applies at any exponent for which `ChecksAt`
-holds, so this is exactly the part of binary128 that is verified.
--/
+/-- The significand occupying the trim-up window, the band just above
+    `scale - num`. -/
+def bad : ℕ := 6098265699439592702088126713856255
 
-/-- Every obligation of `ChecksAt e` at binary128, at every exponent
-    but `-2266`. -/
-theorem checks_at (e : ℤ) (hlo : -16494 ≤ e) (hhi : e ≤ 16271)
-    (hne : e ≠ -2266) :
-    ChecksAt (⟨e⟩ : FPExp binary128) := by
+/-- Both trim comparisons at `bad` decide what the exact ones do. At a fixed
+    exponent and significand that is a closed computation, which is the whole
+    reason this exponent can be finished at all. -/
+private theorem bad_trims_agree :
+    TrimsAgree bad (⟨-2266⟩ : FPExp binary128) := by
+  unfold TrimsAgree
+  decide +kernel
+
+/-- The blocks of distances from `bad`, indexed by an integer so that
+    `modCertTactic` can read the index out of the goal the way it reads an
+    exponent. -/
+private def blockAbove (i : ℤ) : ModWindows :=
+  expWindowsAbove bad i.toNat (⟨-2266⟩ : FPExp binary128)
+
+private def blockBelow (i : ℤ) : ModWindows :=
+  expWindowsBelow bad i.toNat (⟨-2266⟩ : FPExp binary128)
+
+/-- Close `∃ q, (blockAbove i).refutedBy q = true` for a literal block. -/
+elab "block_above_cert" : tactic =>
+  modCertTactic fun i => (blockAbove i).search
+
+/-- Close `∃ q, (blockBelow i).refutedBy q = true` for a literal block. -/
+elab "block_below_cert" : tactic =>
+  modCertTactic fun i => (blockBelow i).search
+
+private theorem above_cert (i : ℤ) (hlo : 0 ≤ i) (hhi : i ≤ 112) :
+    ∃ q, (blockAbove i).refutedBy q = true := by
+  interval_cases i <;> block_above_cert
+
+private theorem below_cert (i : ℤ) (hlo : 0 ≤ i) (hhi : i ≤ 112) :
+    ∃ q, (blockBelow i).refutedBy q = true := by
+  interval_cases i <;> block_below_cert
+
+/-- The blocks in the form `exp_avoids_of_blocks` wants them: a natural index
+    below the precision rather than an integer in range. -/
+private theorem above_refuted (i : ℕ) (hi : i < binary128.prec) :
+    ∃ q, (expWindowsAbove bad i (⟨-2266⟩ : FPExp binary128)).refutedBy
+      q = true := by
+  have hp : binary128.prec = 113 := rfl
+  simpa [blockAbove] using above_cert i (by omega) (by omega)
+
+private theorem below_refuted (i : ℕ) (hi : i < binary128.prec) :
+    ∃ q, (expWindowsBelow bad i (⟨-2266⟩ : FPExp binary128)).refutedBy
+      q = true := by
+  have hp : binary128.prec = 113 := rfl
+  simpa [blockBelow] using below_cert i (by omega) (by omega)
+
+private theorem exp_refuted (e : ℤ) (hlo : -16494 ≤ e) (hhi : e ≤ 16271)
+    (f : ℕ) (hr : binary128.Regular f e) :
+    ExpAvoids f (⟨e⟩ : FPExp binary128)
+      ∨ TrimsAgree f (⟨e⟩ : FPExp binary128) := by
+  rcases lt_trichotomy e (-2266) with h | h | h
+  · exact Or.inl (exp_avoids_of_cert f _ hr
+      (exp_refuted_below e hlo (by omega)).choose_spec)
+  · subst h
+    rcases eq_or_ne f bad with rfl | hne
+    · exact Or.inr bad_trims_agree
+    · exact Or.inl (exp_avoids_of_blocks f _ hr hne (by decide +kernel)
+        above_refuted below_refuted)
+  · exact Or.inl (exp_avoids_of_cert f _ hr
+      (exp_refuted_above e (by omega) hhi).choose_spec)
+
+/-! ## The instantiation -/
+
+theorem checks : Checks binary128 := by
+  rintro ⟨e⟩ hlo hhi
   have hlo' : (-16494 : ℤ) ≤ e := hlo
   have hhi' : e ≤ 16271 := hhi
   exact
@@ -261,31 +265,18 @@ theorem checks_at (e : ℤ) (hlo : -16494 ≤ e) (hhi : e ≤ 16271)
       table := table e hlo' hhi'
       trim := trim_checks_of_hold _
         (trim_sweep e (by simp only [Finset.mem_Icc]; omega))
-      exp_refuted := by
-        rcases lt_trichotomy e (-2266) with h | h | h
-        · exact exp_refuted_below e hlo' (by omega)
-        · exact absurd h hne
-        · exact exp_refuted_above e (by omega) hhi'
+      exp_refuted := exp_refuted e hlo' hhi'
       one_refuted := one_refuted e hlo' hhi' }
 
-/-- yy is correct on regularly spaced positive binary128 values **at every
-    exponent but `-2266`**: after removing trailing zeros its output is a
-    shortest decimal representation that round-trips, and it is correctly
-    rounded on its own decimal grid.
+/-- yy is correct on regularly spaced positive binary128 values: after removing
+    trailing zeros its output is a shortest decimal representation that
+    round-trips, and it is correctly rounded on its own decimal grid.
 
-    Compare `yy.correct`, which is this sentence at binary64 with no exponent
-    excluded. Here the exclusion is a gap in the proof rather than in yy:
-    `checks_unsatisfiable` shows `-2266` has no certificate, while
-    `bad_output_round_trips` shows the answer there is right. -/
-theorem correct_away_from_bad (f : ℕ) (e : ℤ) (hr : binary128.Regular f e)
-    (hne : e ≠ -2266) :
+    `yy.correct` is the same sentence at binary64. -/
+theorem correct (f : ℕ) (e : ℤ) (hr : binary128.Regular f e) :
     let (d, k) := toDecimal f (⟨e⟩ : FPExp binary128)
     let (d', k') := reduceDecimal d k
-    Shortest f e d' k' ∧ CorrectlyRounded f e d' k' := by
-  obtain ⟨hlo, hhi⟩ := hr.range
-  have ha := checks_at e hlo hhi hne
-  obtain ⟨hfine, hcoarse⟩ := ulp_scaled_bounds layout ⟨e⟩ ha
-  exact exact_candidate_correct f e (binary128.decimalExponent e) hr.pos hfine
-    hcoarse (exact_candidate layout f ⟨e⟩ hr ha)
+    Shortest f e d' k' ∧ CorrectlyRounded f e d' k' :=
+  correct_of layout checks f ⟨e⟩ hr
 
 end yy128
