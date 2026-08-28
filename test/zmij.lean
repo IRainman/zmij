@@ -582,7 +582,7 @@ theorem err_bounds (f : ℕ) (e : ℤ) (hr : binary64.Regular f e) :
 theorem num_bounds (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
     2 ^ 127 * den e ≤ num e ∧ num e < 2 ^ 128 * den e :=
   power10_ratio_normalized (-(binary64.decimalExponent e + 1))
-    (by simp only [Finset.mem_Icc]; have := decimal_exponent_range e he; omega)
+    (by simp only [Finset.mem_Icc, Format.decimalExponent, binary64]; omega)
 
 /-- In particular one ULP is positive, which is what makes both coarse
     boundaries genuine ones. -/
@@ -857,7 +857,7 @@ theorem half_bounds (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
   obtain ⟨hs6, hs9⟩ := exponent_shift_range e he
   obtain ⟨hlo, hhi⟩ :=
     power10_significand_bounds (-(binary64.decimalExponent e + 1))
-      (by have := decimal_exponent_range e he; omega)
+      (by simp only [Format.decimalExponent, binary64]; omega)
   have hlo' : (2 : ℕ) ^ 127 ≤ p10 e := hlo
   have hhi' : p10 e < 2 ^ 128 := hhi
   have htwo := two_unit_eq e hs9
