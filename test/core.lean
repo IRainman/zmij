@@ -3,8 +3,19 @@
 -- Copyright (c) 2025 - present, Victor Zverovich
 -- Distributed under the MIT license (see LICENSE).
 
+-- Field.Power carries the `positivity` extension for `10 ^ (k : ℤ)`, which
+-- Mathlib.Tactic.Positivity does not pull in.
+import Mathlib.Algebra.Order.Field.Power
 import Mathlib.Algebra.Order.Floor.Semifield
-import Mathlib.Tactic
+import Mathlib.Data.Int.ConditionallyCompleteOrder
+import Mathlib.Data.Int.Interval
+import Mathlib.Data.Nat.Log
+import Mathlib.Data.Nat.Prime.Basic
+import Mathlib.Data.Rat.Floor
+import Mathlib.Tactic.Bound
+import Mathlib.Tactic.IntervalCases
+import Mathlib.Tactic.LinearCombination
+import Mathlib.Tactic.Positivity
 
 /-! # Exact decimal conversion and certified comparisons
 
