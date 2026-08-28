@@ -576,7 +576,7 @@ def Format.kmax (fmt : Format) : ℤ := fmt.decimalExponent fmt.emax
 /-- The approximation is monotone whatever the constants are, scaling by a
     nonnegative numerator and flooring by a positive power of two both being
     monotone. -/
-theorem Format.decimalExponent_mono (fmt : Format) {a b : ℤ} (hab : a ≤ b) :
+theorem Format.decimal_exponent_mono (fmt : Format) {a b : ℤ} (hab : a ≤ b) :
     fmt.decimalExponent a ≤ fmt.decimalExponent b :=
   Int.ediv_le_ediv (by positivity)
     (mul_le_mul_of_nonneg_right hab (Int.natCast_nonneg _))
@@ -589,13 +589,13 @@ theorem Format.decimalExponent_mono (fmt : Format) {a b : ℤ} (hab : a ≤ b) :
 theorem Format.decimal_exponent_range (fmt : Format) {e : ℤ}
     (hlo : fmt.emin ≤ e) (hhi : e ≤ fmt.emax) :
     fmt.kmin ≤ fmt.decimalExponent e ∧ fmt.decimalExponent e ≤ fmt.kmax :=
-  ⟨fmt.decimalExponent_mono hlo, fmt.decimalExponent_mono hhi⟩
+  ⟨fmt.decimal_exponent_mono hlo, fmt.decimal_exponent_mono hhi⟩
 
 /-- binary64's decimal exponent. -/
 def decimalExponent (e : ℤ) : ℤ :=
   e * 315_653 / 2 ^ 20
 
-theorem decimalExponent_eq_binary64 (e : ℤ) :
+theorem decimal_exponent_eq_binary64 (e : ℤ) :
     decimalExponent e = binary64.decimalExponent e := rfl
 
 /-- The exponents it reaches over binary64's range, which is what confines the
@@ -701,16 +701,16 @@ def power10Num (k : ℤ) : ℕ :=
 def power10Den (k : ℤ) : ℕ :=
   10 ^ (-k).toNat * 2 ^ (power10Exponent k - 128).toNat
 
-theorem power10Exponent_eq_binary64 (k : ℤ) :
+theorem power10_exponent_eq_binary64 (k : ℤ) :
     power10Exponent k = binary64.power10Exponent k := rfl
 
-theorem power10Num_eq_binary64 (k : ℤ) :
+theorem power10_num_eq_binary64 (k : ℤ) :
     power10Num k = binary64.power10Num k := rfl
 
-theorem power10Den_eq_binary64 (k : ℤ) :
+theorem power10_den_eq_binary64 (k : ℤ) :
     power10Den k = binary64.power10Den k := rfl
 
-theorem power10Significand_eq_binary64 (k : ℤ) :
+theorem power10_significand_eq_binary64 (k : ℤ) :
     power10Significand k = binary64.power10Significand k := rfl
 
 theorem power10_den_pos (k : ℤ) : 0 < power10Den k :=
@@ -1003,7 +1003,7 @@ def regularWindows (g modulus : ℕ) (e : ℤ) (windows : List (ℤ × ℤ)) :
   f1 := 2 ^ 53 - 1
   windows := windows
 
-theorem regularWindows_eq_binary64 (g modulus : ℕ) (e : ℤ)
+theorem regular_windows_eq_binary64 (g modulus : ℕ) (e : ℤ)
     (windows : List (ℤ × ℤ)) :
     regularWindows g modulus e windows
       = binary64.regularWindows g modulus e windows := rfl
@@ -1016,7 +1016,7 @@ theorem regular_not_hit {g modulus : ℕ} {e : ℤ} {windows : List (ℤ × ℤ)
     (hlo : lo ≤ (y : ℤ)) (hhi : (y : ℤ) ≤ hi) :
     False := by
   rw [regular_eq_binary64] at hr
-  rw [regularWindows_eq_binary64] at hcert
+  rw [regular_windows_eq_binary64] at hcert
   exact Format.regular_not_hit f hr hmodulus hcert hmem hy hlo hhi
 
 /-! ### Certificate search
