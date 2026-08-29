@@ -1159,8 +1159,8 @@ ZMIJ_INLINE auto to_digits<32>(uint64_t value,
 ZMIJ_INLINE void write_digits(char* buffer, dec_digits<64>::digits_type digits,
                               bool drop_leading_zero, const data& d) noexcept {
   if (!ZMIJ_USE_NEON && !ZMIJ_USE_SSE4_1) {
-    digits = digits >> (drop_leading_zero * sizeof(digits));
     memcpy(buffer, &digits, sizeof(digits));
+    memmove(buffer, buffer + drop_leading_zero, sizeof(digits));
     return;
   }
 #if ZMIJ_USE_NEON
