@@ -486,7 +486,10 @@ it needs through its own format, as `binary64.decimalExponent`.
     `log₁₀2` and `log₂10` as a numerator over a power of two. Those two
     approximations are the only part of a format that has to be checked rather
     than derived, and how far they can be trusted is what pins down the exponent
-    range of the checks below. -/
+    range of the checks below. Only the `log₂10` side is checked here, by
+    `Power10Normalized`; what has to hold of `log₁₀2` is a bound on the shift
+    an implementation derives from it, which differs between implementations,
+    so each checks its own. -/
 structure Format where
   prec : ℕ
   emin : ℤ
