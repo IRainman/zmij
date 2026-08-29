@@ -80,15 +80,20 @@ set_option maxHeartbeats 0
 -- times the default recursion limit's reach.
 set_option maxRecDepth 100000
 
-/-! ## Finite arithmetic checks
-
-`Layout`, and the four `Checks` fields that a decision procedure closes
-outright. The two that need a searched witness are below.
--/
+/-! ## Layout -/
 
 /-- The packing conditions, both with room to spare at
     `(prec, width) = (113, 128)`. -/
 theorem layout : Layout binary128 := ⟨by decide, by decide⟩
+
+/-! ## Checks
+
+Six facts at every exponent in range. Four are closed computations; the last
+two ask for a modular certificate at each exponent, and one exponent needs more
+than a certificate.
+-/
+
+/-! ### Direct checks -/
 
 /-- Exposes the literals: `binary128` is a structure literal, and `omega` treats
     a projection of one as an opaque atom. -/
@@ -119,11 +124,6 @@ private theorem shift_nonneg_sweep :
 instance : binary128.Power10Normalized where
   ratio := by decide +kernel
 
-private theorem table (e : ℤ) (hlo : -16494 ≤ e) (hhi : e ≤ 16271) :
-    TableNormalized (⟨e⟩ : FPExp binary128) :=
-  binary128.power10_ratio_normalized hlo hhi
-    (-binary128.decimalExponent e) (by omega)
-
 /-- Three facts about the truncation: that the packed comparison's modulus is
     not reached, and that the error `num % den` fits the bits the comparison
     discards, measured from either end of the window unit. -/
@@ -132,20 +132,30 @@ private theorem trim_sweep :
       trimChecksHold (⟨e⟩ : FPExp binary128) = true := by
   decide +kernel
 
-/-! ## Modular certificates
+/-! ### Unit-step windows
 
-One modular question per exponent per family. `modCertTactic` reads the index
-out of the goal, unwrapping the bundled exponent, so each family still costs
-one `elab` line.
+One modular question per exponent, refuted everywhere in range. `modCertTactic`
+reads the index out of the goal, unwrapping the bundled exponent, so the family
+costs one `elab` line.
+-/
+
+/-- Close `∃ q, (oneWindows e).refutedBy q = true` for a literal exponent. -/
+elab "one_cert128" : tactic =>
+  modCertTactic fun e => (oneWindows (⟨e⟩ : FPExp binary128)).search
+
+private theorem one_refuted (e : ℤ) (hlo : -16494 ≤ e) (hhi : e ≤ 16271) :
+    ∃ q, (oneWindows (⟨e⟩ : FPExp binary128)).refutedBy q = true := by
+  interval_cases e <;> one_cert128
+
+/-! ### Exponent windows
+
+The same, except at `e = -2266`. These two cover the range on either side of
+it; the exponent itself is below.
 -/
 
 /-- Close `∃ q, (expWindows e).refutedBy q = true` for a literal exponent. -/
 elab "exp_cert128" : tactic =>
   modCertTactic fun e => (expWindows (⟨e⟩ : FPExp binary128)).search
-
-/-- Close `∃ q, (oneWindows e).refutedBy q = true` for a literal exponent. -/
-elab "one_cert128" : tactic =>
-  modCertTactic fun e => (oneWindows (⟨e⟩ : FPExp binary128)).search
 
 private theorem exp_refuted_below (e : ℤ) (hlo : -16494 ≤ e) (hhi : e ≤ -2267) :
     ∃ q, (expWindows (⟨e⟩ : FPExp binary128)).refutedBy q = true := by
@@ -155,11 +165,7 @@ private theorem exp_refuted_above (e : ℤ) (hlo : -2265 ≤ e) (hhi : e ≤ 162
     ∃ q, (expWindows (⟨e⟩ : FPExp binary128)).refutedBy q = true := by
   interval_cases e <;> exp_cert128
 
-private theorem one_refuted (e : ℤ) (hlo : -16494 ≤ e) (hhi : e ≤ 16271) :
-    ∃ q, (oneWindows (⟨e⟩ : FPExp binary128)).refutedBy q = true := by
-  interval_cases e <;> one_cert128
-
-/-! ## Exceptional exponent at `e = -2266` -/
+/-! #### The exceptional exponent -/
 
 /-- The significand occupying the trim-up window, the band just above
     `scale - num`. -/
@@ -212,20 +218,24 @@ private theorem exp_refuted (e : ℤ) (hlo : -16494 ≤ e) (hhi : e ≤ 16271)
   · exact Or.inl (exp_avoids_of_cert f _ hr
       (exp_refuted_above e (by omega) hhi).choose_spec)
 
-/-! ## Instantiation -/
+/-! ### The record -/
 
 theorem checks : Checks binary128 := by
   rintro ⟨e⟩ hlo hhi
-  have hlo' : (-16494 : ℤ) ≤ e := hlo
-  have hhi' : e ≤ 16271 := hhi
-  have he : e ∈ Finset.Icc (-16494 : ℤ) 16271 := Finset.mem_Icc.mpr ⟨hlo', hhi'⟩
+  change (-16494 : ℤ) ≤ e at hlo
+  change e ≤ 16271 at hhi
+  have he : e ∈ Finset.Icc (-16494 : ℤ) 16271 := Finset.mem_Icc.mpr ⟨hlo, hhi⟩
   exact
     { shift_nonneg := shift_nonneg_sweep e he
-      shift_lt_four := shift_lt_four e hlo' hhi'
-      table := table e hlo' hhi'
+      shift_lt_four := shift_lt_four e hlo hhi
+      table :=
+        binary128.power10_ratio_normalized hlo hhi
+          (-binary128.decimalExponent e) (by omega)
       trim := trim_checks_of_hold _ (trim_sweep e he)
-      exp_refuted := exp_refuted e hlo' hhi'
-      one_refuted := one_refuted e hlo' hhi' }
+      exp_refuted := exp_refuted e hlo hhi
+      one_refuted := one_refuted e hlo hhi }
+
+/-! ## Correctness -/
 
 /-- yy is correct on regularly spaced positive binary128 values: after removing
     trailing zeros its output is a shortest decimal representation that
