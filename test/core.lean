@@ -29,11 +29,11 @@ produces a shortest, correctly rounded decimal for any positive value, given
 only that the decimal grid is no coarser than one ULP and strictly coarser than
 a tenth of one.
 
-The second part is the vocabulary the implementations share: how binary64 spaces
+The second part is the vocabulary the implementations share: how a format spaces
 the values they convert, which decimal exponent they report, and the normalized
-power-of-ten table they multiply by. It is specific to a format, which the rest
-of this file is not, but it is not specific to an algorithm, which is the line
-that decides what belongs here.
+power-of-ten table they multiply by. It is the only part that knows formats
+exist, but it is not specific to an algorithm, which is the line that decides
+what belongs here.
 
 The third part relates an implementation's arithmetic to the rule. It works in
 integers, so `scaled_cmp_of_int_eq` reads a comparison against the exact value
@@ -475,9 +475,8 @@ power-of-ten table they multiply by. No one algorithm owns any of it, and
 neither part around it uses any of it.
 
 All of it is stated over a `Format`, so that an implementation proof can be
-written once and instantiated per format. Each generic definition is followed by
-its binary64 spelling, which is what lets the implementation files name these
-without a format argument.
+written once and instantiated per format, and an implementation file names what
+it needs through its own format, as `binary64.decimalExponent`.
 -/
 
 /-! ### Floating-point formats -/
@@ -507,13 +506,13 @@ def binary64 : Format where
   log10Two := (315_653, 20)
   log2Ten  := (217_707, 16)
 
-/-- IEEE 754 binary128. binary64's fixed-point logarithms are not exact over
-    this range; the denominators below are the smallest that are. -/
+/-- IEEE 754 binary128. -/
 def binary128 : Format where
   prec := 113
   emin := -16494
   emax := 16271
   width := 128
+  -- The smallest denominators exact over this range.
   log10Two := (20_201_781, 26)
   log2Ten  := (55_732_705, 24)
 
@@ -545,13 +544,6 @@ theorem Format.Regular.range {fmt : Format} {f : ℕ} {e : ℤ}
 theorem Format.Regular.normal_or_min {fmt : Format} {f : ℕ} {e : ℤ}
     (hr : fmt.Regular f e) : 2 ^ (fmt.prec - 1) < f ∨ e = fmt.emin := hr.1.2.2
 
-/-! Below, binary64's own layer. Each definition is spelled out rather than
-applied to `binary64`, and tied to the generic one by `rfl`. The wrappers would
-be shorter, but `unfold` and `simp only` in the implementation files need to see
-the literal constants and the structure literal, and stop at a wrapper.
-`Regular` gets no such spelling: it is only ever passed along or projected from,
-never unfolded. -/
-
 /-! ### The decimal exponent -/
 
 /-- Approximation of floor(e·log₁₀ 2), the decimal exponent to report for a
@@ -559,9 +551,9 @@ never unfolded. -/
 def Format.decimalExponent (fmt : Format) (e : ℤ) : ℤ :=
   e * fmt.log10Two.1 / 2 ^ fmt.log10Two.2
 
-/-- The decimal exponents reached at the ends of the format's range. Being
-    computed from `emin`/`emax` rather than supplied, they cannot name an
-    interval the format does not actually reach. -/
+/-- The decimal exponent reached at the bottom of the format's range. It and
+    `kmax` are computed from `emin`/`emax` rather than supplied, so they cannot
+    name an interval the format does not actually reach. -/
 def Format.kmin (fmt : Format) : ℤ := fmt.decimalExponent fmt.emin
 
 /-- The decimal exponent reached at the top of the format's range. -/
@@ -594,8 +586,8 @@ every index any of them reaches.
 
 /-- Binary exponent of 10^k used to normalize its table significand: the
     fixed-point form of `⌊k·log₂10⌋ + 1`. Taking a logarithm here instead would
-    make every exponent-wise check below shift a 1077-bit number down to zero
-    one bit at a time. -/
+    make every exponent-wise check below shift the power of ten down to zero one
+    bit at a time. -/
 def Format.power10Exponent (fmt : Format) (k : ℤ) : ℤ :=
   k * fmt.log2Ten.1 / 2 ^ fmt.log2Ten.2 + 1
 
@@ -688,9 +680,7 @@ theorem Format.power10_ratio_normalized (fmt : Format) [h : fmt.TableNormalized]
   obtain ⟨h1, h2⟩ := fmt.decimal_exponent_range hlo hhi
   exact h.ratio k (Finset.mem_Icc.mpr (by omega))
 
-/-- binary64's sweep stays here, rather than moving to the file of the
-    implementation that needs it, because two algorithms share it and it costs
-    180ms over its 618 indices. -/
+/-- The table entry at every index either algorithm reads is normalized. -/
 instance : binary64.TableNormalized where
   -- `+kernel` keeps the enumeration out of the elaborator, whose recursion and
   -- exponentiation guards it would otherwise trip.
@@ -923,8 +913,8 @@ and the two bounds a certificate needs of it belong here rather than in each
 implementation.
 -/
 
-/-- Only the minimum exponent carries significands below `2^(prec-1)`, and the
-    certificates need the smaller box everywhere else. -/
+/-- A window problem over the significands `Regular` admits at `e`. The box is
+    the tighter one above the minimum exponent, which the certificates need. -/
 def Format.regularWindows (fmt : Format) (g modulus : ℕ) (e : ℤ)
     (windows : List (ℤ × ℤ)) : ModWindows where
   g := g
@@ -933,8 +923,9 @@ def Format.regularWindows (fmt : Format) (g modulus : ℕ) (e : ℤ)
   f1 := 2 ^ fmt.prec - 1
   windows := windows
 
-/-- `Regular` puts the significand in the box. Separate from `regular_not_hit`
-    because a problem recentred on one significand asks the same of the rest. -/
+/-- `Regular` puts the significand in the box. Separate from
+    `Format.regular_not_hit` because a problem recentred on one significand asks
+    the same of the rest. -/
 theorem Format.regular_box {fmt : Format} {g modulus : ℕ} {e : ℤ}
     {windows : List (ℤ × ℤ)} {f : ℕ} (hr : fmt.Regular f e) :
     (fmt.regularWindows g modulus e windows).f0 ≤ f
