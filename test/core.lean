@@ -967,9 +967,10 @@ works, or on whether it terminates with a useful answer at all.
 The multiplier is searched for rather than tabulated, by the elaborator rather
 than by the kernel. Convergent denominators of `g/modulus` give the relevant
 best rational approximations. The Euclidean remainder `v` that produces `qc` is
-the error `|g·qc - modulus·p|`; it must fall below `modulus/(f1 + 1)` before a
-window can be refuted. Testing that first skips the small denominators and
-leaves few window checks per problem. Such a denominator leaves the span of
+the error `|g·qc - modulus·p|`, and a certificate has to fit
+`q·(hi - lo) + (f1 - f0)·v` inside one modulus, so the loop waits for the box
+term alone to fit. Waiting reads no window and skips the small denominators,
+leaving few window checks per problem. Such a denominator leaves the span of
 `q·y - f·r` at about `2·√(n·(hi-lo)/modulus)` of `modulus`, where `n` is the
 number of significands in the box, so it fits between consecutive multiples with
 room to spare.
@@ -977,7 +978,7 @@ room to spare.
 private def modCertSearch (w : ModWindows) : ℕ → ℤ → ℤ → ℤ → ℤ → ℤ
   | 0, _, _, _, qc => qc
   | n + 1, u, v, qp, qc =>
-    if decide (((w.f1 : ℤ) + 1) * v < w.modulus) && w.refutedBy qc then
+    if decide (((w.f1 : ℤ) - w.f0) * v < w.modulus) && w.refutedBy qc then
       qc
     else if v = 0 then
       qc
@@ -988,7 +989,7 @@ private def modCertSearch (w : ModWindows) : ℕ → ℤ → ℤ → ℤ → ℤ
     what it returns is checked by `refutedBy`. The fuel bounds the Euclidean
     search, whose length grows with the precision: binary64 finishes within 44
     steps and binary128 within 74, so 160 leaves both room to spare. The loop
-    exits as soon as a window is refuted, so unused fuel costs nothing. -/
+    exits as soon as the problem is refuted, so unused fuel costs nothing. -/
 def ModWindows.search (w : ModWindows) : ℤ :=
   modCertSearch w 160 w.modulus ((w.g : ℤ) % (w.modulus : ℤ)) 0 1
 
