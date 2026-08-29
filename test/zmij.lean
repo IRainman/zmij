@@ -1170,6 +1170,13 @@ truncation to reach a definite distance, and each such demand is a window of
 residues of `f·p10` modulo one coarse step. The generic machinery of
 `ModWindows` refutes every one of those windows over the exponent range, one
 exponent at a time.
+
+Do the symbolic case reduction before reaching for a certificate. A wider
+formulation that enumerates every potentially bad input looks simpler, but
+preserving the algebraic structure of each decision boundary is what turns a
+nonempty exceptional set into an empty certificate problem. Stated instead as
+one band around the digit boundary, the ambiguity has occupants at six
+exponents, and each would have to be named and discharged separately.
 -/
 
 /-- The six fractions that can reach a digit boundary from below, each with
