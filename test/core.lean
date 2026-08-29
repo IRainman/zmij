@@ -486,7 +486,7 @@ it needs through its own format, as `binary64.decimalExponent`.
     `log₁₀2` and `log₂10` as a numerator over a power of two. Those two
     approximations are the only part of a format that has to be checked rather
     than derived, and how far they can be trusted is what pins down the exponent
-    range of the checks below. Only the `log₂10` side is checked here, by
+    range of the checks below. Only the `log₂10` side is checked through
     `Power10Normalized`; what has to hold of `log₁₀2` is a bound on the shift
     an implementation derives from it, which differs between implementations,
     so each checks its own. -/
@@ -665,7 +665,7 @@ theorem Format.power10_significand_bounds (fmt : Format) {k : ℤ}
     the index below it. Outside that range the approximation eventually drifts
     from `⌊k·log₂10⌋ + 1`, so this is a fact about the format's `log2Ten` and
     not a consequence of the other fields. Each format supplies it as an
-    instance, swept where the format can afford the sweep. -/
+    instance, in whichever file can afford the sweep. -/
 class Format.Power10Normalized (fmt : Format) : Prop where
   /-- In ratio form the check is two comparisons of naturals per index. -/
   ratio : ∀ k ∈ Finset.Icc (-fmt.kmax - 1) (-fmt.kmin),
