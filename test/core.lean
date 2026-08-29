@@ -523,29 +523,12 @@ def binary128 : Format where
 
 /-- Whether f·2^e is a regularly spaced positive value of the format: a normal
     that is not a power of 2, or anything at the minimum exponent, subnormals
-    included, there being no binade below to halve the spacing.
-
-    The grouping is load-bearing: the exponent range is the second component, so
-    that `range` is the second projection and the significand facts the first. -/
-def Format.Regular (fmt : Format) (f : ℕ) (e : ℤ) : Prop :=
-  (0 < f ∧ f < 2 ^ fmt.prec ∧ (2 ^ (fmt.prec - 1) < f ∨ e = fmt.emin)) ∧
-  (fmt.emin ≤ e ∧ e ≤ fmt.emax)
-
-/-- A regular value has a positive significand. -/
-theorem Format.Regular.pos {fmt : Format} {f : ℕ} {e : ℤ}
-    (hr : fmt.Regular f e) : 0 < f := hr.1.1
-
-/-- A regular value's significand fits the precision. -/
-theorem Format.Regular.sig_lt {fmt : Format} {f : ℕ} {e : ℤ}
-    (hr : fmt.Regular f e) : f < 2 ^ fmt.prec := hr.1.2.1
-
-/-- A regular value's exponent lies in the format's range. -/
-theorem Format.Regular.range {fmt : Format} {f : ℕ} {e : ℤ}
-    (hr : fmt.Regular f e) : fmt.emin ≤ e ∧ e ≤ fmt.emax := hr.2
-
-/-- Only the minimum exponent carries significands below `2^(prec-1)`. -/
-theorem Format.Regular.normal_or_min {fmt : Format} {f : ℕ} {e : ℤ}
-    (hr : fmt.Regular f e) : 2 ^ (fmt.prec - 1) < f ∨ e = fmt.emin := hr.1.2.2
+    included, there being no binade below to halve the spacing. -/
+structure Format.Regular (fmt : Format) (f : ℕ) (e : ℤ) : Prop where
+  pos : 0 < f
+  sig_lt : f < 2 ^ fmt.prec
+  normal_or_min : 2 ^ (fmt.prec - 1) < f ∨ e = fmt.emin
+  range : fmt.emin ≤ e ∧ e ≤ fmt.emax
 
 /-! ### The decimal exponent -/
 
