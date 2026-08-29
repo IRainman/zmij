@@ -482,14 +482,14 @@ it needs through its own format, as `binary64.decimalExponent`.
 /-! ### Floating-point formats -/
 
 /-- A binary format, as the layers below need it: precision, exponent range, the
-    bit width an implementation computes in, and fixed-point approximations of
-    `log₁₀2` and `log₂10` as a numerator over a power of two. Those two
-    approximations are the only part of a format that has to be checked rather
-    than derived, and how far they can be trusted is what pins down the exponent
-    range of the checks below. Only the `log₂10` side is checked through
-    `Power10Normalized`; what has to hold of `log₁₀2` is a bound on the shift
-    an implementation derives from it, which differs between implementations,
-    so each checks its own. -/
+    width of the base integer type an implementation computes in, and
+    fixed-point approximations of `log₁₀2` and `log₂10` as a numerator over a
+    power of two. Those two approximations are the only part of a format that
+    has to be checked rather than derived, and how far they can be trusted is
+    what pins down the exponent range of the checks below. Only the `log₂10`
+    side is checked through `Power10Normalized`; what has to hold of `log₁₀2`
+    is a bound on the shift an implementation derives from it, which differs
+    between implementations, so each checks its own. -/
 structure Format where
   prec : ℕ
   emin : ℤ
@@ -515,7 +515,7 @@ def binary128 : Format where
   emin := -16494
   emax := 16271
   width := 128
-  -- The smallest denominators exact over this range.
+  -- The smallest power-of-two denominators exact over this range.
   log10Two := (20_201_781, 26)
   log2Ten  := (55_732_705, 24)
 
