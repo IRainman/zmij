@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 # Power of 10 significand generator for Żmij.
 # Copyright (c) 2025 - present, Victor Zverovich
+#
+# The output is the `expected` table in zmij-impl-test.cc, the independent
+# reference the pow10 test checks the compile-time table against. zmij.c's
+# pow10_significands is a subrange of the same output.
 
 import math
-import sys
 
 # Range of decimal exponents covered by the pow10 significand table.
 dec_exp_min = -341
@@ -27,33 +30,4 @@ def get_pow10():
         hi, lo = result >> 64, (result & (2**64 - 1))
         print(f"{{{hi:#x}, {lo:#018x}}}, // {dec_exp:4}")
 
-def gen_shifts():
-    i = 0
-    print('"', end="")
-    for raw_exp in range(1 << 11):
-        if i % 37 == 0 and i != 0:
-            print('"\n"', end="")
-        i += 1
-        if raw_exp == 0:
-            raw_exp = 1
-        bin_exp = raw_exp - (52 + 1023)
-
-        # log10_2_sig = round(log10(2) * 2**log10_2_exp)
-        log10_2_sig = 315_653
-        log10_2_exp = 20
-        dec_exp = (bin_exp * log10_2_sig) >> log10_2_exp
-
-        # log2_pow10_sig = round(log2(10) * 2**log2_pow10_exp) + 1
-        log2_pow10_sig = 217_707
-        log2_pow10_exp = 16
-        # pow10_bin_exp = floor(log2(10**-dec_exp))
-        pow10_bin_exp = -dec_exp * log2_pow10_sig >> log2_pow10_exp
-        exp_shift = bin_exp + pow10_bin_exp + 1
-
-        print(f"\\{exp_shift}", end="")
-    print('"')
-
-if 'shifts' in sys.argv:
-    gen_shifts()
-else:
-    get_pow10()
+get_pow10()
