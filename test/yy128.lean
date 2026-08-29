@@ -33,7 +33,7 @@ explicit request to verify binary128.
 |  | count | cost |
 |---|---|---|
 | `shift_nonneg_sweep` | 32,766 | 11s |
-| `table_sweep` | 9,865 indices, to 16.5 kbit | 5s |
+| `Power10Normalized` | 9,865 indices, to 16.5 kbit | 5s |
 | `trim_sweep` | 32,766, to 16.5 kbit | 28s |
 | `exp_refuted`, `one_refuted` | 32,766 certificates each | ~3 min |
 
@@ -62,12 +62,12 @@ Over 32,766 exponents that is a handful, and one of them is real. binary64 has
 the same structure with a `2^-11.3` margin over 2,046 exponents and no such
 case, which is why it needs none of what follows.
 
-The occupant is `bad`, and yy is right there — the window records that the
-coarse comparison's error bound does not *establish* as much. So the exponent is
-split: `bad` supplies `TrimsAgree` by evaluation, and `exp_avoids_of_blocks`
-covers the rest of the box with 113 certificates per side, over the distances
-from `bad` rather than the significands themselves. Both are confined to this
-one exponent, and the rest of the range is unaffected.
+yy is right at the `occupant` — the window records that the coarse comparison's
+error bound does not *establish* as much. So the exponent is split: the occupant
+supplies `TrimsAgree` by evaluation, and `exp_avoids_of_blocks` covers the rest
+of the box with 113 certificates per side, over the distances from it rather
+than the significands themselves. Both are confined to this one exponent, and
+the rest of the range is unaffected.
 -/
 
 namespace yy128
@@ -80,20 +80,18 @@ set_option maxHeartbeats 0
 -- times the default recursion limit's reach.
 set_option maxRecDepth 100000
 
-/-! ## The layout
+/-! ## Finite arithmetic checks
 
-The packing conditions, both with room to spare at `(prec, width) = (113, 128)`.
+`Layout`, and the four `Checks` fields that a decision procedure closes
+outright. The two that need a searched witness are below.
 -/
 
+/-- The packing conditions, both with room to spare at
+    `(prec, width) = (113, 128)`. -/
 theorem layout : Layout binary128 := ⟨by decide, by decide⟩
 
-/-! ## The fixed-point logarithms
-
-Two facts that follow from the constants by integer arithmetic once `omega` can
-see them. The `rfl` lemma exists only to expose the literals: `binary128` is a
-structure literal, and `omega` treats a projection of one as an opaque atom.
--/
-
+/-- Exposes the literals: `binary128` is a structure literal, and `omega` treats
+    a projection of one as an opaque atom. -/
 private theorem shift_raw_eq (e : ℤ) :
     shiftRaw (⟨e⟩ : FPExp binary128)
       = e + (-(e * 20_201_781 / 2 ^ 26) * 55_732_705) / 2 ^ 24 := rfl
@@ -115,14 +113,9 @@ private theorem shift_nonneg_sweep :
       0 ≤ shiftRaw (⟨e⟩ : FPExp binary128) := by
   decide +kernel
 
-/-! ## The table
-
-`core.lean`'s sweep covers binary64's 618 indices and stays there because two
-algorithms share it. binary128's is yy's alone, and the numbers are wide enough
-that it belongs with the rest of the cost.
--/
-
-/-- The table entry at every index yy can read is a normalized 256-bit number. -/
+/-- The table entry at every index yy can read is a normalized 256-bit number.
+    `core.lean` keeps binary64's sweep because two algorithms share it; this one
+    is yy's alone, and wide enough to belong with the rest of the cost. -/
 instance : binary128.Power10Normalized where
   ratio := by decide +kernel
 
@@ -131,19 +124,15 @@ private theorem table (e : ℤ) (hlo : -16494 ≤ e) (hhi : e ≤ 16271) :
   binary128.power10_ratio_normalized hlo hhi
     (-binary128.decimalExponent e) (by omega)
 
-/-! ## The truncated power of ten
-
-Three facts about the truncation: that the packed comparison's modulus is not
-reached, and that the error `num % den` fits the bits the comparison discards,
-measured from either end of the window unit.
--/
-
+/-- Three facts about the truncation: that the packed comparison's modulus is
+    not reached, and that the error `num % den` fits the bits the comparison
+    discards, measured from either end of the window unit. -/
 private theorem trim_sweep :
     ∀ e ∈ Finset.Icc (-16494 : ℤ) 16271,
       trimChecksHold (⟨e⟩ : FPExp binary128) = true := by
   decide +kernel
 
-/-! ## The certificates
+/-! ## Modular certificates
 
 One modular question per exponent per family. `modCertTactic` reads the index
 out of the goal, unwrapping the bundled exponent, so each family still costs
@@ -170,28 +159,28 @@ private theorem one_refuted (e : ℤ) (hlo : -16494 ≤ e) (hhi : e ≤ 16271) :
     ∃ q, (oneWindows (⟨e⟩ : FPExp binary128)).refutedBy q = true := by
   interval_cases e <;> one_cert128
 
-/-! ## The occupied window at `e = -2266` -/
+/-! ## Exceptional exponent at `e = -2266` -/
 
 /-- The significand occupying the trim-up window, the band just above
     `scale - num`. -/
-def bad : ℕ := 6098265699439592702088126713856255
+def occupant : ℕ := 6098265699439592702088126713856255
 
-/-- Both trim comparisons at `bad` decide what the exact ones do. At a fixed
-    exponent and significand that is a closed computation, which is the whole
-    reason this exponent can be finished at all. -/
-private theorem bad_trims_agree :
-    TrimsAgree bad (⟨-2266⟩ : FPExp binary128) := by
+/-- Both trim comparisons at the occupant decide what the exact ones do. At a
+    fixed exponent and significand that is a closed computation, which is the
+    whole reason this exponent can be finished at all. -/
+private theorem occupant_trims_agree :
+    TrimsAgree occupant (⟨-2266⟩ : FPExp binary128) := by
   unfold TrimsAgree
   decide +kernel
 
-/-- The blocks of distances from `bad`, indexed by an integer so that
+/-- The blocks of distances from the occupant, indexed by an integer so that
     `modCertTactic` can read the index out of the goal the way it reads an
     exponent. -/
 private def blockAbove (i : ℤ) : ModWindows :=
-  expWindowsAbove bad i.toNat (⟨-2266⟩ : FPExp binary128)
+  expWindowsAbove occupant i.toNat (⟨-2266⟩ : FPExp binary128)
 
 private def blockBelow (i : ℤ) : ModWindows :=
-  expWindowsBelow bad i.toNat (⟨-2266⟩ : FPExp binary128)
+  expWindowsBelow occupant i.toNat (⟨-2266⟩ : FPExp binary128)
 
 /-- Close `∃ q, (blockAbove i).refutedBy q = true` for a literal block. -/
 elab "block_above_cert" : tactic =>
@@ -212,15 +201,15 @@ private theorem below_cert (i : ℤ) (hlo : 0 ≤ i) (hhi : i ≤ 112) :
 /-- The blocks in the form `exp_avoids_of_blocks` wants them: a natural index
     below the precision rather than an integer in range. -/
 private theorem above_refuted (i : ℕ) (hi : i < binary128.prec) :
-    ∃ q, (expWindowsAbove bad i (⟨-2266⟩ : FPExp binary128)).refutedBy
+    ∃ q, (expWindowsAbove occupant i (⟨-2266⟩ : FPExp binary128)).refutedBy
       q = true := by
-  have hp : binary128.prec = 113 := rfl
+  change i < 113 at hi
   simpa [blockAbove] using above_cert i (by omega) (by omega)
 
 private theorem below_refuted (i : ℕ) (hi : i < binary128.prec) :
-    ∃ q, (expWindowsBelow bad i (⟨-2266⟩ : FPExp binary128)).refutedBy
+    ∃ q, (expWindowsBelow occupant i (⟨-2266⟩ : FPExp binary128)).refutedBy
       q = true := by
-  have hp : binary128.prec = 113 := rfl
+  change i < 113 at hi
   simpa [blockBelow] using below_cert i (by omega) (by omega)
 
 private theorem exp_refuted (e : ℤ) (hlo : -16494 ≤ e) (hhi : e ≤ 16271)
@@ -231,26 +220,25 @@ private theorem exp_refuted (e : ℤ) (hlo : -16494 ≤ e) (hhi : e ≤ 16271)
   · exact Or.inl (exp_avoids_of_cert f _ hr
       (exp_refuted_below e hlo (by omega)).choose_spec)
   · subst h
-    rcases eq_or_ne f bad with rfl | hne
-    · exact Or.inr bad_trims_agree
+    rcases eq_or_ne f occupant with rfl | hne
+    · exact Or.inr occupant_trims_agree
     · exact Or.inl (exp_avoids_of_blocks f _ hr hne (by decide +kernel)
         above_refuted below_refuted)
   · exact Or.inl (exp_avoids_of_cert f _ hr
       (exp_refuted_above e (by omega) hhi).choose_spec)
 
-/-! ## The instantiation -/
+/-! ## Instantiation -/
 
 theorem checks : Checks binary128 := by
   rintro ⟨e⟩ hlo hhi
   have hlo' : (-16494 : ℤ) ≤ e := hlo
   have hhi' : e ≤ 16271 := hhi
+  have he : e ∈ Finset.Icc (-16494 : ℤ) 16271 := Finset.mem_Icc.mpr ⟨hlo', hhi'⟩
   exact
-    { shift_nonneg :=
-        shift_nonneg_sweep e (by simp only [Finset.mem_Icc]; omega)
+    { shift_nonneg := shift_nonneg_sweep e he
       shift_lt_four := shift_lt_four e hlo' hhi'
       table := table e hlo' hhi'
-      trim := trim_checks_of_hold _
-        (trim_sweep e (by simp only [Finset.mem_Icc]; omega))
+      trim := trim_checks_of_hold _ (trim_sweep e he)
       exp_refuted := exp_refuted e hlo' hhi'
       one_refuted := one_refuted e hlo' hhi' }
 
