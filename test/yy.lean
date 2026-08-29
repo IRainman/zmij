@@ -955,8 +955,9 @@ def expResidue (b : ℕ) (e : FPExp fmt) : ℕ := 2 * trimNum e * b % trimScale 
 
 /-- `expWindows` seen by the significands a distance `2^i ≤ d < 2^(i+1)` above
     `b`, indexed by that distance and with the windows measured from `b`'s own
-    residue. -/
-def expWindowsAbove (b i : ℕ) (e : FPExp fmt) : ModWindows :=
+    residue. The block index comes last, where a certificate search expects to
+    find the quantity it varies. -/
+def expWindowsAbove (b : ℕ) (e : FPExp fmt) (i : ℕ) : ModWindows :=
   { expWindows e with
     f0 := 2 ^ i
     f1 := 2 ^ (i + 1) - 1
@@ -965,7 +966,7 @@ def expWindowsAbove (b i : ℕ) (e : FPExp fmt) : ModWindows :=
 
 /-- And by those below, where the distance runs the other way, so the offsets
     are negated. -/
-def expWindowsBelow (b i : ℕ) (e : FPExp fmt) : ModWindows :=
+def expWindowsBelow (b : ℕ) (e : FPExp fmt) (i : ℕ) : ModWindows :=
   { expWindows e with
     f0 := 2 ^ i
     f1 := 2 ^ (i + 1) - 1
@@ -976,8 +977,8 @@ def expWindowsBelow (b i : ℕ) (e : FPExp fmt) : ModWindows :=
     would, at every significand but `b` itself. -/
 theorem exp_avoids_of_blocks {b : ℕ} (f : ℕ) (e : FPExp fmt)
     (hr : fmt.Regular f e) (hne : f ≠ b) (hbp : b < 2 ^ fmt.prec)
-    (ha : ∀ i < fmt.prec, ∃ q, (expWindowsAbove b i e).refutedBy q = true)
-    (hb : ∀ i < fmt.prec, ∃ q, (expWindowsBelow b i e).refutedBy q = true) :
+    (ha : ∀ i < fmt.prec, ∃ q, (expWindowsAbove b e i).refutedBy q = true)
+    (hb : ∀ i < fmt.prec, ∃ q, (expWindowsBelow b e i).refutedBy q = true) :
     ExpAvoids f e := by
   intro hwrap lo hi hmem
   by_contra hcon
@@ -1017,7 +1018,7 @@ theorem exp_avoids_of_blocks {b : ℕ} (f : ℕ) (e : FPExp fmt)
       rw [show ((b - f : ℕ) : ℤ) = (b : ℤ) - f from by omega, hyf, hyb]
       push_cast
       ring
-    exact (expWindowsBelow b _ e).not_hit_rep (b - f) hmod hcert
+    exact (expWindowsBelow b e _).not_hit_rep (b - f) hmod hcert
       (lo := (expResidue b e : ℤ) - hi) (hi := (expResidue b e : ℤ) - lo)
       (List.mem_map_of_mem (f := fun p : ℤ × ℤ =>
         ((expResidue b e : ℤ) - p.2, (expResidue b e : ℤ) - p.1)) hmem)
@@ -1033,7 +1034,7 @@ theorem exp_avoids_of_blocks {b : ℕ} (f : ℕ) (e : FPExp fmt)
       rw [show ((f - b : ℕ) : ℤ) = (f : ℤ) - b from by omega, hyf, hyb]
       push_cast
       ring
-    exact (expWindowsAbove b _ e).not_hit_rep (f - b) hmod hcert
+    exact (expWindowsAbove b e _).not_hit_rep (f - b) hmod hcert
       (lo := lo - (expResidue b e : ℤ)) (hi := hi - (expResidue b e : ℤ))
       (List.mem_map_of_mem (f := fun p : ℤ × ℤ =>
         (p.1 - (expResidue b e : ℤ), p.2 - (expResidue b e : ℤ))) hmem)

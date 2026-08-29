@@ -173,44 +173,29 @@ private theorem occupant_trims_agree :
   unfold TrimsAgree
   decide +kernel
 
-/-- The blocks of distances from the occupant, indexed by an integer so that
-    `modCertTactic` can read the index out of the goal the way it reads an
-    exponent. -/
-private def blockAbove (i : ℤ) : ModWindows :=
-  expWindowsAbove occupant i.toNat (⟨-2266⟩ : FPExp binary128)
-
-private def blockBelow (i : ℤ) : ModWindows :=
-  expWindowsBelow occupant i.toNat (⟨-2266⟩ : FPExp binary128)
-
-/-- Close `∃ q, (blockAbove i).refutedBy q = true` for a literal block. -/
+/-- Close `∃ q, (expWindowsAbove occupant _ i).refutedBy q = true` for a literal
+    block. -/
 elab "block_above_cert" : tactic =>
-  modCertTactic fun i => (blockAbove i).search
+  modCertTactic fun i =>
+    (expWindowsAbove occupant (⟨-2266⟩ : FPExp binary128) i.toNat).search
 
-/-- Close `∃ q, (blockBelow i).refutedBy q = true` for a literal block. -/
+/-- Close `∃ q, (expWindowsBelow occupant _ i).refutedBy q = true` for a literal
+    block. -/
 elab "block_below_cert" : tactic =>
-  modCertTactic fun i => (blockBelow i).search
+  modCertTactic fun i =>
+    (expWindowsBelow occupant (⟨-2266⟩ : FPExp binary128) i.toNat).search
 
-private theorem above_cert (i : ℤ) (hlo : 0 ≤ i) (hhi : i ≤ 112) :
-    ∃ q, (blockAbove i).refutedBy q = true := by
+private theorem above_refuted (i : ℕ) (hi : i < binary128.prec) :
+    ∃ q, (expWindowsAbove occupant (⟨-2266⟩ : FPExp binary128) i).refutedBy
+      q = true := by
+  change i < 113 at hi
   interval_cases i <;> block_above_cert
 
-private theorem below_cert (i : ℤ) (hlo : 0 ≤ i) (hhi : i ≤ 112) :
-    ∃ q, (blockBelow i).refutedBy q = true := by
-  interval_cases i <;> block_below_cert
-
-/-- The blocks in the form `exp_avoids_of_blocks` wants them: a natural index
-    below the precision rather than an integer in range. -/
-private theorem above_refuted (i : ℕ) (hi : i < binary128.prec) :
-    ∃ q, (expWindowsAbove occupant i (⟨-2266⟩ : FPExp binary128)).refutedBy
-      q = true := by
-  change i < 113 at hi
-  simpa [blockAbove] using above_cert i (by omega) (by omega)
-
 private theorem below_refuted (i : ℕ) (hi : i < binary128.prec) :
-    ∃ q, (expWindowsBelow occupant i (⟨-2266⟩ : FPExp binary128)).refutedBy
+    ∃ q, (expWindowsBelow occupant (⟨-2266⟩ : FPExp binary128) i).refutedBy
       q = true := by
   change i < 113 at hi
-  simpa [blockBelow] using below_cert i (by omega) (by omega)
+  interval_cases i <;> block_below_cert
 
 private theorem exp_refuted (e : ℤ) (hlo : -16494 ≤ e) (hhi : e ≤ 16271)
     (f : ℕ) (hr : binary128.Regular f e) :
