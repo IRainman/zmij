@@ -68,9 +68,10 @@ value, or on where a truncated power of ten falls against a window edge, do not
 follow from any inequality between the parameters, so they are collected as
 per-format obligations in `Layout` and `Checks` and discharged by finite search.
 
-That boundary is what makes a second format cheap in proof and expensive only in
+That boundary is what makes another format cheap in proof and expensive only in
 compute. `correct_of` is the generic theorem; `correct` below is binary64's
-instance of it, and `yy128.correct` is binary128's.
+instance of it, `yy128.correct` is binary128's, and `yy80.correct` the x87
+80-bit format's.
 
 ## Dependencies
 
@@ -121,15 +122,14 @@ own right and is proved here because it is the same arithmetic.
 /-! ### The layout yy packs into
 
 The side conditions on the format that the packing needs. They are inequalities
-between the parameters, so they are hypotheses rather than checks, and both
-formats satisfy them with room to spare.
+between the parameters, so they are hypotheses rather than checks.
 -/
 
 /-- A format wide enough for yy's packing. The digit slot is four bits and the
     window unit is `2^(width+4)`, so the width has to hold both and still leave
     the unit negligible against a normalized power of ten; and the significand
-    bound `2·f < 2^(prec+1)` has to fit under `2^(2·width-1)`. binary64 and
-    binary128 satisfy both with room to spare. -/
+    bound `2·f < 2^(prec+1)` has to fit under `2^(2·width-1)`. binary64 and the
+    two extended formats satisfy both with room to spare. -/
 structure Layout (fmt : Format) : Prop where
   width_ge : 7 ≤ fmt.width
   prec_le : fmt.prec + 5 ≤ 2 * fmt.width

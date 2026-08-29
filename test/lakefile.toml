@@ -16,3 +16,10 @@ roots = ["core", "yy", "zmij"]
 name = "yy128"
 srcDir = "."
 roots = ["yy128"]
+
+# The x87 80-bit checks are the same size and opt-in for the same reason:
+# `lake build yy80`.
+[[lean_lib]]
+name = "yy80"
+srcDir = "."
+roots = ["yy80"]

@@ -40,9 +40,8 @@ integers, so `scaled_cmp_of_int_eq` reads a comparison against the exact value
 off an integer identity; and it observes those quantities through comparisons it
 can only afford to make approximately. Away from a decision boundary the loss
 cannot change the answer, which is `comparison_stable_of_far`; near one the
-observation is ambiguous, and the
-ambiguity is a Diophantine question about a modular progression, which
-`ModWindows` answers by kernel-checked certificate.
+observation is ambiguous, and the ambiguity is a Diophantine question about a
+modular progression, which `ModWindows` answers by kernel-checked certificate.
 
 The first and third parts know no implementation at all. The conversion results
 ask only for bounds on the decimal grid, never for a binary format or for the
@@ -657,6 +656,19 @@ def binary128 : Format where
   emax := 16271
   width := 128
   -- The smallest power-of-two denominators exact over this range.
+  log10Two := (20_201_781, 26)
+  log2Ten  := (55_732_705, 24)
+
+/-- The x87 80-bit extended format, whose leading significand bit is stored
+    rather than implicit — it is not an IEEE interchange format. Its 64 bits of
+    precision against binary128's 113 put the exponent range 49 higher under the
+    same 15-bit exponent field. zmij runs one code path at both extended
+    formats, so the width and the two logarithms are binary128's. -/
+def binary80 : Format where
+  prec := 64
+  emin := -16445
+  emax := 16320
+  width := 128
   log10Two := (20_201_781, 26)
   log2Ten  := (55_732_705, 24)
 
