@@ -707,7 +707,7 @@ theorem rest_mod (f : ℕ) (e : ℤ) (hr : binary64.Regular f e) :
     either side of each coarse boundary, the boundaries themselves excluded,
     plus the overshoot of a whole step, which no significand reaches either. -/
 private def expWindows (e : ℤ) : ModWindows :=
-  regularWindows (2 * num e) (2 * step e) e <|
+  binary64.regularWindows (2 * num e) (2 * step e) e <|
     let n : ℤ := num e
     let m : ℤ := 2 * step e
     let w : ℤ := 4 * edge e
@@ -730,7 +730,7 @@ private theorem no_window_hit {lo hi q : ℤ} (f : ℕ) (e : ℤ)
     (hmem : (lo, hi) ∈ (expWindows e).windows)
     (hlo : lo ≤ 2 * (rest f e : ℤ)) (hhi : 2 * (rest f e : ℤ) ≤ hi) :
     False :=
-  regular_not_hit f hr (by have := step_pos e; omega) hcert hmem
+  binary64.regular_not_hit f hr (by have := step_pos e; omega) hcert hmem
     (rest_mod f e hr).symm (by push_cast; omega) (by push_cast; omega)
 
 /-- The gap never passes a whole coarse step. The truncated power of ten can put
@@ -804,8 +804,8 @@ theorem down_tie_or_far (f : ℕ) (e : ℤ) (hr : binary64.Regular f e) :
   have hb := edge_bounds e hr.range
   exact gap_tie_or_far (b := (num e : ℤ)) f e hr
     ⟨by exact_mod_cast hb.1, by exact_mod_cast hb.2⟩
-    (by simp [expWindows, regularWindows])
-    (by simp [expWindows, regularWindows])
+    (by simp [expWindows, Format.regularWindows])
+    (by simp [expWindows, Format.regularWindows])
 
 /-- The trim-up dichotomy, about the boundary `2·step - num`, which Żmij's carry
     reads as the fraction and the half ULP summing past `2^64`. -/
@@ -824,8 +824,8 @@ theorem up_tie_or_far (f : ℕ) (e : ℤ) (hr : binary64.Regular f e) :
     · have : 4 * (edge e : ℤ) < num e := by exact_mod_cast h1
       omega
   have := gap_tie_or_far (b := 2 * (step e : ℤ) - num e) f e hr hbz
-    (by simp [expWindows, regularWindows])
-    (by simp [expWindows, regularWindows])
+    (by simp [expWindows, Format.regularWindows])
+    (by simp [expWindows, Format.regularWindows])
   omega
 
 /-! ## The coarse decisions
@@ -1189,12 +1189,12 @@ private def digitHighEdges : List (ℕ × ℕ) :=
     (13835058055282163711, 5)]
 
 private def digitLowWindows (e : ℤ) : ModWindows :=
-  regularWindows (p10 e) (unit e * 2 ^ 64) e <|
+  binary64.regularWindows (p10 e) (unit e * 2 ^ 64) e <|
     digitLowEdges.map fun p =>
       ((unit e : ℤ) * p.1, (unit e : ℤ) * p.1 + p.2 * (unit e : ℤ) / 5)
 
 private def digitHighWindows (e : ℤ) : ModWindows :=
-  regularWindows (p10 e) (unit e * 2 ^ 64) e <|
+  binary64.regularWindows (p10 e) (unit e * 2 ^ 64) e <|
     digitHighEdges.map fun p =>
       ((unit e : ℤ) * p.1
           + max (p.2 * (unit e : ℤ) / 5 - 2 ^ 53)
@@ -1221,11 +1221,11 @@ private theorem digit_high_refuted (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
     a refuted window rules the pair out. -/
 private theorem no_res_hit {lo hi q : ℤ} {windows : List (ℤ × ℤ)} (f : ℕ)
     (e : ℤ) (hr : binary64.Regular f e)
-    (hcert : (regularWindows (p10 e) (unit e * 2 ^ 64) e windows).refutedBy q
-      = true)
+    (hcert : (binary64.regularWindows (p10 e) (unit e * 2 ^ 64) e
+      windows).refutedBy q = true)
     (hmem : (lo, hi) ∈ windows)
     (hlo : lo ≤ (res f e : ℤ)) (hhi : (res f e : ℤ) ≤ hi) : False :=
-  regular_not_hit f hr (by have := unit_pos e; positivity) hcert hmem
+  binary64.regular_not_hit f hr (by have := unit_pos e; positivity) hcert hmem
     (by rw [res, Nat.mul_comm]) hlo hhi
 
 /-- No significand pairs one of the six low fractions with a truncation

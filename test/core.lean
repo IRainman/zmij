@@ -963,31 +963,6 @@ theorem Format.regular_not_hit {fmt : Format} {g modulus : ℕ} {e : ℤ}
   (fmt.regularWindows g modulus e windows).not_hit f hmodulus hcert hmem
     hbox.1 hbox.2 hy hlo hhi
 
-/-- binary64's significand box. -/
-def regularWindows (g modulus : ℕ) (e : ℤ) (windows : List (ℤ × ℤ)) :
-    ModWindows where
-  g := g
-  modulus := modulus
-  f0 := if e = -1074 then 1 else 2 ^ 52 + 1
-  f1 := 2 ^ 53 - 1
-  windows := windows
-
-theorem regular_windows_eq_binary64 (g modulus : ℕ) (e : ℤ)
-    (windows : List (ℤ × ℤ)) :
-    regularWindows g modulus e windows
-      = binary64.regularWindows g modulus e windows := rfl
-
-/-- `not_hit` over binary64's box. -/
-theorem regular_not_hit {g modulus : ℕ} {e : ℤ} {windows : List (ℤ × ℤ)}
-    {q lo hi : ℤ} {y : ℕ} (f : ℕ) (hr : binary64.Regular f e)
-    (hmodulus : 0 < modulus)
-    (hcert : (regularWindows g modulus e windows).refutedBy q = true)
-    (hmem : (lo, hi) ∈ windows) (hy : y = g * f % modulus)
-    (hlo : lo ≤ (y : ℤ)) (hhi : (y : ℤ) ≤ hi) :
-    False := by
-  rw [regular_windows_eq_binary64] at hcert
-  exact Format.regular_not_hit f hr hmodulus hcert hmem hy hlo hhi
-
 /-! ### Certificate search
 
 Nothing below is trusted. `ModWindows.search` runs during elaboration, outside
