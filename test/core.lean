@@ -974,10 +974,9 @@ best rational approximations. The Euclidean remainder `v` that produces `qc` is
 the error `|g·qc - modulus·p|`, and a certificate has to fit
 `q·(hi - lo) + (f1 - f0)·v` inside one modulus, so the loop waits for the box
 term alone to fit. Waiting reads no window and skips the small denominators,
-leaving few window checks per problem. Such a denominator leaves the span of
-`q·y - f·r` at about `2·√(n·(hi-lo)/modulus)` of `modulus`, where `n` is the
-number of significands in the box, so it fits between consecutive multiples with
-room to spare.
+leaving few window checks per problem. Balancing the two terms puts the span at
+about `2·√(n·(hi-lo)/modulus)` of the modulus for a box of `n` significands,
+which is what leaves room between consecutive multiples.
 -/
 private def modCertSearch (w : ModWindows) : ℕ → ℤ → ℤ → ℤ → ℤ → ℤ
   | 0, _, _, _, qc => qc
