@@ -89,24 +89,14 @@ theorem layout : Layout binary128 := ⟨by decide, by decide⟩
 
 /-! ## The fixed-point logarithms
 
-Three facts that follow from the constants by integer arithmetic once `omega` can
-see them. The `rfl` lemmas exist only to expose the literals: `binary128` is a
+Two facts that follow from the constants by integer arithmetic once `omega` can
+see them. The `rfl` lemma exists only to expose the literals: `binary128` is a
 structure literal, and `omega` treats a projection of one as an opaque atom.
 -/
-
-private theorem dec_exp_eq (e : ℤ) :
-    binary128.decimalExponent e = e * 20_201_781 / 2 ^ 26 := rfl
 
 private theorem shift_raw_eq (e : ℤ) :
     shiftRaw (⟨e⟩ : FPExp binary128)
       = e + (-(e * 20_201_781 / 2 ^ 26) * 55_732_705) / 2 ^ 24 := rfl
-
-/-- The decimal exponent's range, which bounds the table indices the sweep below
-    has to cover. -/
-private theorem dec_exp_range (e : ℤ) (hlo : -16494 ≤ e) (hhi : e ≤ 16271) :
-    -4966 ≤ binary128.decimalExponent e ∧ binary128.decimalExponent e ≤ 4898 := by
-  rw [dec_exp_eq]
-  omega
 
 /-- The shift leaves the four-bit digit slot intact. A magnitude fact, so the
     constants give it to `omega` directly. -/
@@ -133,17 +123,13 @@ that it belongs with the rest of the cost.
 -/
 
 /-- The table entry at every index yy can read is a normalized 256-bit number. -/
-private theorem table_sweep :
-    ∀ k ∈ Finset.Icc (-4898 : ℤ) 4966,
-      2 ^ 255 * binary128.power10Den k ≤ binary128.power10Num k ∧
-        binary128.power10Num k < 2 ^ 256 * binary128.power10Den k := by
-  decide +kernel
+instance : binary128.TableNormalized where
+  ratio := by decide +kernel
 
 private theorem table (e : ℤ) (hlo : -16494 ≤ e) (hhi : e ≤ 16271) :
-    TableNormalized (⟨e⟩ : FPExp binary128) := by
-  obtain ⟨h1, h2⟩ := dec_exp_range e hlo hhi
-  exact table_sweep (-binary128.decimalExponent e)
-    (by simp only [Finset.mem_Icc]; omega)
+    TableNormalized (⟨e⟩ : FPExp binary128) :=
+  binary128.power10_ratio_normalized hlo hhi
+    (-binary128.decimalExponent e) (by omega)
 
 /-! ## The truncated power of ten
 

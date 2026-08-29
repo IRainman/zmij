@@ -665,33 +665,36 @@ theorem Format.power10_significand_bounds (fmt : Format) {k : ℤ}
   exact ⟨(Nat.le_div_iff_mul_le (fmt.power10_den_pos k)).mpr hlo,
     (Nat.div_lt_iff_lt_mul (fmt.power10_den_pos k)).mpr hhi⟩
 
-/-- The fixed-point exponent does normalize `10^k`, over `[-293, 324]`: the
-    union of the ranges the two indices reach, `[-292, 324]` for `10^(-k)` and
-    `[-293, 323]` for `10^(-k-1)`. Beyond it the approximation eventually drifts
-    from `⌊k·log₂10⌋ + 1`, so this is where the range is pinned down. In ratio
-    form the check is two comparisons of naturals per exponent.
+/-- That the fixed-point exponent normalizes `10^k` at every index the format
+    reaches: `[-kmax, -kmin]` for the index at a decimal exponent, one lower for
+    the index below it. Outside that range the approximation eventually drifts
+    from `⌊k·log₂10⌋ + 1`, so this is a fact about the format's `log2Ten` and
+    not a consequence of the other fields. Each format supplies it as an
+    instance, swept where the format can afford the sweep. -/
+class Format.TableNormalized (fmt : Format) : Prop where
+  /-- In ratio form the check is two comparisons of naturals per index. -/
+  ratio : ∀ k ∈ Finset.Icc (-fmt.kmax - 1) (-fmt.kmin),
+    2 ^ (fmt.p10Width - 1) * fmt.power10Den k ≤ fmt.power10Num k ∧
+      fmt.power10Num k < 2 ^ fmt.p10Width * fmt.power10Den k
 
-    This one stays here, rather than moving to the file of the implementation
-    that needs it, because two algorithms share it and it costs 180ms. A format
-    whose table is wide enough for the sweep to be expensive should discharge
-    `Format.power10_significand_bounds` in its own file. -/
-theorem power10_ratio_normalized :
-    ∀ k ∈ Finset.Icc (-293 : ℤ) 324,
-      2 ^ 127 * binary64.power10Den k ≤ binary64.power10Num k ∧
-        binary64.power10Num k < 2 ^ 128 * binary64.power10Den k := by
-  -- This enumerates 618 exponents. `+kernel` keeps it out of the elaborator,
-  -- whose recursion and exponentiation guards it would otherwise trip.
-  decide +kernel
+/-- The bounds at either index a caller reads for a value at `e`: the one for
+    its decimal exponent, or the one below. Which indices an exponent range
+    reaches is a derivation, so a caller names its exponent, not an interval. -/
+theorem Format.power10_ratio_normalized (fmt : Format) [h : fmt.TableNormalized]
+    {e : ℤ} (hlo : fmt.emin ≤ e) (hhi : e ≤ fmt.emax) (k : ℤ)
+    (hk : -fmt.decimalExponent e - 1 ≤ k ∧ k ≤ -fmt.decimalExponent e) :
+    2 ^ (fmt.p10Width - 1) * fmt.power10Den k ≤ fmt.power10Num k ∧
+      fmt.power10Num k < 2 ^ fmt.p10Width * fmt.power10Den k := by
+  obtain ⟨h1, h2⟩ := fmt.decimal_exponent_range hlo hhi
+  exact h.ratio k (Finset.mem_Icc.mpr (by omega))
 
-/-- Hence the significand is a normalized 128-bit number: its top bit is set,
-    which is what makes `power10Exponent` an exponent for a 128-bit significand,
-    and it still fits in 128 bits. -/
-theorem power10_significand_bounds (k : ℤ) (hk : -293 ≤ k ∧ k ≤ 324) :
-    2 ^ 127 ≤ binary64.power10Significand k
-      ∧ binary64.power10Significand k < 2 ^ 128 := by
-  obtain ⟨hlo, hhi⟩ :=
-    power10_ratio_normalized k (by simpa [Finset.mem_Icc] using hk)
-  exact binary64.power10_significand_bounds hlo hhi
+/-- binary64's sweep stays here, rather than moving to the file of the
+    implementation that needs it, because two algorithms share it and it costs
+    180ms over its 618 indices. -/
+instance : binary64.TableNormalized where
+  -- `+kernel` keeps the enumeration out of the elaborator, whose recursion and
+  -- exponentiation guards it would otherwise trip.
+  ratio := by decide +kernel
 
 /-! ## Certified exact comparisons
 

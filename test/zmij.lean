@@ -586,8 +586,8 @@ theorem err_bounds (f : ℕ) (e : ℤ) (hr : binary64.Regular f e) :
 /-- The power of ten is normalized in cleared form too. -/
 theorem num_bounds (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
     2 ^ 127 * den e ≤ num e ∧ num e < 2 ^ 128 * den e :=
-  power10_ratio_normalized (-(binary64.decimalExponent e + 1))
-    (by simp only [Finset.mem_Icc, Format.decimalExponent, binary64]; omega)
+  binary64.power10_ratio_normalized he.1 he.2
+    (-(binary64.decimalExponent e + 1)) (by omega)
 
 /-- In particular one ULP is positive, which is what makes both coarse
     boundaries genuine ones. -/
@@ -860,9 +860,8 @@ private theorem two_unit_eq (e : ℤ) (hs : exponentShift e ≤ 9) :
 theorem half_bounds (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
     0 < half e ∧ half e < 2 ^ 64 := by
   obtain ⟨hs6, hs9⟩ := exponent_shift_range e he
-  obtain ⟨hlo, hhi⟩ :=
-    power10_significand_bounds (-(binary64.decimalExponent e + 1))
-      (by simp only [Format.decimalExponent, binary64]; omega)
+  obtain ⟨hn, hn'⟩ := num_bounds e he
+  obtain ⟨hlo, hhi⟩ := binary64.power10_significand_bounds hn hn'
   have hlo' : (2 : ℕ) ^ 127 ≤ p10 e := hlo
   have hhi' : p10 e < 2 ^ 128 := hhi
   have htwo := two_unit_eq e hs9

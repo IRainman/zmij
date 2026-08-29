@@ -2182,12 +2182,11 @@ private theorem b64_shift_lt_four (e : ℤ) (hlo : -1074 ≤ e) (hhi : e ≤ 971
   rw [b64_shift_raw_eq]
   omega
 
-/-- The table entry is normalized, from `core`'s sweep: `-decimalExponent e`
-    runs over `[-292, 324]`, inside the interval that sweep enumerates. -/
+/-- The table entry is normalized, from binary64's sweep in `core`. -/
 private theorem b64_table (e : ℤ) (hlo : -1074 ≤ e) (hhi : e ≤ 971) :
     TableNormalized (⟨e⟩ : FPExp binary64) :=
-  power10_ratio_normalized (-binary64.decimalExponent e)
-    (by simp only [Finset.mem_Icc, Format.decimalExponent, binary64]; omega)
+  binary64.power10_ratio_normalized hlo hhi
+    (-binary64.decimalExponent e) (by omega)
 
 private theorem b64_trim_checks :
     ∀ e ∈ Finset.Icc (-1074 : ℤ) 971,
