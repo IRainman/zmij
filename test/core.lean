@@ -188,8 +188,9 @@ private theorem eq_of_abs_sub_eq_of_lt_half {x : ℚ} {d d' : ℕ}
 /-- A candidate within half a grid step is correctly rounded if an exact
     midpoint is resolved to an even candidate. The factor `10^k` is positive, so
     it cancels from every comparison, leaving comparisons in the scaled
-    domain. -/
-private theorem correctly_rounded_of_le_half (f : ℕ) (e : ℤ) (d : ℕ) (k : ℤ)
+    domain. An implementation that rounds to a grid the caller chose, rather
+    than to a shortest representation, asks for nothing else. -/
+theorem correctly_rounded_of_le_half (f : ℕ) (e : ℤ) (d : ℕ) (k : ℤ)
     (hle : |(d : ℚ) - value f e * 10 ^ (-k)| ≤ 1 / 2)
     (heven : |(d : ℚ) - value f e * 10 ^ (-k)| = 1 / 2 → d % 2 = 0) :
     CorrectlyRounded f e d k := by

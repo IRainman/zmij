@@ -23,3 +23,10 @@ roots = ["yy128"]
 name = "yy80"
 srcDir = "."
 roots = ["yy80"]
+
+# The fixed-precision certificates sweep every (exponent, precision) pair, so
+# they are opt-in as well: `lake build «zmij-p»`.
+[[lean_lib]]
+name = "«zmij-p»"
+srcDir = "."
+roots = ["«zmij-p»"]
