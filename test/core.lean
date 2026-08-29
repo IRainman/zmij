@@ -481,8 +481,8 @@ it needs through its own format, as `binary64.decimalExponent`.
 
 /-! ### Floating-point formats -/
 
-/-- A binary format, as the layers below need it: precision, exponent range, the
-    width of the base integer type an implementation computes in, and
+/-- A binary format, as the layers below need it: precision, exponent range,
+    the width of the base integer type an implementation computes in, and
     fixed-point approximations of `log₁₀2` and `log₂10` as a numerator over a
     power of two. Those two approximations are the only part of a format that
     has to be checked rather than derived, and how far they can be trusted is
