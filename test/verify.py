@@ -13,6 +13,11 @@ instead of checking it.
 It ports Żmij's `to_decimal<double>`, derives its edge cases, and checks
 them across all significands of every binary exponent.
 
+`--test` runs sanity tests for the machinery instead of that sweep: the
+counting helpers against a naive brute-force reference and against oracle-free
+invariants at the scale they are used at, the truncation slack behind
+ERROR_MARGIN, and the port against Python's repr on random doubles.
+
 Inspired by YaoYuan's (yy) verify.py. Żmij's rounding differs, so we re-derive
 the boundaries here and use floor_sum instead of continued fractions and the
 three-gap theorem.
@@ -69,6 +74,8 @@ so "fractional == V" holds exactly when
 which count_mod_mul_solutions / enumerate_mod_mul_solutions answer directly.
 """
 
+import math
+import random
 import struct
 from fractions import Fraction
 from typing import Iterator, List, Optional, Set, Tuple
@@ -534,6 +541,241 @@ def write_boundary_header(path: str, bits: List[int]) -> None:
             f.write(f"0x{b:016x},  // {value!r}\n")
 
 
+# --- sanity tests ----------------------------------------------------------
+#
+# The sweep above is only as good as the counting it rests on, so --test checks
+# that machinery separately: the two solution finders against a naive
+# brute-force reference over small inputs, count_mod_mul_solutions in the
+# large-integer regime it is actually used in (via oracle-free invariants and a
+# full-period closed form), the truncation slack ERROR_MARGIN stands for, and
+# the port itself against Python's repr on random doubles.
+
+
+def count_mod_mul_solutions_naive(p: int, q: int,
+                                  x_min: int, x_max: int,
+                                  y_min: int, y_max: int,
+                                  add: int = 0) -> int:
+    """Naive reference for `count_mod_mul_solutions`."""
+    assert 0 < p and 0 < q
+    assert 0 <= x_min <= x_max
+    assert 0 <= y_min <= y_max
+    x_count = 0
+    for x in range(x_min, x_max + 1):
+        y = (p * x + add) % q
+        if y_min <= y <= y_max:
+            x_count += 1
+    return x_count
+
+
+def test_count_mod_mul_solutions() -> None:
+    """Validate count_mod_mul_solutions against the naive reference."""
+    print("count_mod_mul_solutions ... ", end="", flush=True)
+    for mod in range(1, 17):
+        for num in range(1, 17):
+            for x_min in range(0, 8):
+                for x_max in range(x_min, x_min + 8):
+                    for y_min in range(0, mod + 2):
+                        for y_max in range(y_min, mod + 2):
+                            args = (num, mod, x_min, x_max, y_min, y_max)
+                            fast = count_mod_mul_solutions(*args)
+                            naive = count_mod_mul_solutions_naive(*args)
+                            assert fast == naive, (*args, fast, naive)
+    print("ok")
+
+
+def test_count_affine() -> None:
+    """
+    Validate the optional affine `add` against the naive reference, sweeping
+    `add` past `mod` to exercise the (num * x + add) % mod wraparound.
+    """
+    print("count affine ... ", end="", flush=True)
+    for mod in range(1, 13):
+        for num in range(1, 13):
+            for add in (0, 1, 5, mod, 2 * mod + 3):
+                for x_min in range(0, 5):
+                    for x_max in range(x_min, x_min + 5):
+                        for y_min in range(0, mod + 2):
+                            for y_max in range(y_min, mod + 2):
+                                args = (num, mod, x_min, x_max, y_min, y_max)
+                                fast = count_mod_mul_solutions(*args, add=add)
+                                naive = count_mod_mul_solutions_naive(*args,
+                                                                      add=add)
+                                assert fast == naive, (*args, add, fast, naive)
+    print("ok")
+
+
+def test_count_affine_shift(trials: int = 10000) -> None:
+    """
+    Large-scale oracle: adding `add` shifts every residue num*x by (add % mod)
+    on the ring, so the affine count over [y_min, y_max] equals the plain count
+    over the back-shifted band, wrapping into two pieces when it crosses 0.
+    """
+    print("count affine shift ... ", end="", flush=True)
+    rng = random.Random(5)
+    for _ in range(trials):
+        mod = rng.randint(1, 1 << 60)
+        num = rng.randint(1, 1 << 60)
+        add = rng.randint(0, 1 << 62)
+        x_min = rng.randint(0, 1 << 50)
+        x_max = x_min + rng.randint(0, 1 << 40)
+        y_min = rng.randint(0, mod - 1)
+        y_max = rng.randint(y_min, mod - 1)
+        got = count_mod_mul_solutions(num, mod, x_min, x_max,
+                                      y_min, y_max, add=add)
+        s = add % mod
+        lo, hi = y_min - s, y_max - s     # back-shift the target band by s
+        if lo >= 0:                       # band stays within [0, mod)
+            want = count_mod_mul_solutions(num, mod, x_min, x_max, lo, hi)
+        elif hi < 0:                      # whole band shifted below 0, one piece
+            want = count_mod_mul_solutions(num, mod, x_min, x_max,
+                                           lo + mod, hi + mod)
+        else:                             # straddles 0: split at the seam
+            want = (count_mod_mul_solutions(num, mod, x_min, x_max,
+                                            lo + mod, mod - 1)
+                    + count_mod_mul_solutions(num, mod, x_min, x_max, 0, hi))
+        assert got == want, (num, mod, add, x_min, x_max, y_min, y_max,
+                             got, want)
+    print(f"ok ({trials:,} trials)")
+
+
+def test_count_full_period(trials: int = 10000) -> None:
+    """
+    Full-period closed form, an exact oracle at arbitrary scale.
+
+    Over x in [0, mod-1] the value num*x % mod hits each multiple of
+    g = gcd(num, mod) exactly g times, so the count equals
+    g * (#multiples of g in [y_min, y_max]). Exercises inputs far beyond the
+    reach of the brute-force reference.
+    """
+    print("count full period ... ", end="", flush=True)
+    rng = random.Random(3)
+    for _ in range(trials):
+        mod = rng.randint(1, 1 << 60)
+        num = rng.randint(1, 1 << 60)
+        if rng.random() < 0.5:  # force a nontrivial common factor sometimes
+            g = rng.randint(2, 1000)
+            num, mod = num * g, mod * g
+        y_min = rng.randint(0, mod - 1)
+        y_max = rng.randint(y_min, mod - 1 + (1 << 20))
+        got = count_mod_mul_solutions(num, mod, 0, mod - 1, y_min, y_max)
+        g = math.gcd(num, mod)
+        hi = min(y_max, mod - 1)
+        want = g * (hi // g - (y_min - 1) // g) if y_min <= hi else 0
+        assert got == want, (num, mod, y_min, y_max, got, want)
+    print(f"ok ({trials:,} trials)")
+
+
+def test_count_metamorphic(trials: int = 10000) -> None:
+    """
+    Oracle-free invariants at large scale: additivity over the x-range and the
+    y-interval, plus full coverage of the residues [0, mod-1].
+    """
+    print("count metamorphic ... ", end="", flush=True)
+    rng = random.Random(4)
+    for _ in range(trials):
+        mod = rng.randint(1, 1 << 60)
+        num = rng.randint(1, 1 << 60)
+        x_min = rng.randint(0, 1 << 50)
+        x_max = x_min + rng.randint(0, 1 << 40)
+        y_min = rng.randint(0, mod - 1)
+        y_max = rng.randint(y_min, mod - 1)
+        whole = count_mod_mul_solutions(num, mod, x_min, x_max, y_min, y_max)
+
+        if x_max > x_min:  # additivity over the x-range
+            k = rng.randint(x_min, x_max - 1)
+            left = count_mod_mul_solutions(num, mod, x_min, k, y_min, y_max)
+            right = count_mod_mul_solutions(num, mod, k + 1, x_max,
+                                            y_min, y_max)
+            assert whole == left + right, ("x", num, mod, x_min, x_max, k)
+
+        if y_max > y_min:  # additivity over the y-interval
+            t = rng.randint(y_min, y_max - 1)
+            lo = count_mod_mul_solutions(num, mod, x_min, x_max, y_min, t)
+            hi = count_mod_mul_solutions(num, mod, x_min, x_max, t + 1, y_max)
+            assert whole == lo + hi, ("y", num, mod, y_min, y_max, t)
+
+        # every x lands in exactly one residue of [0, mod-1]
+        cover = count_mod_mul_solutions(num, mod, x_min, x_max, 0, mod - 1)
+        assert cover == x_max - x_min + 1, ("cover", num, mod, x_min, x_max)
+    print(f"ok ({trials:,} trials)")
+
+
+def test_enumerate_mod_mul_solutions() -> None:
+    """Validate enumerate_mod_mul_solutions against the naive scan."""
+    print("enumerate_mod_mul_solutions ... ", end="", flush=True)
+    for mod in range(1, 13):
+        for num in range(1, 13):
+            for x_min in range(0, 6):
+                for x_max in range(x_min, x_min + 6):
+                    residues = [(x, num * x % mod)
+                                for x in range(x_min, x_max + 1)]
+                    for y_min in range(0, mod + 2):
+                        for y_max in range(y_min, mod + 2):
+                            args = (num, mod, x_min, x_max, y_min, y_max)
+                            got = list(enumerate_mod_mul_solutions(*args))
+                            hi = min(y_max, mod - 1)
+                            want = [(x, r) for x, r in residues
+                                    if y_min <= r <= hi]
+                            assert got == want, (*args, got, want)
+    print("ok")
+
+
+def test_fractional_error_bound(samples: int = 100000) -> None:
+    """
+    Confirm the truncated `fractional` equals floor(2^64 * true_fraction) up to
+    a small slack, justifying ERROR_MARGIN. Uses exact rational arithmetic.
+    """
+    print("fractional error bound ... ", end="", flush=True)
+    rng = random.Random(1)
+    implicit = 1 << NUM_SIG_BITS
+    mask64 = (1 << 64) - 1
+    max_slack = 0
+    for _ in range(samples):
+        raw_exp = rng.randint(1, 2046)
+        bin_sig = rng.randint(implicit, (1 << (NUM_SIG_BITS + 1)) - 1)
+        bin_exp, dec_exp, shift, pow10 = exp_params(raw_exp)
+        s = 64 + EXTRA_SHIFT - shift  # matches to_decimal's (p >> EXTRA_SHIFT)
+        fast = (pow10 * bin_sig // (1 << s)) & mask64
+        exact = exact_fractional(bin_sig, bin_exp, dec_exp)
+        slack = (fast - exact) & mask64
+        slack = min(slack, (1 << 64) - slack)  # distance on the ring
+        max_slack = max(max_slack, slack)
+    assert max_slack < ERROR_MARGIN, max_slack
+    print(f"ok (max slack {max_slack} over {samples:,} samples)")
+
+
+def test_sample(samples: int = 100000) -> None:
+    """Spot-check the Żmij port against Python's repr on random doubles."""
+    print("sample ... ", end="", flush=True)
+    rng = random.Random(2)
+    for _ in range(samples):
+        bits = rng.getrandbits(64) & ((1 << 63) - 1)  # non-negative finite-ish
+        value = struct.unpack("<d", struct.pack("<Q", bits))[0]
+        if value != value or value in (float("inf"),) or value == 0.0:
+            continue
+        raw_exp = (bits >> NUM_SIG_BITS) & 0x7FF
+        frac = bits & ((1 << NUM_SIG_BITS) - 1)
+        if raw_exp == 0:
+            bin_sig, raw_exp = frac, 1
+        else:
+            bin_sig = frac | (1 << NUM_SIG_BITS)
+        assert check_value(bin_sig, raw_exp), \
+            (raw_exp, bin_sig, value, to_decimal(bin_sig, raw_exp))
+    print(f"ok ({samples:,} samples)")
+
+
+def run_tests() -> None:
+    """Run every sanity test."""
+    test_count_mod_mul_solutions()
+    test_count_affine()
+    test_count_affine_shift()
+    test_count_full_period()
+    test_count_metamorphic()
+    test_enumerate_mod_mul_solutions()
+    test_fractional_error_bound()
+    test_sample()
+
+
 if __name__ == "__main__":
     import argparse
 
@@ -543,9 +785,15 @@ if __name__ == "__main__":
         "--dump-boundaries", metavar="HEADER",
         help="also write the directly-checked boundary doubles (bit patterns) "
              "to a C++ header for cross-testing the C++ implementation")
+    parser.add_argument(
+        "--test", action="store_true",
+        help="run the sanity tests for the counting machinery and the port "
+             "instead of the sweep")
     args = parser.parse_args()
 
-    if args.dump_boundaries:
+    if args.test:
+        run_tests()
+    elif args.dump_boundaries:
         _boundary_dump = set()
         find_edge_cases()
         write_boundary_header(args.dump_boundaries, sorted(_boundary_dump))
