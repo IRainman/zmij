@@ -311,10 +311,6 @@ def TableNormalized (e : FPExp fmt) : Prop :=
   2 ^ (fmt.p10Width - 1) * trimDen e ≤ trimNum e ∧
     trimNum e < 2 ^ fmt.p10Width * trimDen e
 
-theorem trim_sig_bounds (e : FPExp fmt) (hnorm : TableNormalized e) :
-    2 ^ (fmt.p10Width - 1) ≤ trimSig e ∧ trimSig e < 2 ^ fmt.p10Width :=
-  fmt.power10_significand_bounds hnorm.1 hnorm.2
-
 /-- Modulus of the packed comparison: the window wraps every 10·2^(2w-h). -/
 def trimModulus (e : FPExp fmt) : ℕ := 10 * 2 ^ (fmt.p10Width - exponentShift e)
 
