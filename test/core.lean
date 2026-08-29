@@ -107,13 +107,43 @@ ten can be, which is how an implementation gets away with testing two
 candidates.
 -/
 
-/-! ### Nearest values on a decimal grid
+/-! ### The method
 
-Scaled by `10^(-k)`, the grid at `k` becomes the integers, so correct rounding
-means choosing a nearest integer to the scaled value, with ties resolved to
-even. Half a step is then enough: distinct candidates are at least one step
-apart, so a candidate within half a step is nearest, and one strictly within
-half a step is uniquely nearest.
+The rule above, written down, and the reduction that follows it. Everything
+after this subsection is machinery for `exact_candidate_correct`.
+-/
+
+/-- Whether some multiple of ten round-trips on the grid at `k`. -/
+def CoarseRoundtrip (f : ℕ) (e k : ℤ) : Prop :=
+  ∃ c : ℕ, c % 10 = 0 ∧ Roundtrips f e (c * 10 ^ k)
+
+/-- The exact method: a multiple of ten that round-trips if one exists, and
+    otherwise a nearest value on the grid at `k`, ties to even. The second case
+    says what the computation establishes, a half-step bound and evenness at an
+    exact midpoint, rather than the correct rounding those two imply. -/
+def ExactCandidate (f : ℕ) (e k : ℤ) (d : ℕ) : Prop :=
+  let x := value f e * 10 ^ (-k)
+  (d % 10 = 0 ∧ Roundtrips f e (d * 10 ^ k)) ∨
+    (¬CoarseRoundtrip f e k ∧ |(d : ℚ) - x| ≤ 1 / 2 ∧
+      (|(d : ℚ) - x| = 1 / 2 → d % 2 = 0))
+
+/-- Removes trailing zeros from a decimal significand, shifting the exponent to
+    preserve the represented value. -/
+def reduceDecimal (d : ℕ) (k : ℤ) : ℕ × ℤ :=
+  if 0 < d ∧ d % 10 = 0 then reduceDecimal (d / 10) (k + 1)
+  else (d, k)
+termination_by d
+decreasing_by omega
+
+/-! ### The scaled domain
+
+Scaled by `10^(-k)`, the grid at `k` becomes the integers, the exact value
+becomes `x`, and one ULP becomes `u = ulp e · 10^(-k)` grid steps. Both of the
+method's cases are distances to `x` there: a round-trip is a bound on `|d - x|`
+by `u / 2`, non-strict for even `f` and strict for odd, and correct rounding is
+choosing a nearest integer, ties to even. Half a step settles the second,
+distinct candidates being at least one step apart, so a candidate within half a
+step is nearest and one strictly within is uniquely nearest.
 -/
 
 /-- Scaling by the positive factor `10^k` carries a distance in the scaled
@@ -174,14 +204,6 @@ private theorem correctly_rounded_of_le_half (f : ℕ) (e : ℤ) (d : ℕ) (k : 
     · exact Or.inl
         (eq_of_abs_sub_eq_of_lt_half hlt (mul_right_cancel₀ (ne_of_gt hp) hd'))
     · exact Or.inr (heven heq)
-
-/-! ### Round-trips in the scaled domain
-
-Scaled by `10^(-k)`, the grid at `k` becomes the integers, the exact value
-becomes `x` and one ULP becomes `u = ulp e · 10^(-k)` grid steps. A round-trip
-is then a bound on `|d - x|` by `u / 2`, non-strict for even `f` and strict for
-odd `f`.
--/
 
 /-- Scaling by the positive factor `10^k` preserves the rounding bounds, so a
     round-trip on the grid at `k` is the scaled half-ULP bound. -/
@@ -256,36 +278,7 @@ private theorem roundtrips_of_le_half (f : ℕ) (e k : ℤ) (d : ℕ)
     split_ifs <;> norm_num
   · split_ifs <;> linarith
 
-/-! ### The method
-
-Both cases are now sayable: a multiple of ten that round-trips, or, when there is
-none, a nearest point in the scaled domain. Everything after this subsection is
-machinery for `exact_candidate_correct`.
--/
-
-/-- Whether some multiple of ten round-trips on the grid at `k`. -/
-def CoarseRoundtrip (f : ℕ) (e k : ℤ) : Prop :=
-  ∃ c : ℕ, c % 10 = 0 ∧ Roundtrips f e (c * 10 ^ k)
-
-/-- The exact method: a multiple of ten that round-trips if one exists, and
-    otherwise a nearest value on the grid at `k`, ties to even. The second case
-    says what the computation establishes, a half-step bound and evenness at an
-    exact midpoint, rather than the correct rounding those two imply. -/
-def ExactCandidate (f : ℕ) (e k : ℤ) (d : ℕ) : Prop :=
-  let x := value f e * 10 ^ (-k)
-  (d % 10 = 0 ∧ Roundtrips f e (d * 10 ^ k)) ∨
-    (¬CoarseRoundtrip f e k ∧ |(d : ℚ) - x| ≤ 1 / 2 ∧
-      (|(d : ℚ) - x| = 1 / 2 → d % 2 = 0))
-
 /-! ### Decimal reduction -/
-
-/-- Removes trailing zeros from a decimal significand, shifting the exponent to
-    preserve the represented value. -/
-def reduceDecimal (d : ℕ) (k : ℤ) : ℕ × ℤ :=
-  if 0 < d ∧ d % 10 = 0 then reduceDecimal (d / 10) (k + 1)
-  else (d, k)
-termination_by d
-decreasing_by omega
 
 private theorem reduce_reduced (d : ℕ) (k : ℤ) :
     (reduceDecimal d k).1 = 0 ∨ (reduceDecimal d k).1 % 10 ≠ 0 := by
@@ -327,7 +320,7 @@ private theorem ten_pow_succ_shift (d : ℕ) (k : ℤ) :
   rw [show d * 10 = d * 10 ^ 1 from by ring, ten_pow_shift d 1]
   norm_num
 
-/-! ### Uniqueness on the coarse grid -/
+/-! ### Correctness -/
 
 /-- The multiples of ten on the grid at `k` are exactly the values on the grid
     at `k + 1`, the two descriptions differing only by a factor of ten in the
@@ -362,8 +355,6 @@ private theorem coarse_roundtrip_unique (f : ℕ) (e k : ℤ)
   have hn₂ : c₂ < c₁ + 10 := by
     exact_mod_cast (show (c₂ : ℚ) < (c₁ : ℚ) + 10 by linarith)
   omega
-
-/-! ### Correctness -/
 
 /-- A candidate with no trailing zero that is the only value round-tripping on
     its grid is both shortest and correctly rounded. Nothing coarser
