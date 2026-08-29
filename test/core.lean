@@ -491,25 +491,6 @@ structure Format where
 
 abbrev Format.p10Width (fmt : Format) : ℕ := 2 * fmt.width
 
-/-- IEEE 754 binary64. -/
-def binary64 : Format where
-  prec := 53
-  emin := -1074
-  emax := 971
-  width := 64
-  log10Two := (315_653, 20)
-  log2Ten  := (217_707, 16)
-
-/-- IEEE 754 binary128. -/
-def binary128 : Format where
-  prec := 113
-  emin := -16494
-  emax := 16271
-  width := 128
-  -- The smallest power-of-two denominators exact over this range.
-  log10Two := (20_201_781, 26)
-  log2Ten  := (55_732_705, 24)
-
 /-! ### Regularly spaced values -/
 
 /-- Whether f·2^e is a regularly spaced positive value of the format: a normal
@@ -657,6 +638,27 @@ theorem Format.power10_ratio_normalized (fmt : Format)
       fmt.power10Num k < 2 ^ fmt.p10Width * fmt.power10Den k := by
   obtain ⟨h1, h2⟩ := fmt.decimal_exponent_range hlo hhi
   exact h.ratio k (Finset.mem_Icc.mpr (by omega))
+
+/-! ### Concrete formats -/
+
+/-- IEEE 754 binary64. -/
+def binary64 : Format where
+  prec := 53
+  emin := -1074
+  emax := 971
+  width := 64
+  log10Two := (315_653, 20)
+  log2Ten  := (217_707, 16)
+
+/-- IEEE 754 binary128. -/
+def binary128 : Format where
+  prec := 113
+  emin := -16494
+  emax := 16271
+  width := 128
+  -- The smallest power-of-two denominators exact over this range.
+  log10Two := (20_201_781, 26)
+  log2Ten  := (55_732_705, 24)
 
 /-- The table entry at every index either algorithm reads is normalized. -/
 instance : binary64.Power10Normalized where
@@ -883,62 +885,14 @@ theorem ModWindows.not_hit (w : ModWindows) (f : ℕ) (hmodulus : 0 < w.modulus)
     ring
   exact w.not_hit_rep f hmodulus hcert hmem hf0 hf1 hyz hlo hhi
 
-/-! ### The significand box
-
-Nothing above knows what the significands are. Every implementation asks its
-question over the same ones, `Regular` being all it knows about `f`, so the box
-and the two bounds a certificate needs of it belong here rather than in each
-implementation.
--/
-
-/-- A window problem over the significands `Regular` admits at `e`. The box is
-    the tighter one above the minimum exponent, which the certificates need. -/
-def Format.regularWindows (fmt : Format) (g modulus : ℕ) (e : ℤ)
-    (windows : List (ℤ × ℤ)) : ModWindows where
-  g := g
-  modulus := modulus
-  f0 := if e = fmt.emin then 1 else 2 ^ (fmt.prec - 1) + 1
-  f1 := 2 ^ fmt.prec - 1
-  windows := windows
-
-/-- `Regular` puts the significand in the box. Separate from
-    `Format.regular_not_hit` because a problem recentred on one significand asks
-    the same of the rest. -/
-theorem Format.regular_box {fmt : Format} {g modulus : ℕ} {e : ℤ}
-    {windows : List (ℤ × ℤ)} {f : ℕ} (hr : fmt.Regular f e) :
-    (fmt.regularWindows g modulus e windows).f0 ≤ f
-      ∧ f ≤ (fmt.regularWindows g modulus e windows).f1 := by
-  constructor <;> simp only [Format.regularWindows]
-  · split_ifs with hmin
-    · exact hr.pos
-    · rcases hr.normal_or_min with h | h
-      · omega
-      · exact absurd h hmin
-  · have := hr.sig_lt
-    omega
-
-/-- `not_hit` over that box: `Regular` discharges the significand bounds, so an
-    implementation supplies only its modulus being positive and its quantity
-    being the residue. -/
-theorem Format.regular_not_hit {fmt : Format} {g modulus : ℕ} {e : ℤ}
-    {windows : List (ℤ × ℤ)} {q lo hi : ℤ} {y : ℕ} (f : ℕ)
-    (hr : fmt.Regular f e) (hmodulus : 0 < modulus)
-    (hcert : (fmt.regularWindows g modulus e windows).refutedBy q = true)
-    (hmem : (lo, hi) ∈ windows) (hy : y = g * f % modulus)
-    (hlo : lo ≤ (y : ℤ)) (hhi : (y : ℤ) ≤ hi) :
-    False :=
-  have hbox := Format.regular_box (g := g) (modulus := modulus)
-    (windows := windows) hr
-  (fmt.regularWindows g modulus e windows).not_hit f hmodulus hcert hmem
-    hbox.1 hbox.2 hy hlo hhi
-
 /-! ### Certificate search
 
-Nothing below is trusted. `ModWindows.search` runs during elaboration, outside
-the proof term, and `modCertTactic` quotes what it returns as a literal for the
-kernel to check against `ModWindows.refutedBy`. A bad multiplier is a failed
-proof rather than an unsound one, so no theorem above depends on how the search
-works, or on whether it terminates with a useful answer at all.
+Nothing in this subsection is trusted. `ModWindows.search` runs during
+elaboration, outside the proof term, and `modCertTactic` quotes what it returns
+as a literal for the kernel to check against `ModWindows.refutedBy`. A bad
+multiplier is a failed proof rather than an unsound one, so no theorem anywhere
+depends on how the search works, or on whether it terminates with a useful
+answer at all.
 -/
 
 /--
@@ -992,3 +946,52 @@ def modCertTactic (search : ℤ → ℤ) : TacticM Unit := do
     | throwError "mod_cert: the index {argument} is not a literal"
   let q ← Term.exprToSyntax (toExpr (search index))
   evalTactic (← `(tactic| exact ⟨$q, by decide +kernel⟩))
+
+/-! ### Windows over regular values
+
+Nothing above knows what the significands are. Every implementation asks its
+question over the same ones, `Regular` being all it knows about `f`, so the box
+and the two bounds a certificate needs of it belong here rather than in each
+implementation.
+-/
+
+/-- A window problem over the significands `Regular` admits at `e`. The box is
+    the tighter one above the minimum exponent, which the certificates need. -/
+def Format.regularWindows (fmt : Format) (g modulus : ℕ) (e : ℤ)
+    (windows : List (ℤ × ℤ)) : ModWindows where
+  g := g
+  modulus := modulus
+  f0 := if e = fmt.emin then 1 else 2 ^ (fmt.prec - 1) + 1
+  f1 := 2 ^ fmt.prec - 1
+  windows := windows
+
+/-- `Regular` puts the significand in the box. Separate from
+    `Format.regular_not_hit` because a problem recentred on one significand asks
+    the same of the rest. -/
+theorem Format.regular_box {fmt : Format} {g modulus : ℕ} {e : ℤ}
+    {windows : List (ℤ × ℤ)} {f : ℕ} (hr : fmt.Regular f e) :
+    (fmt.regularWindows g modulus e windows).f0 ≤ f
+      ∧ f ≤ (fmt.regularWindows g modulus e windows).f1 := by
+  constructor <;> simp only [Format.regularWindows]
+  · split_ifs with hmin
+    · exact hr.pos
+    · rcases hr.normal_or_min with h | h
+      · omega
+      · exact absurd h hmin
+  · have := hr.sig_lt
+    omega
+
+/-- `not_hit` over that box: `Regular` discharges the significand bounds, so an
+    implementation supplies only its modulus being positive and its quantity
+    being the residue. -/
+theorem Format.regular_not_hit {fmt : Format} {g modulus : ℕ} {e : ℤ}
+    {windows : List (ℤ × ℤ)} {q lo hi : ℤ} {y : ℕ} (f : ℕ)
+    (hr : fmt.Regular f e) (hmodulus : 0 < modulus)
+    (hcert : (fmt.regularWindows g modulus e windows).refutedBy q = true)
+    (hmem : (lo, hi) ∈ windows) (hy : y = g * f % modulus)
+    (hlo : lo ≤ (y : ℤ)) (hhi : (y : ℤ) ≤ hi) :
+    False :=
+  have hbox := Format.regular_box (g := g) (modulus := modulus)
+    (windows := windows) hr
+  (fmt.regularWindows g modulus e windows).not_hit f hmodulus hcert hmem
+    hbox.1 hbox.2 hy hlo hhi
