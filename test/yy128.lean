@@ -123,7 +123,7 @@ that it belongs with the rest of the cost.
 -/
 
 /-- The table entry at every index yy can read is a normalized 256-bit number. -/
-instance : binary128.TableNormalized where
+instance : binary128.Power10Normalized where
   ratio := by decide +kernel
 
 private theorem table (e : ℤ) (hlo : -16494 ≤ e) (hhi : e ≤ 16271) :

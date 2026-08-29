@@ -663,7 +663,7 @@ theorem Format.power10_significand_bounds (fmt : Format) {k : ℤ}
     from `⌊k·log₂10⌋ + 1`, so this is a fact about the format's `log2Ten` and
     not a consequence of the other fields. Each format supplies it as an
     instance, swept where the format can afford the sweep. -/
-class Format.TableNormalized (fmt : Format) : Prop where
+class Format.Power10Normalized (fmt : Format) : Prop where
   /-- In ratio form the check is two comparisons of naturals per index. -/
   ratio : ∀ k ∈ Finset.Icc (-fmt.kmax - 1) (-fmt.kmin),
     2 ^ (fmt.p10Width - 1) * fmt.power10Den k ≤ fmt.power10Num k ∧
@@ -672,7 +672,8 @@ class Format.TableNormalized (fmt : Format) : Prop where
 /-- The bounds at either index a caller reads for a value at `e`: the one for
     its decimal exponent, or the one below. Which indices an exponent range
     reaches is a derivation, so a caller names its exponent, not an interval. -/
-theorem Format.power10_ratio_normalized (fmt : Format) [h : fmt.TableNormalized]
+theorem Format.power10_ratio_normalized (fmt : Format)
+    [h : fmt.Power10Normalized]
     {e : ℤ} (hlo : fmt.emin ≤ e) (hhi : e ≤ fmt.emax) (k : ℤ)
     (hk : -fmt.decimalExponent e - 1 ≤ k ∧ k ≤ -fmt.decimalExponent e) :
     2 ^ (fmt.p10Width - 1) * fmt.power10Den k ≤ fmt.power10Num k ∧
@@ -681,7 +682,7 @@ theorem Format.power10_ratio_normalized (fmt : Format) [h : fmt.TableNormalized]
   exact h.ratio k (Finset.mem_Icc.mpr (by omega))
 
 /-- The table entry at every index either algorithm reads is normalized. -/
-instance : binary64.TableNormalized where
+instance : binary64.Power10Normalized where
   -- `+kernel` keeps the enumeration out of the elaborator, whose recursion and
   -- exponentiation guards it would otherwise trip.
   ratio := by decide +kernel
