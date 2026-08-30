@@ -1447,7 +1447,8 @@ ZMIJ_INLINE auto to_decimal(UInt bin_sig, int64_t raw_exp, bool regular,
 }
 
 // Scales bin_sig * 2**bin_exp by 10**-dec_exp and packs the result into an
-// integer above two guard bits (bit 1 is the 1/2 place, bit 0 the sticky bit).
+// integer above two guard bits (bit 1 is the 1/2 place, bit 0 the sticky bit),
+// Schubfach-style.
 template <typename Float>
 ZMIJ_INLINE auto scale(uint64_t bin_sig, int bin_exp, int dec_exp) noexcept
     -> uint64_t {
