@@ -1480,8 +1480,8 @@ struct precision_decimal {
 // Converts a binary FP number bin_sig * 2**bin_exp to a correctly rounded
 // decimal with `precision` significant digits.
 template <typename Float>
-auto to_decimal(uint64_t bin_sig, int bin_exp, int precision) noexcept
-    -> precision_decimal {
+ZMIJ_INLINE auto to_decimal(uint64_t bin_sig, int bin_exp,
+                            int precision) noexcept -> precision_decimal {
   // Choose dec_exp so the scaled integer part (dec_sig) has precision digits.
   constexpr int num_sig_bits = float_traits<Float>::num_sig_bits;
   int dec_exp = compute_dec_exp(bin_exp + num_sig_bits) - (precision - 1);
