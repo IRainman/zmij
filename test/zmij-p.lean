@@ -785,12 +785,12 @@ private theorem dev_near_of_sticky_eq_zero (f : ℕ) (e : ℤ) (p : ℕ)
     the reround's alike, because `exact_eq` writes the exact value as a multiple
     of `halfStep` plus `dev` whatever the guard bits happen to say: the integral
     part counts the steps and the 1/2 bit the odd half-step. -/
-private theorem dev_eq_zero (f : ℕ) (e : ℤ) (hin : Normalized f e) (p : ℕ)
+private theorem dev_eq_zero (f : ℕ) (e : ℤ) (hnorm : Normalized f e) (p : ℕ)
     (hp : 1 ≤ p ∧ p ≤ 18) (hsticky : sticky f e p = 0) : dev f e p = 0 := by
   have hs := point_shift_bounds p (by simpa using hp) e
-    (by simpa using hin.exp)
-  have hsig := hin.sig
-  have hnear := dev_near_of_sticky_eq_zero f e p hin.sig.2 hsticky
+    (by simpa using hnorm.exp)
+  have hsig := hnorm.sig
+  have hnear := dev_near_of_sticky_eq_zero f e p hnorm.sig.2 hsticky
   -- All this proof supplies is that `dev` is the residue: the integral part and
   -- the 1/2 bit count the multiples of the modulus, and `dev` is what is left.
   have hres : dev f e p = (tieWindows e p).g * f
@@ -802,7 +802,7 @@ private theorem dev_eq_zero (f : ℕ) (e : ℤ) (hin : Normalized f e) (p : ℕ)
     linarith
   exact (tieWindows e p).eq_zero_of_near f
     (by simpa only [tieWindows] using half_step_pos e p)
-    (tie_windows_refuted hin.exp hp).choose_spec (s := (slack e p : ℤ))
+    (tie_windows_refuted hnorm.exp hp).choose_spec (s := (slack e p : ℤ))
     (by simp [tieWindows]) (by simp [tieWindows])
     (by simp only [tieWindows]; omega) (by simp only [tieWindows]; omega)
     hres hnear.1 hnear.2
@@ -815,24 +815,25 @@ private theorem dev_eq_zero (f : ℕ) (e : ℤ) (hin : Normalized f e) (p : ℕ)
 
     Correctness of the rounding, and of the rounding after `demote`, are generic
     facts about that packing from here on. -/
-theorem packed_eq_exact_packed (f : ℕ) (e : ℤ) (hin : Normalized f e) (p : ℕ)
+theorem packed_eq_exact_packed (f : ℕ) (e : ℤ) (hnorm : Normalized f e) (p : ℕ)
     (hp : 1 ≤ p ∧ p ≤ 18) :
     packed f e p = exactPacked (exact f e p) (halfStep e p) := by
   obtain ⟨hh, hst⟩ := guard_le_one f e p
-  have hs := point_shift_bounds p (by simpa using hp) e (by simpa using hin.exp)
+  have hs := point_shift_bounds p (by simpa using hp) e
+    (by simpa using hnorm.exp)
   have hex := exact_eq f e p (by have := shift_bits_ge hs.1; omega)
-  have hdev := dev_bounds f e p hin.sig.2
+  have hdev := dev_bounds f e p hnorm.sig.2
   -- The remainder vanishes exactly with the sticky bit, which is the certificate
   -- one way round and the discarded low word's small size the other.
   have hiff : dev f e p = 0 ↔ sticky f e p = 0 :=
     ⟨fun h => by
        by_contra hne
-       exact absurd (dev_pos_of_sticky f e p hin.sig.2 (by omega)) (by omega),
-     dev_eq_zero f e hin p hp⟩
+       exact absurd (dev_pos_of_sticky f e p hnorm.sig.2 (by omega)) (by omega),
+     dev_eq_zero f e hnorm p hp⟩
   have hnn : 0 ≤ dev f e p := by
     by_cases h0 : sticky f e p = 0
     · exact le_of_eq (hiff.mpr h0).symm
-    · exact le_of_lt (dev_pos_of_sticky f e p hin.sig.2 (by omega))
+    · exact le_of_lt (dev_pos_of_sticky f e p hnorm.sig.2 (by omega))
   rw [packed, exact_packed_of_split (q := 2 * integral f e p + half f e p)
     (r := dev f e p) (half_step_pos e p) (by rw [hex]; push_cast; ring) hnn
     hdev.2]
@@ -849,10 +850,10 @@ reads of the pair, so what holds of the normalized pair holds of the input.
 /-- `normalize` fills the significand's box: the leading bit goes to bit 52, and
     the shift that takes it there is at most 52, so the exponent it spends
     reaches no further than 52 below `emin`. -/
-theorem normalized_of_finite {f : ℕ} {e : ℤ} (hin : binary64.Finite f e) :
+theorem normalized_of_finite {f : ℕ} {e : ℤ} (hfin : binary64.Finite f e) :
     Normalized (f * 2 ^ normShift f) (e - normShift f) := by
-  have hpos : 0 < f := hin.pos
-  have hlt : f < 2 ^ 53 := hin.sig_lt
+  have hpos : 0 < f := hfin.pos
+  have hlt : f < 2 ^ 53 := hfin.sig_lt
   have hne : f ≠ 0 := by omega
   have hlog : Nat.log2 f ≤ 52 := by
     have := (Nat.log2_lt hne).mpr hlt
@@ -867,7 +868,7 @@ theorem normalized_of_finite {f : ℕ} {e : ℤ} (hin : binary64.Finite f e) :
   · calc f * 2 ^ normShift f < 2 ^ (Nat.log2 f + 1) * 2 ^ normShift f :=
         Nat.mul_lt_mul_of_lt_of_le Nat.lt_log2_self le_rfl (Nat.two_pow_pos _)
       _ = 2 ^ 53 := by rw [← pow_add]; congr 1; omega
-  · have : -1074 ≤ e ∧ e ≤ 971 := hin.range
+  · have : -1074 ≤ e ∧ e ≤ 971 := hfin.range
     rw [normShift]
     omega
 
@@ -926,13 +927,13 @@ private theorem lt_of_le_dist {x d h H : ℤ} (hh : 0 < h)
 
 /-- The scaled value, bounded by the digits asked for: at least `10^(p-1)` and
     below `2·10^p`, over the whole significand box. -/
-theorem exact_bounds (f : ℕ) (e : ℤ) (hin : Normalized f e) (p : ℕ)
+theorem exact_bounds (f : ℕ) (e : ℤ) (hnorm : Normalized f e) (p : ℕ)
     (hp : 1 ≤ p ∧ p ≤ 18) :
     10 ^ (p - 1) * step e p ≤ exact f e p
       ∧ exact f e p < 2 * 10 ^ p * step e p := by
   obtain ⟨hlo, hhi⟩ := grid_bounds p (by simpa using hp) e
-    (by simpa using hin.exp)
-  have hsig := hin.sig
+    (by simpa using hnorm.exp)
+  have hsig := hnorm.sig
   refine ⟨hlo.trans ?_, lt_of_le_of_lt ?_ hhi⟩
   · rw [exact]
     exact Nat.mul_le_mul_right _ (Nat.mul_le_mul_right _ hsig.1)
@@ -960,17 +961,17 @@ private theorem to_decimal_coarse {f : ℕ} {e : ℤ} {p : ℕ}
     the grid reported with it. One split on the reround settles both: the
     distance bound gives the rounding, and the same bound read against
     `exact_bounds` gives the digit count. -/
-theorem rounded_correct (f : ℕ) (e : ℤ) (hin : Normalized f e) (p : ℕ)
+theorem rounded_correct (f : ℕ) (e : ℤ) (hnorm : Normalized f e) (p : ℕ)
     (hp : 1 ≤ p ∧ p ≤ 18) :
     10 ^ (p - 1) ≤ (rounded f e p).1 ∧ (rounded f e p).1 < 10 ^ p
       ∧ CorrectlyRounded f e (rounded f e p).1 (rounded f e p).2 := by
   have hs := point_shift_bounds p (by simpa using hp) e
-    (by simpa using hin.exp)
+    (by simpa using hnorm.exp)
   have hstep := step_cast e p
   have hG : (0 : ℤ) < halfStep e p := by exact_mod_cast half_step_pos e p
-  have hpack := packed_eq_exact_packed f e hin p hp
+  have hpack := packed_eq_exact_packed f e hnorm p hp
   -- The value's own bounds, at the half step the two grids are multiples of.
-  obtain ⟨hgridlo, hgridhi⟩ := exact_bounds f e hin p hp
+  obtain ⟨hgridlo, hgridhi⟩ := exact_bounds f e hnorm p hp
   have hlo : (10 : ℤ) ^ (p - 1) * (2 * halfStep e p) ≤ exact f e p := by
     rw [← hstep]
     exact_mod_cast hgridlo
