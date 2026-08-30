@@ -4,6 +4,9 @@
 -- Distributed under the MIT license (see LICENSE).
 
 import Core
+import Mathlib.Data.Nat.Log
+import Mathlib.Tactic.IntervalCases
+import Mathlib.Tactic.LinearCombination
 
 /-! # Correctness of yy
 

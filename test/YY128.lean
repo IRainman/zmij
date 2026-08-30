@@ -4,6 +4,7 @@
 -- Distributed under the MIT license (see LICENSE).
 
 import YY
+import Mathlib.Tactic.IntervalCases
 
 /-! # Correctness of yy at binary128
 

@@ -6,6 +6,8 @@
 import Core
 -- `Finset.Icc` over ℕ, which the sweeps over the precision need.
 import Mathlib.Order.Interval.Finset.Nat
+import Mathlib.Tactic.IntervalCases
+import Mathlib.Tactic.LinearCombination
 
 /-! # Correctness of Żmij at a chosen precision
 

@@ -4,6 +4,9 @@
 -- Distributed under the MIT license (see LICENSE).
 
 import Core
+import Mathlib.Data.Nat.Prime.Basic
+import Mathlib.Tactic.IntervalCases
+import Mathlib.Tactic.LinearCombination
 
 /-! # Correctness of Żmij
 
