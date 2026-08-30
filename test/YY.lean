@@ -3,11 +3,11 @@
 -- Copyright (c) 2025 - present, Victor Zverovich
 -- Distributed under the MIT license (see LICENSE).
 
-import core
+import Core
 
 /-! # Correctness of yy
 
-`core.lean` proves that an exact, Schubfach-like selection rule produces a
+`Core.lean` proves that an exact, Schubfach-like selection rule produces a
 shortest, correctly rounded decimal whenever the decimal grid step is at most
 one ULP and strictly greater than a tenth of one. This file proves that yy
 implements that rule. What yy shares with any other implementation—the format's
@@ -2146,7 +2146,7 @@ theorem correct_of (hl : Layout fmt) (hchk : Checks fmt) (f : ℕ) (e : FPExp fm
 /-! ## binary64
 
 The instantiation. `Layout` is arithmetic on the constants; the remaining
-obligations are inherited from `core.lean`, proved from the concrete constants,
+obligations are inherited from `Core.lean`, proved from the concrete constants,
 or swept over binary64's 2046 exponents. The two modular certificate families
 dominate the cost.
 -/

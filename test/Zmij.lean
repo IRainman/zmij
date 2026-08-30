@@ -3,11 +3,11 @@
 -- Copyright (c) 2025 - present, Victor Zverovich
 -- Distributed under the MIT license (see LICENSE).
 
-import core
+import Core
 
 /-! # Correctness of Żmij
 
-`core.lean` proves that an exact, Schubfach-like selection rule produces a
+`Core.lean` proves that an exact, Schubfach-like selection rule produces a
 shortest, correctly rounded decimal whenever the decimal grid step is at most
 one ULP and strictly greater than a tenth of one. This file proves that Żmij's
 regular binary64 path implements that rule. What Żmij shares with any other

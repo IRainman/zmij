@@ -3,17 +3,17 @@
 -- Copyright (c) 2025 - present, Victor Zverovich
 -- Distributed under the MIT license (see LICENSE).
 
-import yy
+import YY
 
 /-! # Correctness of yy at binary128
 
-`yy.lean` proves `yy.correct_of`, that yy implements `core.lean`'s exact
+`YY.lean` proves `yy.correct_of`, that yy implements `Core.lean`'s exact
 selection rule at any format satisfying two records of side conditions. This
 file discharges those records at IEEE 754 binary128 and applies the theorem. It
 contains no mathematics: every declaration is either a finite check or the
 one-line instantiation at the end.
 
-The split is the one from `yy.lean`'s header — algebraic identities are
+The split is the one from `YY.lean`'s header — algebraic identities are
 parameterized, numerical approximation properties are checked — and this file is
 the checking half at the wider format. `Layout binary128` is two inequalities
 between the parameters. `Checks binary128` is six facts at each of binary128's
@@ -25,7 +25,7 @@ runs to about 16,500 bits. That is the whole reason this file exists separately.
 
 The checks below run for about four minutes, against 17 seconds for binary64's.
 Nothing else depends on this file, so it is a `lean_lib` of its own, absent from
-`defaultTargets`: `lake build` is unaffected and `lake build yy128` is the
+`defaultTargets`: `lake build` is unaffected and `lake build YY128` is the
 explicit request to verify binary128.
 
 ## What the four minutes are spent on
@@ -119,7 +119,7 @@ private theorem shift_nonneg_sweep :
   decide +kernel
 
 /-- The table entry at every index yy can read is a normalized 256-bit number.
-    `core.lean` keeps binary64's sweep because two algorithms share it; this one
+    `Core.lean` keeps binary64's sweep because two algorithms share it; this one
     is yy's alone, and wide enough to belong with the rest of the cost. -/
 instance : binary128.Power10Normalized where
   ratio := by decide +kernel

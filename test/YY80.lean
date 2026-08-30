@@ -3,13 +3,13 @@
 -- Copyright (c) 2025 - present, Victor Zverovich
 -- Distributed under the MIT license (see LICENSE).
 
-import yy
+import YY
 
 /-! # Correctness of yy at the x87 80-bit format
 
-`yy.lean` proves `yy.correct_of`, that yy implements `core.lean`'s exact
+`YY.lean` proves `yy.correct_of`, that yy implements `Core.lean`'s exact
 selection rule at any format satisfying two records of side conditions.
-`yy128.lean` discharges those records at binary128; this file does the same at
+`YY128.lean` discharges those records at binary128; this file does the same at
 the x87 80-bit format and applies the theorem. Like that one it contains no
 mathematics: every declaration is either a finite check or the one-line
 instantiation at the end.
@@ -27,7 +27,7 @@ same width either way.
 
 The checks below run for about four minutes. Nothing else depends on this file,
 so it is a `lean_lib` of its own, absent from `defaultTargets`: `lake build` is
-unaffected and `lake build yy80` is the explicit request to verify the 80-bit
+unaffected and `lake build YY80` is the explicit request to verify the 80-bit
 format.
 
 ## What the four minutes are spent on
@@ -48,7 +48,7 @@ needs more than 58 of the 160 steps the search is given.
 ## Why a certificate suffices at every exponent
 
 binary128 has one exponent where a significand's gap lands inside a coarse
-window, so no multiplier refutes the box there and `yy128.lean` spends a section
+window, so no multiplier refutes the box there and `YY128.lean` spends a section
 on that exponent alone. Nothing of the kind is needed here, and the significand
 is why: dropping `width + 4 = 132` of the table's 256 bits leaves a window of
 relative width `2^-127.3`, and against a box of `2^64` that is `2^-63` expected

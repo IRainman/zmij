@@ -7,7 +7,7 @@ Distributed under the MIT license (see LICENSE) or alternatively
 the Boost Software License, Version 1.0.
 https://github.com/vitaut/zmij/
 
-Superseded by `zmij.lean`, which proves the regular binary64 path correct
+Superseded by `Zmij.lean`, which proves the regular binary64 path correct
 instead of checking it.
 
 It ports Żmij's `to_decimal<double>`, derives its edge cases, and checks

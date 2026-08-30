@@ -1,32 +1,32 @@
 name = "zmij-verify"
-defaultTargets = ["zmij"]
+defaultTargets = ["Zmij"]
 
 [[require]]
 name = "mathlib"
 scope = "leanprover-community"
 
 [[lean_lib]]
-name = "zmij"
+name = "Zmij"
 srcDir = "."
-roots = ["core", "yy", "zmij"]
+roots = ["Core", "YY", "Zmij"]
 
 # binary128's finite checks run for about ten minutes, so they are opt-in:
-# `lake build yy128`. Absent from defaultTargets, `lake build` is unaffected.
+# `lake build YY128`. Absent from defaultTargets, `lake build` is unaffected.
 [[lean_lib]]
-name = "yy128"
+name = "YY128"
 srcDir = "."
-roots = ["yy128"]
+roots = ["YY128"]
 
 # The x87 80-bit checks are the same size and opt-in for the same reason:
-# `lake build yy80`.
+# `lake build YY80`.
 [[lean_lib]]
-name = "yy80"
+name = "YY80"
 srcDir = "."
-roots = ["yy80"]
+roots = ["YY80"]
 
 # The fixed-precision certificates sweep every (exponent, precision) pair, so
-# they are opt-in as well: `lake build «zmij-p»`.
+# they are opt-in as well: `lake build ZmijPrecision`.
 [[lean_lib]]
-name = "«zmij-p»"
+name = "ZmijPrecision"
 srcDir = "."
-roots = ["«zmij-p»"]
+roots = ["ZmijPrecision"]

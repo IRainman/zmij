@@ -3,17 +3,17 @@
 -- Copyright (c) 2025 - present, Victor Zverovich
 -- Distributed under the MIT license (see LICENSE).
 
-import core
+import Core
 -- `Finset.Icc` over ℕ, which the sweeps over the precision need.
 import Mathlib.Order.Interval.Finset.Nat
 
 /-! # Correctness of Żmij at a chosen precision
 
-`zmij.lean` proves the shortest path correct. This file proves the other one:
+`Zmij.lean` proves the shortest path correct. This file proves the other one:
 `to_decimal(bin_sig, bin_exp, precision)`, which rounds to a digit count the
 caller picks, together with the `normalize` a caller runs first. The two share
 the power-of-ten table and nothing else. There is no shortest representation to
-select here, so `core.lean`'s selection rule plays no part; what has to hold is
+select here, so `Core.lean`'s selection rule plays no part; what has to hold is
 that the reported significand has the digits asked for and is correctly rounded
 on the grid reported with it, which is `correct`.
 
@@ -88,8 +88,8 @@ report.
 
 The checks below run for about two minutes. Nothing else depends on this file,
 so it is a `lean_lib` of its own, absent from `defaultTargets`: `lake build` is
-unaffected and `lake build «zmij-p»` is the explicit request to verify the
-fixed-precision path.
+unaffected and `lake build ZmijPrecision` is the explicit request to verify
+the fixed-precision path.
 
 ## What the two minutes are spent on
 
@@ -99,11 +99,11 @@ fixed-precision path.
 | `grid_bounds` | 37,764 pairs | 21s |
 | `pair_refuted` | 37,764 certificates | ~95s |
 
-As in `yy128.lean` and `yy80.lean` the multiplier is found by
+As in `YY128.lean` and `YY80.lean` the multiplier is found by
 `ModWindows.search` during elaboration and only the literal reaches the proof
 term. The certificates are the bulk of the cost even so, and they spend it on
 elaboration rather than in the kernel: 37,764 goals, against the 2098 exponents
-`zmij.lean` splits.
+`Zmij.lean` splits.
 -/
 
 namespace zmij.precision
@@ -305,7 +305,7 @@ def tieWindows (e : ℤ) (p : ℕ) : ModWindows where
 it during elaboration, so the two indices have to arrive as one: `pairIndex`
 packs them, eighteen precisions to the exponent, and the family below unpacks
 them. A sweep over the packed index is then the same one variable
-`interval_cases` splits in `yy128.lean` and `yy80.lean`.
+`interval_cases` splits in `YY128.lean` and `YY80.lean`.
 
 Doing it instead by deciding `refutedBy search` over the grid would put the
 Euclidean search itself in the kernel, 37,764 times, which is hours and
@@ -590,7 +590,7 @@ theorem value_scaled_coarse (f : ℕ) (e : ℤ) (p : ℕ) (hs : 3 ≤ pointShift
 
 /-- A candidate within half a step of the exact value is correctly rounded on
     the grid at `k`, a candidate exactly half a step away having to be even.
-    `m` is the scale that clears that grid; the rest is `core.lean`'s bridge. -/
+    `m` is the scale that clears that grid; the rest is `Core.lean`'s bridge. -/
 theorem correctly_rounded_of_dist {f : ℕ} {e : ℤ} {p : ℕ} {d m : ℕ} {k : ℤ}
     (hm : 0 < m) (hx : value f e * 10 ^ (-k) * (m : ℚ) = (exact f e p : ℚ))
     (hle : -(m : ℤ) ≤ 2 * ((exact f e p : ℤ) - d * m)

@@ -8,7 +8,7 @@ Portions Copyright (c) 2020 YaoYuan
 Distributed under the MIT license.
 https://github.com/vitaut/zmij/
 
-Superseded by `yy80.lean` and `yy128.lean`, which prove this path correct at
+Superseded by `YY80.lean` and `YY128.lean`, which prove this path correct at
 both formats instead of checking it.
 
 Companion to verify.py (double), reusing its floor_sum machinery. Żmij's
