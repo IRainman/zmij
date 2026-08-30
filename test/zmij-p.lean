@@ -1036,7 +1036,7 @@ theorem correct (f : ℕ) (e : ℤ) (hfin : binary64.Finite f e) (p : ℕ)
     (hp : 1 ≤ p ∧ p ≤ 18) :
     let (d, k) := toDecimal f e p
     10 ^ (p - 1) ≤ d ∧ d < 10 ^ p ∧ CorrectlyRounded f e d k :=
-  have h := rounded_correct _ _ (normalized_of_finite hfin) p hp
-  ⟨h.1, h.2.1, correctly_rounded_of_normalized h.2.2⟩
+  (rounded_correct _ _ (normalized_of_finite hfin) p hp).imp_right
+    (And.imp_right correctly_rounded_of_normalized)
 
 end zmij.precision
