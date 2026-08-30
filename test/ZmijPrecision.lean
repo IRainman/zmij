@@ -17,23 +17,17 @@ select here, so `Core.lean`'s selection rule plays no part; what has to hold is
 that the reported significand has the digits asked for and is correctly rounded
 on the grid reported with it, which is `correct`.
 
-    shift   = 52 - floor(log2(bin_sig))      -- normalize; 0 for a normal
-    bin_sig, bin_exp = bin_sig << shift, bin_exp - shift
-    dec_exp = compute_dec_exp(bin_exp + 52) - (precision - 1)
-    scaled  = scale(bin_sig, bin_exp, dec_exp)
-    dec_sig = round_even(scaled)
-    if dec_sig >= 10^precision:              -- one digit too many
-      dec_sig, dec_exp = round_even(demote(scaled)), dec_exp + 1
-
 `normalize` brings the significand's leading bit up to bit 52, which
 `to_decimal` needs because it picks the scale from the exponent alone. zmij's
 callers run it, for a subnormal only; folding it in here is what lets `correct`
 speak of a binary64 value rather than of an already-shifted significand.
 
 `scale` packs the scaled value above two guard bits, bit 1 the 1/2 place and bit
-0 a sticky bit, and `round_even` reads its decision off those two. The packed
-value is inexact twice over, and the two errors are placed so that neither can
-turn a decision:
+0 a sticky bit, and `round_even` reads its decision off those two. That rounding
+can carry the significand to `10^p`, a digit too many; `to_decimal` then
+rerounds off `demote` of the same packed value and steps the exponent. The
+packed value is inexact twice over, and the two errors are placed so that
+neither can turn a decision:
 
 * the table entry is the truncated 128-bit significand of `10^k` with one
   added, so the computed value never falls below the exact one and a value at or
@@ -123,8 +117,8 @@ that fills the significand's box before any of them.
 -/
 
 /-- The decimal exponent of the grid the digits are asked for: the exponent of
-    the leading digit, estimated from the exponent of the value's top bit, less
-    the `p - 1` digits that follow it. -/
+    the leading digit, which zmij's `compute_dec_exp` estimates from the
+    exponent of the value's top bit, less the `p - 1` digits that follow it. -/
 def decExp (e : ℤ) (p : ℕ) : ℤ :=
   binary64.decimalExponent (e + 52) - ((p : ℤ) - 1)
 
