@@ -10,7 +10,7 @@ name = "Zmij"
 srcDir = "."
 roots = ["Core", "YY", "Zmij"]
 
-# binary128's finite checks run for about ten minutes, so they are opt-in:
+# binary128's finite checks run for about four minutes, so they are opt-in:
 # `lake build YY128`. Absent from defaultTargets, `lake build` is unaffected.
 [[lean_lib]]
 name = "YY128"
