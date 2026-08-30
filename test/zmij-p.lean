@@ -691,12 +691,16 @@ private theorem stick_eq (r : ℕ) : (if r = 0 then 0 else 1) = min r 1 := by
   split_ifs <;> omega
 
 /-- The packing read off a split of the value at the half step: `q` half steps
-    and a remainder inside one. This is the only place the division in
-    `exactPacked` is unfolded, and every packing below arrives through it. -/
-private theorem exact_packed_split {x G q r : ℕ} (hG : 0 < G) (hr : r < G)
-    (hx : x = r + G * q) : exactPacked x G = 2 * q + min r 1 := by
-  rw [exactPacked, hx, Nat.add_mul_div_left _ _ hG, Nat.add_mul_mod_self_left,
-    Nat.div_eq_of_lt hr, Nat.mod_eq_of_lt hr, stick_eq, Nat.zero_add]
+    and a remainder inside one, which is the shape `exact_eq` leaves. The
+    remainder arrives as an integer because that is what `dev` is. -/
+private theorem exact_packed_of_split {x G q : ℕ} {r : ℤ} (hG : 0 < G)
+    (hx : (x : ℤ) = G * q + r) (hlo : 0 ≤ r) (hhi : r < G) :
+    exactPacked x G = 2 * q + if r = 0 then 0 else 1 := by
+  have hx' : x = r.toNat + G * q := by omega
+  have hrlt : r.toNat < G := by omega
+  rw [exactPacked, hx', Nat.add_mul_div_left _ _ hG, Nat.add_mul_mod_self_left,
+    Nat.div_eq_of_lt hrlt, Nat.mod_eq_of_lt hrlt, Nat.zero_add]
+  split_ifs <;> omega
 
 /-- `demote` on a canonical packing, in terms of the half steps counted and the
     decimal digit that leaves: the digit joins the sticky bit. -/
@@ -710,22 +714,16 @@ private theorem demote_pack (Q d s : ℕ) (hd : d < 10) (hs : s ≤ 1) :
     which is what collapses the two rounding arguments into one. -/
 theorem demote_exact_packed (x G : ℕ) (hG : 0 < G) :
     demote (exactPacked x G) = exactPacked x (10 * G) := by
-  have hrlt : x % G < G := Nat.mod_lt _ hG
   have hdlt : x / G % 10 < 10 := Nat.mod_lt _ (by omega)
-  have hq : x / G = 10 * (x / G / 10) + x / G % 10 := (Nat.div_add_mod _ 10).symm
-  -- The same value split at each step. The coarser split keeps the digit that
-  -- leaves at its weight, and the two remainders together stay inside one
-  -- coarser step.
-  have hfine : x = x % G + G * (10 * (x / G / 10) + x / G % 10) := by
-    rw [← hq]
-    exact (Nat.mod_add_div x G).symm
-  have hlt : G * (x / G % 10) + x % G < 10 * G := by
-    have : G * (x / G % 10) ≤ G * 9 := Nat.mul_le_mul_left _ (by omega)
-    omega
-  have hcoarse : x = G * (x / G % 10) + x % G + 10 * G * (x / G / 10) := by
-    calc x = x % G + G * (10 * (x / G / 10) + x / G % 10) := hfine
-      _ = G * (x / G % 10) + x % G + 10 * G * (x / G / 10) := by ring
-  -- The coarse sticky bit is the digit that leaves, or else the fine one.
+  -- The coarser quotient and remainder, read off the finer ones: the digit that
+  -- leaves, at its weight, joins the finer remainder.
+  have hdiv : x / (10 * G) = x / G / 10 := by
+    rw [Nat.div_div_eq_div_mul, Nat.mul_comm G 10]
+  have hmod : x % (10 * G) = G * (x / G % 10) + x % G := by
+    rw [← Nat.mod_mul_left_div_self x G 10,
+      ← Nat.mod_mod_of_dvd x (dvd_mul_left G 10)]
+    exact (Nat.div_add_mod _ G).symm
+  -- So the coarse sticky bit is the digit that leaves, or else the fine one.
   have hstick : min (G * (x / G % 10) + x % G) 1
       = min (2 * (x / G % 10) + min (x % G) 1) 1 := by
     rcases Nat.eq_zero_or_pos (x / G % 10) with h1 | h1
@@ -733,25 +731,9 @@ theorem demote_exact_packed (x G : ℕ) (hG : 0 < G) :
       omega
     · have : 0 < G * (x / G % 10) := Nat.mul_pos hG h1
       omega
-  rw [exact_packed_split hG hrlt hfine, demote_pack _ _ _ hdlt (by omega),
-    exact_packed_split (by omega) hlt hcoarse, hstick]
-
-/-- Round-to-nearest-even off the two guard bits, over abstract integers: `G` is
-    half a step, `dev` what the half step leaves, and `c` the increment the
-    guard bits call for. Eight cases, each linear once the parities are
-    literals; `omega` reads implications but not disjunctions, which is why the
-    ties arrive as two implications and the parity is a case rather than a
-    disjunct. -/
-private theorem dist_bound {G dev : ℤ} {h s c i : ℕ} (hh : h ≤ 1) (hs : s ≤ 1)
-    (hlo : -G < dev) (hhi : dev < G) (hsticky : s = 1 → 0 < dev)
-    (htie : s = 0 → dev = 0)
-    (hc : c = if h = 1 ∧ (s = 1 ∨ i % 2 = 1) then 1 else 0) :
-    -G ≤ G * h + dev - 2 * G * c ∧ G * h + dev - 2 * G * c ≤ G
-      ∧ (G * h + dev - 2 * G * c = G → (i + c) % 2 = 0)
-      ∧ (G * h + dev - 2 * G * c = -G → (i + c) % 2 = 0) := by
-  interval_cases h <;> interval_cases s <;>
-    rcases show i % 2 = 0 ∨ i % 2 = 1 from by omega with hi | hi <;>
-      rw [hi] at hc <;> norm_num at hc <;> subst hc <;> omega
+  rw [exactPacked, stick_eq,
+    show x / G = 10 * (x / G / 10) + x / G % 10 from (Nat.div_add_mod _ 10).symm,
+    demote_pack _ _ _ hdlt (by omega), exactPacked, hdiv, hmod, stick_eq, hstick]
 
 /-- Rounding a canonical packing is round-to-nearest-even on the value packed:
     the candidate is at most half a step away, and exactly half a step away only
@@ -766,8 +748,14 @@ theorem round_even_exact_packed (x G : ℕ) (hG : 0 < G) :
   have hrlt : x % G < G := Nat.mod_lt _ hG
   set s : ℕ := if x % G = 0 then 0 else 1 with hs
   have hsle : s ≤ 1 := by rw [hs]; split_ifs <;> omega
-  set c : ℕ := if x / G % 2 = 1 ∧ (s = 1 ∨ x / G / 2 % 2 = 1) then 1 else 0
-    with hc
+  -- The sticky bit together with what it reports, which is the pair the cases
+  -- below need.
+  have hsr : s = 0 ∧ x % G = 0 ∨ s = 1 ∧ 0 < x % G := by
+    rw [hs]; split_ifs <;> omega
+  -- The increment the guard bits call for, as a variable and not a definition,
+  -- so that the cases below can put a literal in its place.
+  obtain ⟨c, hc⟩ : ∃ c : ℕ, c =
+      if x / G % 2 = 1 ∧ (s = 1 ∨ x / G / 2 % 2 = 1) then 1 else 0 := ⟨_, rfl⟩
   -- The candidate, off `round_even_eq` in the `4 * i + b` form it reads.
   have hround : roundEven (exactPacked x G) = x / G / 2 + c := by
     rw [show exactPacked x G = 4 * (x / G / 2) + (2 * (x / G % 2) + s) from by
@@ -777,22 +765,23 @@ theorem round_even_exact_packed (x G : ℕ) (hG : 0 < G) :
     split_ifs <;> omega
   -- The distance, with the whole steps cancelled.
   have hdist : (x : ℤ) - (x / G / 2 + c : ℕ) * (2 * G)
-      = G * (x / G % 2) + (x % G : ℕ) - 2 * G * c := by
-    have hx : (x : ℤ) = G * (2 * (x / G / 2) + x / G % 2) + (x % G : ℕ) := by
-      have h2 : 2 * (x / G / 2) + x / G % 2 = x / G := by omega
-      exact_mod_cast
-        (by rw [h2]; exact Nat.div_add_mod x G :
-          G * (2 * (x / G / 2) + x / G % 2) + x % G = x).symm
-    push_cast at hx ⊢
-    linear_combination hx
-  obtain ⟨hlo, hhi, hup, hdown⟩ := dist_bound (G := (G : ℤ))
-    (dev := ((x % G : ℕ) : ℤ)) (h := x / G % 2) (s := s) (c := c)
-    (i := x / G / 2) (by omega) hsle (by push_cast; omega)
-    (by exact_mod_cast hrlt)
-    (fun h1 => by rw [hs] at h1; split_ifs at h1; omega)
-    (fun h0 => by rw [hs] at h0; split_ifs at h0; omega) hc
+      = G * (x / G % 2 : ℕ) + (x % G : ℕ) - 2 * G * c := by
+    have hx : x = G * (2 * (x / G / 2) + x / G % 2) + x % G := by
+      rw [show 2 * (x / G / 2) + x / G % 2 = x / G from by omega]
+      exact (Nat.div_add_mod x G).symm
+    have hx' : (x : ℤ) = G * (2 * (x / G / 2) + x / G % 2 : ℕ) + (x % G : ℕ) := by
+      exact_mod_cast hx
+    push_cast at hx' ⊢
+    linear_combination hx'
   rw [hround, hdist]
-  exact ⟨hlo, hhi, fun htie => htie.elim hup hdown⟩
+  -- Eight cases, each linear once the 1/2 bit is a literal and so `G * h` is no
+  -- longer a product of two unknowns.
+  rcases show x / G % 2 = 0 ∨ x / G % 2 = 1 from by omega with hh | hh <;>
+    rw [hh] at hc ⊢ <;>
+      rcases hsr with ⟨hsv, hr⟩ | ⟨hsv, hr⟩ <;>
+        rcases show x / G / 2 % 2 = 0 ∨ x / G / 2 % 2 = 1 from by omega with
+          hi | hi <;>
+          rw [hsv, hi] at hc <;> norm_num at hc <;> subst hc <;> omega
 
 /-! ## An apparent tie is a real one
 
@@ -879,7 +868,6 @@ theorem packed_eq_exact_packed (f : ℕ) (e : ℤ) (hin : Normalized f e) (p : �
   have hs := point_shift_bounds p (by simpa using hp) e (by simpa using hin.exp)
   have hex := exact_eq f e p (by have := shift_bits_ge hs.1; omega)
   have hdev := dev_bounds f e p hin.sig.2
-  have hG := half_step_pos e p
   -- The remainder vanishes exactly with the sticky bit, which is the certificate
   -- one way round and the discarded low word's small size the other.
   have hiff : dev f e p = 0 ↔ sticky f e p = 0 :=
@@ -888,23 +876,13 @@ theorem packed_eq_exact_packed (f : ℕ) (e : ℤ) (hin : Normalized f e) (p : �
        exact absurd (dev_pos_of_sticky f e p hin.sig.2 (by omega)) (by omega),
      dev_eq_zero f e hin p hp⟩
   have hnn : 0 ≤ dev f e p := by
-    rcases show sticky f e p = 0 ∨ sticky f e p = 1 from by omega with h0 | h1
+    by_cases h0 : sticky f e p = 0
     · exact le_of_eq (hiff.mpr h0).symm
-    · exact le_of_lt (dev_pos_of_sticky f e p hin.sig.2 h1)
-  -- The remainder as a natural, so the division it settles is one of naturals.
-  set r : ℕ := (dev f e p).toNat with hr
-  have hrcast : (r : ℤ) = dev f e p := Int.toNat_of_nonneg hnn
-  have hrlt : r < halfStep e p := by omega
-  have hsplit : exact f e p
-      = r + halfStep e p * (2 * integral f e p + half f e p) := by
-    have : (exact f e p : ℤ)
-        = r + halfStep e p * (2 * integral f e p + half f e p) := by
-      rw [hrcast, hex]
-      ring
-    exact_mod_cast this
-  rw [packed, exact_packed_split hG hrlt hsplit]
-  have : r = 0 ↔ sticky f e p = 0 := by rw [← hiff]; omega
-  omega
+    · exact le_of_lt (dev_pos_of_sticky f e p hin.sig.2 (by omega))
+  rw [packed, exact_packed_of_split (q := 2 * integral f e p + half f e p)
+    (r := dev f e p) (half_step_pos e p) (by rw [hex]; push_cast; ring) hnn
+    hdev.2]
+  split_ifs <;> omega
 
 /-! ## Half a step
 
