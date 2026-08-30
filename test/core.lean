@@ -502,6 +502,15 @@ structure Format.Regular (fmt : Format) (f : ℕ) (e : ℤ) : Prop where
   normal_or_min : 2 ^ (fmt.prec - 1) < f ∨ e = fmt.emin
   range : fmt.emin ≤ e ∧ e ≤ fmt.emax
 
+/-- Whether f·2^e is a positive finite value of the format, the powers of two
+    included: `Regular` less `normal_or_min`. A selection rule has to know the
+    spacing below a binade, so it asks for `Regular`; a rounding to a precision
+    the caller names does not, and asks only for this. -/
+structure Format.Finite (fmt : Format) (f : ℕ) (e : ℤ) : Prop where
+  pos : 0 < f
+  sig_lt : f < 2 ^ fmt.prec
+  range : fmt.emin ≤ e ∧ e ≤ fmt.emax
+
 /-! ### The decimal exponent -/
 
 /-- Approximation of floor(e·log₁₀ 2), the decimal exponent to report for a

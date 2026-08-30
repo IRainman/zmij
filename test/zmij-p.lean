@@ -64,7 +64,7 @@ report.
 ## Dependencies
 
     correct
-      ← normalized_of_input
+      ← normalized_of_finite
       ← correctly_rounded_of_normalized
           ← value_normalized
       ← digit_count
@@ -199,22 +199,17 @@ def normShift (f : ℕ) : ℕ := 52 - Nat.log2 f
 /-- `to_decimal` on the value a caller has, `normalize` then the rounding: the
     significand and exponent zmij reports for `p` significant digits. zmij
     returns the significand padded right to 18 digits along with the leading
-    digit's exponent, which denotes the same value: `reported_eq`. Those 18 also
-    bound the precision a caller may ask for, `1 ≤ p ∧ p ≤ 18` standing as a
-    hypothesis of its own throughout: it constrains the request, where the two
-    structures below constrain the value. -/
+    digit's exponent, which denotes the same value. Those 18 also bound the
+    precision a caller may ask for, `1 ≤ p ∧ p ≤ 18` standing as a hypothesis
+    of its own throughout: it constrains the request, where `binary64.Finite`
+    and the structure below constrain the value. -/
 def toDecimal (f : ℕ) (e : ℤ) (p : ℕ) : ℕ × ℤ :=
   rounded (f * 2 ^ normShift f) (e - normShift f) p
 
-/-- The value `to_decimal` is called on: a positive finite binary64, a subnormal
-    arriving as a significand below `2^52` at `emin`. -/
-structure Input (f : ℕ) (e : ℤ) : Prop where
-  sig : 0 < f ∧ f < 2 ^ 53
-  exp : -1074 ≤ e ∧ e ≤ 971
-
-/-- The value `rounded` is called on, which `normalized_of_input` derives from
-    the input. The significand is normalized, which for a subnormal costs
-    exponent range: the shift reaches 52 below `emin`. -/
+/-- The value `rounded` is called on, which `normalized_of_finite` derives from
+    `binary64.Finite`, the value `to_decimal` is called on. The significand is
+    normalized, which for a subnormal costs exponent range: the shift reaches 52
+    below `emin`. -/
 structure Normalized (f : ℕ) (e : ℤ) : Prop where
   sig : 2 ^ 52 ≤ f ∧ f < 2 ^ 53
   exp : -1126 ≤ e ∧ e ≤ 971
@@ -970,9 +965,10 @@ reads of the pair, so what holds of the normalized pair holds of the input.
 /-- `normalize` fills the significand's box: the leading bit goes to bit 52, and
     the shift that takes it there is at most 52, so the exponent it spends
     reaches no further than 52 below `emin`. -/
-theorem normalized_of_input {f : ℕ} {e : ℤ} (hin : Input f e) :
+theorem normalized_of_finite {f : ℕ} {e : ℤ} (hin : binary64.Finite f e) :
     Normalized (f * 2 ^ normShift f) (e - normShift f) := by
-  obtain ⟨hpos, hlt⟩ := hin.sig
+  have hpos : 0 < f := hin.pos
+  have hlt : f < 2 ^ 53 := hin.sig_lt
   have hne : f ≠ 0 := by omega
   have hlog : Nat.log2 f ≤ 52 := by
     have := (Nat.log2_lt hne).mpr hlt
@@ -987,7 +983,7 @@ theorem normalized_of_input {f : ℕ} {e : ℤ} (hin : Input f e) :
   · calc f * 2 ^ normShift f < 2 ^ (Nat.log2 f + 1) * 2 ^ normShift f :=
         Nat.mul_lt_mul_of_lt_of_le Nat.lt_log2_self le_rfl (Nat.two_pow_pos _)
       _ = 2 ^ 53 := by rw [← pow_add]; congr 1; omega
-  · have := hin.exp
+  · have : -1074 ≤ e ∧ e ≤ 971 := hin.range
     rw [normShift]
     omega
 
@@ -1145,29 +1141,14 @@ theorem digit_count (f : ℕ) (e : ℤ) (hin : Normalized f e) (p : ℕ)
       have hppos : (1 : ℤ) ≤ (10 : ℤ) ^ p := one_le_pow₀ (by norm_num)
       nlinarith
 
-/-- The pair zmij returns denotes the pair above: `dec_sig · 10^(18 - p)`
-    against the leading digit's exponent is `d · 10^k`, the padding on one side
-    paying for the shift on the other. -/
-theorem reported_eq (d : ℕ) (k : ℤ) (p : ℕ) (hp : 1 ≤ p ∧ p ≤ 18) :
-    ((d * 10 ^ (18 - p) : ℕ) : ℚ) * 10 ^ (k + (p : ℤ) - 18)
-      = (d : ℚ) * 10 ^ k := by
-  have hpow : ((10 : ℚ) ^ (18 - p)) = 10 ^ ((18 : ℤ) - (p : ℤ)) := by
-    rw [← zpow_natCast]
-    congr 1
-    omega
-  push_cast
-  rw [hpow, mul_assoc, ← zpow_add₀ (by norm_num : (10 : ℚ) ≠ 0)]
-  congr 2
-  omega
-
 /-- zmij converts a positive finite binary64 to a chosen precision correctly:
     the significand it reports has the digits asked for and is correctly rounded
     on the grid reported with it. -/
-theorem correct (f : ℕ) (e : ℤ) (hin : Input f e) (p : ℕ)
+theorem correct (f : ℕ) (e : ℤ) (hfin : binary64.Finite f e) (p : ℕ)
     (hp : 1 ≤ p ∧ p ≤ 18) :
     let (d, k) := toDecimal f e p
     10 ^ (p - 1) ≤ d ∧ d < 10 ^ p ∧ CorrectlyRounded f e d k :=
-  have hn := normalized_of_input hin
+  have hn := normalized_of_finite hfin
   ⟨(digit_count _ _ hn p hp).1, (digit_count _ _ hn p hp).2,
     correctly_rounded_of_normalized (rounds_to_nearest _ _ hn p hp)⟩
 
