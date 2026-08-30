@@ -2,9 +2,9 @@
 # Power of 10 significand generator for Żmij.
 # Copyright (c) 2025 - present, Victor Zverovich
 #
-# The output is the `expected` table in zmij-impl-test.cc, the independent
-# reference the pow10 test checks the compile-time table against. zmij.c's
-# pow10_significands is a subrange of the same output.
+# The output is a superset of zmij.c's pow10_significands table. zmij.cc builds
+# the same significands at compile time, and the pow10 test checks them against
+# big integers computed in the test itself.
 
 import math
 
