@@ -9,15 +9,15 @@ import Mathlib.Order.Interval.Finset.Nat
 import Mathlib.Tactic.IntervalCases
 import Mathlib.Tactic.LinearCombination
 
-/-! # Correctness of Żmij at a chosen precision
+/-! # Correctness of Żmij's fixed-precision conversion
 
 `Zmij.lean` proves the shortest path correct. This file proves the other one:
-`to_decimal(bin_sig, bin_exp, precision)`, which rounds to a digit count the
-caller picks, together with the `normalize` a caller runs first. The two share
-the power-of-ten table and nothing else. There is no shortest representation to
-select here, so `Core.lean`'s selection rule plays no part; what has to hold is
-that the reported significand has the digits asked for and is correctly rounded
-on the grid reported with it, which is `correct`.
+the `to_decimal` overload that takes a precision, which rounds to a digit count
+the caller picks, together with the `normalize` a caller runs first. The two
+share the power-of-ten table and nothing else. There is no shortest
+representation to select here, so `Core.lean`'s selection rule plays no part;
+what has to hold is that the reported significand has the digits asked for and
+is correctly rounded on the grid reported with it, which is `correct`.
 
 `normalize` brings the significand's leading bit up to bit 52, which
 `to_decimal` needs because it picks the scale from the exponent alone. zmij's
