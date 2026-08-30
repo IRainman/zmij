@@ -862,13 +862,12 @@ private theorem window_bounds {g modulus f0 f1 lo hi q p r f j y : ℤ}
         le_trans (mul_le_mul_of_nonpos_right hf0 hr0) (le_max_left _ _)⟩
   exact ⟨by linarith [hfr.2], by linarith [hfr.1]⟩
 
-/-- A residue as a signed offset from the multiple of the modulus below it. -/
+/-- A residue as a signed offset from the multiple of the modulus below it.
+    Matching the cast of the whole residue in one step is what keeps the
+    rewrite off any other modulus in the goal. -/
 theorem cast_mod_eq_sub (a n : ℕ) :
     ((a % n : ℕ) : ℤ) = a - n * ((a / n : ℕ) : ℤ) := by
-  have h : ((n * (a / n) + a % n : ℕ) : ℤ) = (a : ℤ) := by
-    exact_mod_cast Nat.div_add_mod a n
-  rw [Nat.cast_add, Nat.cast_mul] at h
-  linarith
+  rw [Int.natCast_emod, Int.emod_def, ← Int.natCast_ediv]
 
 /-- What a certificate says, at any representative of the residue class. The
     canonical one is what an implementation usually has, but a window recentred
