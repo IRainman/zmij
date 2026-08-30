@@ -7,7 +7,7 @@ import YY
 
 /-! # Correctness of yy at binary128
 
-`YY.lean` proves `yy.correct_of`, that yy implements `Core.lean`'s exact
+`YY.lean` proves `YY.correct_of`, that yy implements `Core.lean`'s exact
 selection rule at any format satisfying two records of side conditions. This
 file discharges those records at IEEE 754 binary128 and applies the theorem. It
 contains no mathematics: every declaration is either a finite check or the
@@ -70,9 +70,9 @@ than the significands themselves. Both are confined to this one exponent, and
 the rest of the range is unaffected.
 -/
 
-namespace yy128
+namespace YY128
 
-open yy
+open YY
 
 set_option maxHeartbeats 0
 
@@ -241,11 +241,11 @@ theorem checks : Checks binary128 := by
     trailing zeros its output is a shortest decimal representation that
     round-trips, and it is correctly rounded on its own decimal grid.
 
-    `yy.correct` is the same sentence at binary64. -/
+    `YY.correct` is the same sentence at binary64. -/
 theorem correct (f : ℕ) (e : ℤ) (hr : binary128.Regular f e) :
     let (d, k) := toDecimal f (⟨e⟩ : FPExp binary128)
     let (d', k') := reduceDecimal d k
     Shortest f e d' k' ∧ CorrectlyRounded f e d' k' :=
   correct_of layout checks f ⟨e⟩ hr
 
-end yy128
+end YY128

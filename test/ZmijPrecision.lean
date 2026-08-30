@@ -106,7 +106,7 @@ elaboration rather than in the kernel: 37,764 goals, against the 2098 exponents
 `Zmij.lean` splits.
 -/
 
-namespace zmij.precision
+namespace ZmijPrecision
 
 set_option maxHeartbeats 0
 
@@ -1039,4 +1039,4 @@ theorem correct (f : ℕ) (e : ℤ) (hfin : binary64.Finite f e) (p : ℕ)
   (rounded_correct _ _ (normalized_of_finite hfin) p hp).imp_right
     (And.imp_right correctly_rounded_of_normalized)
 
-end zmij.precision
+end ZmijPrecision

@@ -70,7 +70,7 @@ per-format obligations in `Layout` and `Checks` and discharged by finite search.
 
 That boundary is what makes another format cheap in proof and expensive only in
 compute. `correct_of` is the generic theorem; `correct` below is binary64's
-instance of it, `yy128.correct` is binary128's, and `yy80.correct` the x87
+instance of it, `YY128.correct` is binary128's, and `YY80.correct` the x87
 80-bit format's.
 
 ## Dependencies
@@ -93,7 +93,7 @@ yy's exponent one ULP spans between one and ten grid steps, so the fine case has
 a grid to be correctly rounded on.
 -/
 
-namespace yy
+namespace YY
 
 /-- An exponent of `fmt`. No lemma below varies the exponent at a fixed format,
     so the two travel as one value; indexing by the format rather than carrying
@@ -2235,4 +2235,4 @@ theorem correct (f : ℕ) (e : ℤ) (hr : binary64.Regular f e) :
     Shortest f e d' k' ∧ CorrectlyRounded f e d' k' :=
   correct_of binary64_layout binary64_checks f ⟨e⟩ hr
 
-end yy
+end YY

@@ -84,7 +84,7 @@ two grids is all of `## The grid at k`.
 has a grid to be correctly rounded on.
 -/
 
-namespace zmij
+namespace Zmij
 
 /-! ## Żmij's conversion
 
@@ -1721,4 +1721,4 @@ theorem correct (f : ℕ) (e : ℤ) (hr : binary64.Regular f e) :
   exact exact_candidate_correct f e (binary64.decimalExponent e) hr.pos
     hfine hcoarse (exact_candidate f e hr)
 
-end zmij
+end Zmij

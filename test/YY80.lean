@@ -7,7 +7,7 @@ import YY
 
 /-! # Correctness of yy at the x87 80-bit format
 
-`YY.lean` proves `yy.correct_of`, that yy implements `Core.lean`'s exact
+`YY.lean` proves `YY.correct_of`, that yy implements `Core.lean`'s exact
 selection rule at any format satisfying two records of side conditions.
 `YY128.lean` discharges those records at binary128; this file does the same at
 the x87 80-bit format and applies the theorem. Like that one it contains no
@@ -57,9 +57,9 @@ binary128's `2^-15` per window per exponent is what adds up to a handful over
 the same range, one of which is real.
 -/
 
-namespace yy80
+namespace YY80
 
-open yy
+open YY
 
 set_option maxHeartbeats 0
 
@@ -163,7 +163,7 @@ theorem checks : Checks binary80 := by
     trailing zeros its output is a shortest decimal representation that
     round-trips, and it is correctly rounded on its own decimal grid.
 
-    `yy.correct` is the same sentence at binary64 and `yy128.correct` at
+    `YY.correct` is the same sentence at binary64 and `YY128.correct` at
     binary128. -/
 theorem correct (f : ℕ) (e : ℤ) (hr : binary80.Regular f e) :
     let (d, k) := toDecimal f (⟨e⟩ : FPExp binary80)
@@ -171,4 +171,4 @@ theorem correct (f : ℕ) (e : ℤ) (hr : binary80.Regular f e) :
     Shortest f e d' k' ∧ CorrectlyRounded f e d' k' :=
   correct_of layout checks f ⟨e⟩ hr
 
-end yy80
+end YY80
