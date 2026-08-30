@@ -1454,16 +1454,15 @@ ZMIJ_INLINE auto scale(uint64_t bin_sig, int bin_exp, int dec_exp) noexcept
   constexpr int shift = 64 - float_traits<Float>::digits;
   int point_shift = shift - compute_exp_shift(bin_exp, dec_exp);
   uint128 pow10 = static_data.pow10_significands[-dec_exp];
-  // Bump inexact powers (dec_exp < -55 or > 0) up to a 128-bit ceiling so they
-  // can't mimic an exact tie; the +1 stays in the low word, never carrying.
-  uint128 p = umul192_hi128(pow10.hi, pow10.lo + (dec_exp < -55 | dec_exp > 0),
-                            uint64_t(bin_sig) << shift);
-  uint64_t integral = p.hi >> point_shift;
-  // The ceiling makes the low 64 product bits unreliable, so sticky uses only
-  // p.lo and p.hi's bits below 1/2; inexact powers always leave a 1 there.
-  uint64_t half = p.hi >> (point_shift - 1) & 1;
-  uint64_t tail = (p.hi & ((uint64_t(1) << (point_shift - 1)) - 1)) | p.lo;
-  return integral << 2 | half << 1 | (tail != 0);
+  // Bump the entry so it never falls below the exact power of ten and so can't
+  // mimic an exact tie; the +1 stays in the low word, never carrying.
+  uint128 p = umul192_hi128(pow10.hi, pow10.lo + 1, uint64_t(bin_sig) << shift);
+  // One shifted read carries the integral part, the 1/2 bit and one bit below
+  // it, which the sticky bit may keep: bit 0 only says that something below 1/2
+  // is set. The ceiling makes the low 64 product bits unreliable, so they are
+  // not among the bits it reads.
+  return (p.hi >> (point_shift - 2)) |
+         ((p.hi << (66 - point_shift) | p.lo) != 0);
 }
 
 // Rounds a packed scaled value (integral << 2 | half << 1 | sticky) to the
@@ -1491,7 +1490,8 @@ auto to_decimal(uint64_t bin_sig, int bin_exp, int precision) noexcept
   if (dec_sig >= pow10s[precision]) {  // One digit too many (overshoot/carry).
     // Drop one decimal digit and reround from the same guard bits in a single
     // pass, folding the dropped digit into the sticky bit (idea by Russ Cox).
-    dec_sig = round_even(scaled / 10 | (scaled & 1) | (scaled % 10 != 0));
+    // A multiple of ten is even, so the old sticky bit needs no term.
+    dec_sig = round_even(scaled / 10 | (scaled % 10 != 0));
     ++dec_exp;
   }
   return {dec_sig * pow10s[18 - precision], dec_exp + precision - 1};

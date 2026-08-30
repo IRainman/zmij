@@ -35,18 +35,18 @@ speak of a binary64 value rather than of an already-shifted significand.
 value is inexact twice over, and the two errors are placed so that neither can
 turn a decision:
 
-* the table entry is the 128-bit significand of `10^k` rounded *up*, so the
-  computed value never falls below the exact one and a value at or above a
-  midpoint cannot present itself below one;
+* the table entry is the truncated 128-bit significand of `10^k` with one
+  added, so the computed value never falls below the exact one and a value at or
+  above a midpoint cannot present itself below one;
 * the sticky bit is taken from the product's bits `[64, n-1)`, discarding the
-  low word, so the ceiling's excess — under `2^64` denominators, `gap_lt` —
-  cannot appear as a set sticky bit and push a value that is exactly on a
-  midpoint above it.
+  low word, so the bump's excess — under `2^64` denominators, `gap_lt` — cannot
+  appear as a set sticky bit and push a value exactly on a midpoint above it.
 
-One ambiguity survives: a value *near* a midpoint presents the same guard bits
-as one exactly on it. `fine_windows_refuted` and `coarse_windows_refuted` rule
-that out at the reported grid and at the reround's, over every significand of
-every (exponent, precision) pair.
+One ambiguity survives: a value *near* a half-step boundary presents the same
+guard bits as one exactly on it. `tie_windows_refuted` rules that out over every
+significand of every (exponent, precision) pair, and it covers the reported grid
+and the reround's at once: a grid point is an even multiple of half a step and a
+midpoint an odd one, so both are boundaries of the same spacing.
 
 Throughout this file:
 * `f`, `e`: binary significand and exponent, denoting `f·2^e`; only `toDecimal`
@@ -71,30 +71,30 @@ report.
       ← rounds_to_nearest
           ← fine_within_half, coarse_within_half
               ← exact_eq, round_even_packed, round_even_demote
-              ← dev_eq_zero, dev_eq_zero_coarse  (the certificates)
-          ← value_scaled                        (the other use of ℚ)
+              ← dev_eq_zero             (the certificates)
+          ← value_scaled                (the other use of ℚ)
 
 ## Why it is not in the default build
 
-The checks below run for about four minutes. Nothing else depends on this file,
+The checks below run for about two minutes. Nothing else depends on this file,
 so it is a `lean_lib` of its own, absent from `defaultTargets`: `lake build` is
 unaffected and `lake build «zmij-p»` is the explicit request to verify the
 fixed-precision path.
 
-## What the four minutes are spent on
+## What the two minutes are spent on
 
 |  | count | cost |
 |---|---|---|
 | `point_shift_bounds` | 37,764 pairs | 12s |
 | `table_checks` | 649 indices, to 1.1 kbit | under a second |
 | `grid_bounds` | 37,764 pairs | 21s |
-| `fine_refuted`, `coarse_refuted` | 37,764 certificates each | ~95s each |
+| `pair_refuted` | 37,764 certificates | ~95s |
 
 As in `yy128.lean` and `yy80.lean` the multiplier is found by
 `ModWindows.search` during elaboration and only the literal reaches the proof
 term. The certificates are the bulk of the cost even so, and they spend it on
-elaboration rather than in the kernel: 37,764 goals per family, against the 2098
-exponents `zmij.lean` splits.
+elaboration rather than in the kernel: 37,764 goals, against the 2098 exponents
+`zmij.lean` splits.
 -/
 
 namespace zmij.precision
@@ -138,14 +138,15 @@ def num (e : ℤ) (p : ℕ) : ℕ := binary64.power10Num (idx e p)
 /-- Denominator of that same power of ten. -/
 def den (e : ℤ) (p : ℕ) : ℕ := binary64.power10Den (idx e p)
 
-/-- The table entry `scale` multiplies by: the 128-bit significand of `10^k`
-    rounded up, `num / den` being the truncation `power10Significand` takes.
-    zmij bumps the entry when `dec_exp < -55` or `dec_exp > 0`, which over the
-    indices reached is exactly when the truncation loses something, and adds the
-    bump to the low word, which is where it fits: both are `table_checks`. -/
+/-- The table entry `scale` multiplies by: the truncated 128-bit significand of
+    `10^k`, which is `num / den`, with one added. That is the ceiling wherever
+    the truncation loses something and one place past it at the 56 indices where
+    it does not, and the error budget asks only that the entry be at or above
+    the exact ratio by under a denominator's worth, so the bump needs no
+    condition on the index. zmij adds it to the low word, which is where it
+    fits: `table_checks`. -/
 def tableEntry (k : ℤ) : ℕ :=
-  binary64.power10Num k / binary64.power10Den k
-    + if binary64.power10Num k % binary64.power10Den k = 0 then 0 else 1
+  binary64.power10Num k / binary64.power10Den k + 1
 
 /-- The 192-bit product, `(bin_sig << 11) · pow10`. -/
 def product (f : ℕ) (e : ℤ) (p : ℕ) : ℕ := f * 2 ^ 11 * tableEntry (idx e p)
@@ -180,7 +181,7 @@ def roundEven (x : ℕ) : ℕ := (x + 1 + x / 4 % 2) / 4
     leaves into the sticky bit. Unlike the packing above this is written as zmij
     writes it, because the bit it sets may already be set: what the reround must
     not do is present the coarser value as exact when a digit was dropped. -/
-def demote (x : ℕ) : ℕ := x / 10 ||| x % 2 ||| (if x % 10 = 0 then 0 else 1)
+def demote (x : ℕ) : ℕ := x / 10 ||| (if x % 10 = 0 then 0 else 1)
 
 /-- The rounding itself, on a normalized significand: `round_even` off the
     packed value, rerounded one place coarser when it comes out a digit too
@@ -232,17 +233,17 @@ def step (e : ℤ) (p : ℕ) : ℕ := 2 * halfStep e p
 /-- The exact scaled value, cleared: `f·2^e·10^(-k)·step`. -/
 def exact (f : ℕ) (e : ℤ) (p : ℕ) : ℕ := f * 2 ^ 11 * num e p
 
-/-- What the discarded low word can be worth, cleared: the table's ceiling adds
-    under one to a 128-bit entry, which the shifted significand scales by under
-    `2^64`. -/
+/-- What the discarded low word can be worth, cleared: the bump puts the entry
+    at most one above the exact ratio, which the shifted significand scales by
+    under `2^64`. -/
 def slack (e : ℤ) (p : ℕ) : ℕ := 2 ^ 64 * den e p
 
-/-- What the ceiling added, cleared and scaled by the significand: the
-    difference between the product zmij formed and the exact one. -/
+/-- What the bump added, cleared and scaled by the significand: the difference
+    between the product zmij formed and the exact one. -/
 def gap (f : ℕ) (e : ℤ) (p : ℕ) : ℕ := den e p * product f e p - exact f e p
 
 /-- What the guard bits do not report: the product bits below the 1/2 place,
-    cleared, less what the ceiling added. It is `dev` being zero that makes an
+    cleared, less what the bump added. It is `dev` being zero that makes an
     apparent tie a real one. -/
 def dev (f : ℕ) (e : ℤ) (p : ℕ) : ℤ := den e p * tail f e p - gap f e p
 
@@ -281,12 +282,11 @@ theorem point_shift_bounds : ∀ p ∈ Finset.Icc 1 18,
   -- exponentiation guards it would otherwise trip. So for the two sweeps below.
   decide +kernel
 
-/-- The table over the indices reached: truncation loses something exactly when
-    zmij bumps the entry, the bump does not carry out of the low word it is
-    added to, and the result is a normalized 128-bit number. -/
+/-- The table over the indices reached: the bump does not carry out of the low
+    word it is added to, and the entry it leaves is a normalized 128-bit
+    number. -/
 theorem table_checks : ∀ k ∈ Finset.Icc (-307 : ℤ) 341,
-    (binary64.power10Num k % binary64.power10Den k = 0 ↔ 0 ≤ k ∧ k ≤ 55)
-      ∧ binary64.power10Num k / binary64.power10Den k % 2 ^ 64 ≠ 2 ^ 64 - 1
+    binary64.power10Num k / binary64.power10Den k % 2 ^ 64 ≠ 2 ^ 64 - 1
       ∧ 2 ^ 127 ≤ tableEntry k ∧ tableEntry k < 2 ^ 128 := by
   decide +kernel
 
@@ -298,60 +298,52 @@ theorem grid_bounds : ∀ p ∈ Finset.Icc 1 18, ∀ e ∈ Finset.Icc (-1126 : �
       ∧ (2 ^ 53 - 1) * 2 ^ 11 * num e p < 2 * 10 ^ p * step e p := by
   decide +kernel
 
-/-- The window problem at a grid `mult` times the reported one: the residues of
-    `exact` that sit within `slack` of that grid's midpoint without sitting on
-    it. A significand there would present the guard bits of a tie without being
-    one, and that is the only way the packed value can mislead. -/
-def midWindows (e : ℤ) (p mult : ℕ) : ModWindows where
+/-- The window problem at an (exponent, precision) pair: the residues of `exact`
+    that sit within `slack` of a half-step boundary without sitting on one. A
+    significand there would present the guard bits of a tie without being one,
+    and that is the only way the packed value can mislead.
+
+    The modulus is half a step rather than a step, which is what lets `0` stand
+    for either kind of boundary: the reported grid's midpoints are the odd
+    multiples of `halfStep` and the reround's grid points the even ones. -/
+def tieWindows (e : ℤ) (p : ℕ) : ModWindows where
   g := 2 ^ 11 * num e p
-  modulus := mult * step e p
+  modulus := halfStep e p
   f0 := 2 ^ 52
   f1 := 2 ^ 53 - 1
   windows :=
-    let c : ℤ := mult * halfStep e p
-    [(c - slack e p + 1, c - 1), (c + 1, c + slack e p - 1)]
+    let w : ℤ := slack e p
+    [(1 - w, -1), (1, w - 1)]
 
 /-! ### Modular certificates
 
 `modCertTactic` reads one integer literal out of the goal and runs the search on
 it during elaboration, so the two indices have to arrive as one: `pairIndex`
-packs them, eighteen precisions to the exponent, and the two families below
-unpack them. A sweep over the packed index is then the same one variable
+packs them, eighteen precisions to the exponent, and the family below unpacks
+them. A sweep over the packed index is then the same one variable
 `interval_cases` splits in `yy128.lean` and `yy80.lean`.
 
 Doing it instead by deciding `refutedBy search` over the grid would put the
-Euclidean search itself in the kernel, 37,764 times per family, which is hours
-and gigabytes rather than minutes.
+Euclidean search itself in the kernel, 37,764 times, which is hours and
+gigabytes rather than minutes.
 -/
 
 /-- The `(exponent, precision)` pair as one index, `0 ≤ c < 37764`. -/
 def pairIndex (e : ℤ) (p : ℕ) : ℤ := (e + 1126) * 18 + ((p : ℤ) - 1)
 
-/-- The window problem at the reported grid, at the pair `c` denotes. -/
-def fineWindows (c : ℤ) : ModWindows :=
-  midWindows (c / 18 - 1126) ((c % 18).toNat + 1) 1
+/-- The window problem at the pair `c` denotes. -/
+def pairWindows (c : ℤ) : ModWindows :=
+  tieWindows (c / 18 - 1126) ((c % 18).toNat + 1)
 
-/-- And at the reround's grid, ten times coarser. -/
-def coarseWindows (c : ℤ) : ModWindows :=
-  midWindows (c / 18 - 1126) ((c % 18).toNat + 1) 10
+/-- Close `∃ q, (pairWindows c).refutedBy q = true` for a literal `c`. -/
+elab "tie_cert" : tactic => modCertTactic fun c => (pairWindows c).search
 
-/-- Close `∃ q, (fineWindows c).refutedBy q = true` for a literal `c`. -/
-elab "fine_cert" : tactic => modCertTactic fun c => (fineWindows c).search
-
-/-- Close `∃ q, (coarseWindows c).refutedBy q = true` for a literal `c`. -/
-elab "coarse_cert" : tactic => modCertTactic fun c => (coarseWindows c).search
-
-/-- No significand puts the reported grid's guard bits at a tie that is not one.
-    The multiplier is searched for during elaboration and checked by the kernel,
-    so a bad one would be a failed proof rather than an unsound one. -/
-private theorem fine_refuted (c : ℤ) (hlo : 0 ≤ c) (hhi : c ≤ 37763) :
-    ∃ q, (fineWindows c).refutedBy q = true := by
-  interval_cases c <;> fine_cert
-
-/-- The same at the reround's grid. -/
-private theorem coarse_refuted (c : ℤ) (hlo : 0 ≤ c) (hhi : c ≤ 37763) :
-    ∃ q, (coarseWindows c).refutedBy q = true := by
-  interval_cases c <;> coarse_cert
+/-- No significand puts the guard bits at a tie that is not one. The multiplier
+    is searched for during elaboration and checked by the kernel, so a bad one
+    would be a failed proof rather than an unsound one. -/
+private theorem pair_refuted (c : ℤ) (hlo : 0 ≤ c) (hhi : c ≤ 37763) :
+    ∃ q, (pairWindows c).refutedBy q = true := by
+  interval_cases c <;> tie_cert
 
 /-- Unpacking inverts packing: eighteen precisions to the exponent, so the
     precision is what the division leaves. -/
@@ -360,23 +352,14 @@ private theorem pair_index_unpack {e : ℤ} {p : ℕ} (hp : 1 ≤ p ∧ p ≤ 18
   rw [pairIndex]
   omega
 
-/-- The certificate at the reported grid, in the pair's own terms. -/
-theorem fine_windows_refuted {e : ℤ} {p : ℕ} (he : -1126 ≤ e ∧ e ≤ 971)
-    (hp : 1 ≤ p ∧ p ≤ 18) : ∃ q, (midWindows e p 1).refutedBy q = true := by
+/-- The certificate in the pair's own terms. -/
+theorem tie_windows_refuted {e : ℤ} {p : ℕ} (he : -1126 ≤ e ∧ e ≤ 971)
+    (hp : 1 ≤ p ∧ p ≤ 18) : ∃ q, (tieWindows e p).refutedBy q = true := by
   obtain ⟨hdiv, hmod⟩ := pair_index_unpack (e := e) hp
-  have h : fineWindows (pairIndex e p) = midWindows e p 1 := by
-    simp only [fineWindows, hdiv, hmod]
+  have h : pairWindows (pairIndex e p) = tieWindows e p := by
+    simp only [pairWindows, hdiv, hmod]
   rw [← h]
-  exact fine_refuted _ (by rw [pairIndex]; omega) (by rw [pairIndex]; omega)
-
-/-- And at the reround's. -/
-theorem coarse_windows_refuted {e : ℤ} {p : ℕ} (he : -1126 ≤ e ∧ e ≤ 971)
-    (hp : 1 ≤ p ∧ p ≤ 18) : ∃ q, (midWindows e p 10).refutedBy q = true := by
-  obtain ⟨hdiv, hmod⟩ := pair_index_unpack (e := e) hp
-  have h : coarseWindows (pairIndex e p) = midWindows e p 10 := by
-    simp only [coarseWindows, hdiv, hmod]
-  rw [← h]
-  exact coarse_refuted _ (by rw [pairIndex]; omega) (by rw [pairIndex]; omega)
+  exact pair_refuted _ (by rw [pairIndex]; omega) (by rw [pairIndex]; omega)
 
 /-! ## The arithmetic model
 
@@ -465,19 +448,20 @@ theorem sticky_eq_zero_iff (f : ℕ) (e : ℤ) (p : ℕ) :
   · exact iff_of_true rfl (hdiv.mp h)
   · exact iff_of_false (by simp) fun hlt => h (hdiv.mpr hlt)
 
-/-- The table entry is the exact ratio rounded up: one denominator's worth above
-    the numerator at most, and never below it. -/
+/-- The table entry is never below the exact ratio, and above it by one
+    denominator's worth at most: the bump gives the first, and the truncation
+    the bump lands on gives the second. -/
 theorem entry_bounds (k : ℤ) :
     binary64.power10Num k ≤ binary64.power10Den k * tableEntry k
       ∧ binary64.power10Den k * tableEntry k
-          < binary64.power10Num k + binary64.power10Den k := by
+          ≤ binary64.power10Num k + binary64.power10Den k := by
   have hd := binary64.power10_den_pos k
   have hdm := Nat.div_add_mod (binary64.power10Num k) (binary64.power10Den k)
   have hlt := Nat.mod_lt (binary64.power10Num k) hd
   rw [tableEntry, Nat.mul_add]
-  split_ifs <;> omega
+  omega
 
-/-- What the ceiling added: the product zmij formed, cleared, is the exact value
+/-- What the bump added: the product zmij formed, cleared, is the exact value
     plus `gap`. -/
 theorem gap_eq (f : ℕ) (e : ℤ) (p : ℕ) :
     den e p * product f e p = exact f e p + gap f e p := by
@@ -500,7 +484,7 @@ theorem gap_lt (f : ℕ) (e : ℤ) (p : ℕ) (hf : f < 2 ^ 53) :
     rw [exact, product]
     calc den e p * (f * 2 ^ 11 * tableEntry (idx e p))
         = f * 2 ^ 11 * (den e p * tableEntry (idx e p)) := by ring
-      _ ≤ f * 2 ^ 11 * (num e p + den e p) := Nat.mul_le_mul_left _ hb.2.le
+      _ ≤ f * 2 ^ 11 * (num e p + den e p) := Nat.mul_le_mul_left _ hb.2
       _ = f * 2 ^ 11 * num e p + f * 2 ^ 11 * den e p := by ring
   have hslack : f * 2 ^ 11 * den e p < slack e p := by
     rw [slack]
@@ -536,7 +520,7 @@ theorem exact_eq (f : ℕ) (e : ℤ) (p : ℕ) (hn : 1 ≤ shiftBits e p) :
   linarith [hgap, hprod]
 
 /-- What the guard bits leave unreported, bounded: less than half a step, and
-    more than `-slack`, the ceiling being all that can put it negative. -/
+    more than `-slack`, the bump being all that can put it negative. -/
 theorem dev_bounds (f : ℕ) (e : ℤ) (p : ℕ) (hf : f < 2 ^ 53) :
     -(slack e p : ℤ) < dev f e p ∧ dev f e p < halfStep e p := by
   have hgap := gap_lt f e p hf
@@ -560,7 +544,7 @@ theorem slack_lt_half_step (e : ℤ) (p : ℕ) (hs : 3 ≤ pointShift e p) :
   exact_mod_cast h
 
 /-- A set sticky bit puts the exact value strictly above the midpoint the 1/2
-    bit reports: the bits it saw are worth more than the ceiling could add. -/
+    bit reports: the bits it saw are worth more than the bump could add. -/
 theorem dev_pos_of_sticky (f : ℕ) (e : ℤ) (p : ℕ) (hf : f < 2 ^ 53)
     (h : sticky f e p = 1) : 0 < dev f e p := by
   have hgap := gap_lt f e p hf
@@ -687,12 +671,9 @@ theorem demote_eq (x : ℕ) :
       rw [Nat.testBit_succ, Nat.testBit_succ, hdiv,
         show (2 * (y / 2) + 1) / 2 = y / 2 from by omega]
   rw [demote]
-  split_ifs with h10
-  · rw [show x % 2 = 0 from by omega, Nat.or_zero, Nat.or_zero]
-  · rcases show x % 2 = 0 ∨ x % 2 = 1 from by omega with h2 | h2
-    · rw [h2, Nat.or_zero, hor]
-    · rw [h2, hor, hor,
-        show (2 * (x / 10 / 2) + 1) / 2 = x / 10 / 2 from by omega]
+  split_ifs
+  · rw [Nat.or_zero]
+  · rw [hor]
 
 /-- `demote` one place coarser, in the same packed form: what remains of the
     integral part above two guard bits of its own, which the digit that leaves
@@ -731,14 +712,14 @@ theorem round_even_demote (f : ℕ) (e : ℤ) (p : ℕ) :
 /-! ## An apparent tie is a real one
 
 Everything the guard bits hide is under `slack`: the product bits they do not
-see and the ceiling's excess both are. So the packed value can only mislead by
-presenting a value near a midpoint as one exactly on it, and the certificates
-say no significand does that.
+see and the bump's excess both are. So the packed value can only mislead by
+presenting a value near a half-step boundary as one exactly on it, and the
+certificate says no significand does that.
 -/
 
-/-- A clear sticky bit leaves the exact value within `slack` of the midpoint the
-    1/2 bit reports: the bits it hides are worth less than that, and so is the
-    ceiling's excess. -/
+/-- A clear sticky bit leaves the exact value within `slack` of the boundary the
+    guard bits report: the bits it hides are worth less than that, and so is the
+    bump's excess. -/
 theorem dev_near_of_sticky_eq_zero (f : ℕ) (e : ℤ) (p : ℕ) (hf : f < 2 ^ 53)
     (hsticky : sticky f e p = 0) :
     -(slack e p : ℤ) < dev f e p ∧ dev f e p < slack e p := by
@@ -752,77 +733,46 @@ theorem dev_near_of_sticky_eq_zero (f : ℕ) (e : ℤ) (p : ℕ) (hf : f < 2 ^ 5
   rw [dev]
   omega
 
-/-- What the certificates say, at either grid: a residue near the midpoint has
-    to be on it. `j` is whatever multiple of the modulus the caller's identity
-    leaves, which the certificate never reads. -/
-theorem dev_eq_zero_of_cert {f : ℕ} {e : ℤ} {p mult : ℕ}
-    (hin : Normalized f e) (hmult : 0 < mult) {q : ℤ}
-    (hcert : (midWindows e p mult).refutedBy q = true)
-    (hnear : -(slack e p : ℤ) < dev f e p ∧ dev f e p < slack e p) {j : ℤ}
-    (hres : (mult : ℤ) * (halfStep e p : ℤ) + dev f e p
-      = (midWindows e p mult).g * f - (midWindows e p mult).modulus * j) :
-    dev f e p = 0 := by
+/-- What the certificate says: when the sticky bit is clear the exact value sits
+    exactly on the half-step boundary the guard bits report. This is the one
+    statement that makes an apparent tie a real one, at the reported grid and at
+    the reround's alike, because `exact_eq` writes the exact value as a multiple
+    of `halfStep` plus `dev` whatever the guard bits happen to say: the integral
+    part counts the steps and the 1/2 bit the odd half-step. -/
+theorem dev_eq_zero (f : ℕ) (e : ℤ) (hin : Normalized f e) (p : ℕ)
+    (hp : 1 ≤ p ∧ p ≤ 18) (hsticky : sticky f e p = 0) : dev f e p = 0 := by
+  have hs := point_shift_bounds p (by simpa using hp) e
+    (by simpa using hin.exp)
+  have hn := shift_bits_ge hs.1
   have hsig := hin.sig
-  have hbox : (midWindows e p mult).f0 ≤ f ∧ f ≤ (midWindows e p mult).f1 := by
-    simp only [midWindows]
+  have hnear := dev_near_of_sticky_eq_zero f e p hin.sig.2 hsticky
+  have hcert := (tie_windows_refuted hin.exp hp).choose_spec
+  have hbox : (tieWindows e p).f0 ≤ f ∧ f ≤ (tieWindows e p).f1 := by
+    simp only [tieWindows]
     omega
-  have hmod : 0 < (midWindows e p mult).modulus := by
-    have := step_pos e p
-    simp only [midWindows]
+  have hmod : 0 < (tieWindows e p).modulus := by
+    have := den_pos e p
+    simp only [tieWindows, halfStep]
     positivity
-  set c : ℤ := (mult : ℤ) * (halfStep e p : ℤ) with hc
   set w : ℤ := (slack e p : ℤ) with hw
-  have hmem₁ : (c - w + 1, c - 1) ∈ (midWindows e p mult).windows := by
-    simp [midWindows, hc, hw]
-  have hmem₂ : (c + 1, c + w - 1) ∈ (midWindows e p mult).windows := by
-    simp [midWindows, hc, hw]
+  have hmem₁ : (1 - w, (-1 : ℤ)) ∈ (tieWindows e p).windows := by
+    simp [tieWindows, hw]
+  have hmem₂ : ((1 : ℤ), w - 1) ∈ (tieWindows e p).windows := by
+    simp [tieWindows, hw]
+  -- The residue at the boundary is what the guard bits do not report.
+  have hres : dev f e p = (tieWindows e p).g * f
+      - (tieWindows e p).modulus * (2 * integral f e p + half f e p) := by
+    have hex := exact_eq f e p (by omega)
+    rw [exact] at hex
+    simp only [tieWindows]
+    push_cast at hex ⊢
+    linarith
   rcases lt_trichotomy (dev f e p) 0 with hlt | heq | hgt
-  · exact absurd hres fun h => (midWindows e p mult).not_hit_rep f hmod hcert
+  · exact absurd hres fun h => (tieWindows e p).not_hit_rep f hmod hcert
       hmem₁ hbox.1 hbox.2 h (by omega) (by omega)
   · exact heq
-  · exact absurd hres fun h => (midWindows e p mult).not_hit_rep f hmod hcert
+  · exact absurd hres fun h => (tieWindows e p).not_hit_rep f hmod hcert
       hmem₂ hbox.1 hbox.2 h (by omega) (by omega)
-
-/-- At the reported grid: when the 1/2 bit is set and the sticky bit is not, the
-    exact value sits exactly on the midpoint. -/
-theorem dev_eq_zero (f : ℕ) (e : ℤ) (hin : Normalized f e) (p : ℕ)
-    (hp : 1 ≤ p ∧ p ≤ 18) (hhalf : half f e p = 1)
-    (hsticky : sticky f e p = 0) : dev f e p = 0 := by
-  have hs := point_shift_bounds p (by simpa using hp) e
-    (by simpa using hin.exp)
-  have hn := shift_bits_ge hs.1
-  refine dev_eq_zero_of_cert (mult := 1) hin (by norm_num)
-    (fine_windows_refuted hin.exp hp).choose_spec
-    (dev_near_of_sticky_eq_zero f e p hin.sig.2 hsticky)
-    (j := integral f e p) ?_
-  -- The residue at the midpoint, offset by what the guard bits hide.
-  have hex := exact_eq f e p (by omega)
-  rw [hhalf, exact] at hex
-  simp only [midWindows, step]
-  push_cast at hex ⊢
-  linarith
-
-/-- At the reround's grid: when the digit that leaves is a five and neither
-    guard bit is set, the exact value sits exactly on the coarser midpoint. -/
-theorem dev_eq_zero_coarse (f : ℕ) (e : ℤ) (hin : Normalized f e) (p : ℕ)
-    (hp : 1 ≤ p ∧ p ≤ 18) (hhalf : half f e p = 0)
-    (hsticky : sticky f e p = 0) (hfive : integral f e p % 10 = 5) :
-    dev f e p = 0 := by
-  have hs := point_shift_bounds p (by simpa using hp) e
-    (by simpa using hin.exp)
-  have hn := shift_bits_ge hs.1
-  refine dev_eq_zero_of_cert (mult := 10) hin (by norm_num)
-    (coarse_windows_refuted hin.exp hp).choose_spec
-    (dev_near_of_sticky_eq_zero f e p hin.sig.2 hsticky)
-    (j := integral f e p / 10) ?_
-  have hex := exact_eq f e p (by omega)
-  have hI : (integral f e p : ℤ)
-      = 10 * (integral f e p / 10 : ℕ) + 5 := by omega
-  rw [hhalf, exact] at hex
-  rw [hI] at hex
-  simp only [midWindows, step]
-  push_cast at hex ⊢
-  linarith
 
 /-! ## Half a step
 
@@ -842,7 +792,7 @@ the reround's, where the digit that leaves decides first.
     real one and the candidate's parity then resolves. -/
 private theorem dist_bound {G dev : ℤ} {h s c i : ℕ} (hh : h ≤ 1) (hs : s ≤ 1)
     (hlo : -G < dev) (hhi : dev < G) (hsticky : s = 1 → 0 < dev)
-    (htie : h = 1 → s = 0 → dev = 0)
+    (htie : s = 0 → dev = 0)
     (hc : c = if h = 1 ∧ (s = 1 ∨ i % 2 = 1) then 1 else 0) :
     -G ≤ G * h + dev - 2 * G * c ∧ G * h + dev - 2 * G * c ≤ G
       ∧ (G * h + dev - 2 * G * c = G → (i + c) % 2 = 0)
@@ -859,7 +809,7 @@ private theorem dist_bound {G dev : ℤ} {h s c i : ℕ} (hh : h ≤ 1) (hs : s 
     leaves and `q` what remains, whose parity breaks the coarser tie. -/
 private theorem dist_bound_coarse {G dev : ℤ} {h s c t q : ℕ} (hh : h ≤ 1)
     (hs : s ≤ 1) (ht : t < 10) (hlo : -G < dev) (hhi : dev < G)
-    (hsticky : s = 1 → 0 < dev) (htie : t = 5 → h = 0 → s = 0 → dev = 0)
+    (hsticky : s = 1 → 0 < dev) (htie : s = 0 → dev = 0)
     (hc : c = if 6 ≤ t ∨ (t = 5 ∧ (h = 1 ∨ s = 1 ∨ q % 2 = 1)) then 1 else 0) :
     -(10 * G) ≤ 2 * G * t + G * h + dev - 20 * G * c
       ∧ 2 * G * t + G * h + dev - 20 * G * c ≤ 10 * G
@@ -949,8 +899,7 @@ theorem coarse_within_half (f : ℕ) (e : ℤ) (hin : Normalized f e) (p : ℕ)
     (dev := dev f e p) (h := half f e p) (s := sticky f e p) (c := c)
     (t := integral f e p % 10) (q := integral f e p / 10) hh hst (by omega)
     (by omega) hdev.2 (dev_pos_of_sticky f e p hin.sig.2)
-    (fun ht hhalf hsticky =>
-      dev_eq_zero_coarse f e hin p hp hhalf hsticky ht) hc
+    (dev_eq_zero f e hin p hp) hc
   rw [hdist, hround]
   exact ⟨hlo, hhi, fun htie => htie.elim hup hdown⟩
 
