@@ -11,16 +11,24 @@ import Mathlib.Order.Interval.Finset.Nat
 
 `zmij.lean` proves the shortest path correct. This file proves the other one:
 `to_decimal(bin_sig, bin_exp, precision)`, which rounds to a digit count the
-caller picks. The two share the power-of-ten table and nothing else. There is no
-shortest representation to select here, so `core.lean`'s selection rule plays no
-part; what has to hold is that the reported significand has the digits asked for
-and is correctly rounded on the grid reported with it, which is `correct`.
+caller picks, together with the `normalize` a caller runs first. The two share
+the power-of-ten table and nothing else. There is no shortest representation to
+select here, so `core.lean`'s selection rule plays no part; what has to hold is
+that the reported significand has the digits asked for and is correctly rounded
+on the grid reported with it, which is `correct`.
 
+    shift   = 52 - floor(log2(bin_sig))      -- normalize; 0 for a normal
+    bin_sig, bin_exp = bin_sig << shift, bin_exp - shift
     dec_exp = compute_dec_exp(bin_exp + 52) - (precision - 1)
     scaled  = scale(bin_sig, bin_exp, dec_exp)
     dec_sig = round_even(scaled)
     if dec_sig >= 10^precision:              -- one digit too many
       dec_sig, dec_exp = round_even(demote(scaled)), dec_exp + 1
+
+`normalize` brings the significand's leading bit up to bit 52, which
+`to_decimal` needs because it picks the scale from the exponent alone. zmij's
+callers run it, for a subnormal only; folding it in here is what lets `correct`
+speak of a binary64 value rather than of an already-shifted significand.
 
 `scale` packs the scaled value above two guard bits, bit 1 the 1/2 place and bit
 0 a sticky bit, and `round_even` reads its decision off those two. The packed
@@ -41,7 +49,8 @@ that out at the reported grid and at the reround's, over every significand of
 every (exponent, precision) pair.
 
 Throughout this file:
-* `f`, `e`: binary significand and exponent, denoting `f·2^e`;
+* `f`, `e`: binary significand and exponent, denoting `f·2^e`; only `toDecimal`
+  takes them unnormalized, everything under it is the normalized pair;
 * `p`: the number of significant digits asked for;
 * `d`, `k`: decimal significand and exponent, denoting `d·10^k`;
 * `n`: `shiftBits e p`, the product bits below the integral part.
@@ -55,12 +64,15 @@ report.
 ## Dependencies
 
     correct
+      ← normalized_of_input
+      ← correctly_rounded_of_normalized
+          ← value_normalized
       ← digit_count
       ← rounds_to_nearest
           ← fine_within_half, coarse_within_half
               ← exact_eq, round_even_packed, round_even_demote
               ← dev_eq_zero, dev_eq_zero_coarse  (the certificates)
-          ← value_scaled                        (the only use of ℚ)
+          ← value_scaled                        (the other use of ℚ)
 
 ## Why it is not in the default build
 
@@ -97,7 +109,8 @@ set_option maxRecDepth 100000
 
 One 192-bit multiply of the shifted significand by the 128-bit power of ten,
 with the integral part and the two guard bits read out of the product at a fixed
-bit position. The definitions below name each of those pieces.
+bit position. The definitions below name each of those pieces, and the shift
+that fills the significand's box before any of them.
 -/
 
 /-- The decimal exponent of the grid the digits are asked for: the exponent of
@@ -169,23 +182,42 @@ def roundEven (x : ℕ) : ℕ := (x + 1 + x / 4 % 2) / 4
     not do is present the coarser value as exact when a digit was dropped. -/
 def demote (x : ℕ) : ℕ := x / 10 ||| x % 2 ||| (if x % 10 = 0 then 0 else 1)
 
-/-- `to_decimal`: the significand and exponent zmij reports for `p` significant
-    digits. zmij returns the significand padded right to 18 digits along with
-    the leading digit's exponent, which denotes the same value:
-    `reported_eq`. -/
-def toDecimal (f : ℕ) (e : ℤ) (p : ℕ) : ℕ × ℤ :=
+/-- The rounding itself, on a normalized significand: `round_even` off the
+    packed value, rerounded one place coarser when it comes out a digit too
+    long. -/
+def rounded (f : ℕ) (e : ℤ) (p : ℕ) : ℕ × ℤ :=
   let x := packed f e p
   let d := roundEven x
   if d < 10 ^ p then (d, decExp e p) else (roundEven (demote x), decExp e p + 1)
 
-/-- What `to_decimal` is called on. The significand is normalized, which for a
-    subnormal costs exponent range: the shift reaches 52 below `emin`. The
-    precision is what a caller may ask for, at most the 18 digits the returned
-    significand holds. -/
-structure Normalized (f : ℕ) (e : ℤ) (p : ℕ) : Prop where
+/-- `normalize`'s shift, `clz(bin_sig) - 11` written as a logarithm: what it
+    takes to bring the significand's leading bit up to bit 52. It is zero once
+    the bit is there, which is why zmij's callers run `normalize` for a
+    subnormal only. -/
+def normShift (f : ℕ) : ℕ := 52 - Nat.log2 f
+
+/-- `to_decimal` on the value a caller has, `normalize` then the rounding: the
+    significand and exponent zmij reports for `p` significant digits. zmij
+    returns the significand padded right to 18 digits along with the leading
+    digit's exponent, which denotes the same value: `reported_eq`. Those 18 also
+    bound the precision a caller may ask for, `1 ≤ p ∧ p ≤ 18` standing as a
+    hypothesis of its own throughout: it constrains the request, where the two
+    structures below constrain the value. -/
+def toDecimal (f : ℕ) (e : ℤ) (p : ℕ) : ℕ × ℤ :=
+  rounded (f * 2 ^ normShift f) (e - normShift f) p
+
+/-- The value `to_decimal` is called on: a positive finite binary64, a subnormal
+    arriving as a significand below `2^52` at `emin`. -/
+structure Input (f : ℕ) (e : ℤ) : Prop where
+  sig : 0 < f ∧ f < 2 ^ 53
+  exp : -1074 ≤ e ∧ e ≤ 971
+
+/-- The value `rounded` is called on, which `normalized_of_input` derives from
+    the input. The significand is normalized, which for a subnormal costs
+    exponent range: the shift reaches 52 below `emin`. -/
+structure Normalized (f : ℕ) (e : ℤ) : Prop where
   sig : 2 ^ 52 ≤ f ∧ f < 2 ^ 53
   exp : -1126 ≤ e ∧ e ≤ 971
-  prec : 1 ≤ p ∧ p ≤ 18
 
 /-! ## The cleared scale
 
@@ -552,7 +584,7 @@ theorem dev_pos_of_sticky (f : ℕ) (e : ℤ) (p : ℕ) (hf : f < 2 ^ 53)
 The specification is about rationals; everything above is about naturals. `step`
 is the factor that clears the grid, and it sends the exact scaled value to
 `exact`, so every distance the specification asks about is a distance of
-integers. This is the only place `ℚ` appears.
+integers. Only this section and the normalization below touch `ℚ`.
 -/
 
 /-- `step` sends the exact scaled value to the integer `exact`. -/
@@ -729,7 +761,7 @@ theorem dev_near_of_sticky_eq_zero (f : ℕ) (e : ℤ) (p : ℕ) (hf : f < 2 ^ 5
     to be on it. `j` is whatever multiple of the modulus the caller's identity
     leaves, which the certificate never reads. -/
 theorem dev_eq_zero_of_cert {f : ℕ} {e : ℤ} {p mult : ℕ}
-    (hin : Normalized f e p) (hmult : 0 < mult) {q : ℤ}
+    (hin : Normalized f e) (hmult : 0 < mult) {q : ℤ}
     (hcert : (midWindows e p mult).refutedBy q = true)
     (hnear : -(slack e p : ℤ) < dev f e p ∧ dev f e p < slack e p) {j : ℤ}
     (hres : (mult : ℤ) * (halfStep e p : ℤ) + dev f e p
@@ -758,13 +790,14 @@ theorem dev_eq_zero_of_cert {f : ℕ} {e : ℤ} {p mult : ℕ}
 
 /-- At the reported grid: when the 1/2 bit is set and the sticky bit is not, the
     exact value sits exactly on the midpoint. -/
-theorem dev_eq_zero (f : ℕ) (e : ℤ) (p : ℕ) (hin : Normalized f e p)
-    (hhalf : half f e p = 1) (hsticky : sticky f e p = 0) : dev f e p = 0 := by
-  have hs := point_shift_bounds p (by simpa using hin.prec) e
+theorem dev_eq_zero (f : ℕ) (e : ℤ) (hin : Normalized f e) (p : ℕ)
+    (hp : 1 ≤ p ∧ p ≤ 18) (hhalf : half f e p = 1)
+    (hsticky : sticky f e p = 0) : dev f e p = 0 := by
+  have hs := point_shift_bounds p (by simpa using hp) e
     (by simpa using hin.exp)
   have hn := shift_bits_ge hs.1
   refine dev_eq_zero_of_cert (mult := 1) hin (by norm_num)
-    (fine_windows_refuted hin.exp hin.prec).choose_spec
+    (fine_windows_refuted hin.exp hp).choose_spec
     (dev_near_of_sticky_eq_zero f e p hin.sig.2 hsticky)
     (j := integral f e p) ?_
   -- The residue at the midpoint, offset by what the guard bits hide.
@@ -776,14 +809,15 @@ theorem dev_eq_zero (f : ℕ) (e : ℤ) (p : ℕ) (hin : Normalized f e p)
 
 /-- At the reround's grid: when the digit that leaves is a five and neither
     guard bit is set, the exact value sits exactly on the coarser midpoint. -/
-theorem dev_eq_zero_coarse (f : ℕ) (e : ℤ) (p : ℕ) (hin : Normalized f e p)
-    (hhalf : half f e p = 0) (hsticky : sticky f e p = 0)
-    (hfive : integral f e p % 10 = 5) : dev f e p = 0 := by
-  have hs := point_shift_bounds p (by simpa using hin.prec) e
+theorem dev_eq_zero_coarse (f : ℕ) (e : ℤ) (hin : Normalized f e) (p : ℕ)
+    (hp : 1 ≤ p ∧ p ≤ 18) (hhalf : half f e p = 0)
+    (hsticky : sticky f e p = 0) (hfive : integral f e p % 10 = 5) :
+    dev f e p = 0 := by
+  have hs := point_shift_bounds p (by simpa using hp) e
     (by simpa using hin.exp)
   have hn := shift_bits_ge hs.1
   refine dev_eq_zero_of_cert (mult := 10) hin (by norm_num)
-    (coarse_windows_refuted hin.exp hin.prec).choose_spec
+    (coarse_windows_refuted hin.exp hp).choose_spec
     (dev_near_of_sticky_eq_zero f e p hin.sig.2 hsticky)
     (j := integral f e p / 10) ?_
   have hex := exact_eq f e p (by omega)
@@ -859,12 +893,13 @@ def coarseDist (f : ℕ) (e : ℤ) (p : ℕ) : ℤ :=
 
 /-- `round_even`'s candidate is within half a step, and exactly half a step away
     only when it is even. -/
-theorem fine_within_half (f : ℕ) (e : ℤ) (p : ℕ) (hin : Normalized f e p) :
+theorem fine_within_half (f : ℕ) (e : ℤ) (hin : Normalized f e) (p : ℕ)
+    (hp : 1 ≤ p ∧ p ≤ 18) :
     -(halfStep e p : ℤ) ≤ fineDist f e p ∧ fineDist f e p ≤ halfStep e p
       ∧ (fineDist f e p = halfStep e p ∨ fineDist f e p = -(halfStep e p : ℤ)
         → roundEven (packed f e p) % 2 = 0) := by
   obtain ⟨hh, hst⟩ := guard_le_one f e p
-  have hs := point_shift_bounds p (by simpa using hin.prec) e
+  have hs := point_shift_bounds p (by simpa using hp) e
     (by simpa using hin.exp)
   have hex := exact_eq f e p (by have := shift_bits_ge hs.1; omega)
   have hdev := dev_bounds f e p hin.sig.2
@@ -882,19 +917,20 @@ theorem fine_within_half (f : ℕ) (e : ℤ) (p : ℕ) (hin : Normalized f e p) 
   obtain ⟨hlo, hhi, hup, hdown⟩ := dist_bound (G := (halfStep e p : ℤ))
     (dev := dev f e p) (h := half f e p) (s := sticky f e p) (c := c)
     (i := integral f e p) hh hst (by omega) hdev.2
-    (dev_pos_of_sticky f e p hin.sig.2) (dev_eq_zero f e p hin) hc
+    (dev_pos_of_sticky f e p hin.sig.2) (dev_eq_zero f e hin p hp) hc
   rw [hdist, hround]
   exact ⟨hlo, hhi, fun htie => htie.elim hup hdown⟩
 
 /-- The same for the reround's candidate, with a step of its own grid. -/
-theorem coarse_within_half (f : ℕ) (e : ℤ) (p : ℕ) (hin : Normalized f e p) :
+theorem coarse_within_half (f : ℕ) (e : ℤ) (hin : Normalized f e) (p : ℕ)
+    (hp : 1 ≤ p ∧ p ≤ 18) :
     -(10 * (halfStep e p : ℤ)) ≤ coarseDist f e p
       ∧ coarseDist f e p ≤ 10 * halfStep e p
       ∧ (coarseDist f e p = 10 * halfStep e p
           ∨ coarseDist f e p = -(10 * (halfStep e p : ℤ))
         → roundEven (demote (packed f e p)) % 2 = 0) := by
   obtain ⟨hh, hst⟩ := guard_le_one f e p
-  have hs := point_shift_bounds p (by simpa using hin.prec) e
+  have hs := point_shift_bounds p (by simpa using hp) e
     (by simpa using hin.exp)
   have hex := exact_eq f e p (by have := shift_bits_ge hs.1; omega)
   have hdev := dev_bounds f e p hin.sig.2
@@ -918,23 +954,78 @@ theorem coarse_within_half (f : ℕ) (e : ℤ) (p : ℕ) (hin : Normalized f e p
     (dev := dev f e p) (h := half f e p) (s := sticky f e p) (c := c)
     (t := integral f e p % 10) (q := integral f e p / 10) hh hst (by omega)
     (by omega) hdev.2 (dev_pos_of_sticky f e p hin.sig.2)
-    (fun ht hhalf hsticky => dev_eq_zero_coarse f e p hin hhalf hsticky ht) hc
+    (fun ht hhalf hsticky =>
+      dev_eq_zero_coarse f e hin p hp hhalf hsticky ht) hc
   rw [hdist, hround]
   exact ⟨hlo, hhi, fun htie => htie.elim hup hdown⟩
+
+/-! ## Normalization
+
+`to_decimal` picks the scale from the exponent alone, so the significand has to
+fill its box before the call. `normalize` shifts it there and the exponent pays
+the shift, which leaves the value alone; the value is all the specification
+reads of the pair, so what holds of the normalized pair holds of the input.
+-/
+
+/-- `normalize` fills the significand's box: the leading bit goes to bit 52, and
+    the shift that takes it there is at most 52, so the exponent it spends
+    reaches no further than 52 below `emin`. -/
+theorem normalized_of_input {f : ℕ} {e : ℤ} (hin : Input f e) :
+    Normalized (f * 2 ^ normShift f) (e - normShift f) := by
+  obtain ⟨hpos, hlt⟩ := hin.sig
+  have hne : f ≠ 0 := by omega
+  have hlog : Nat.log2 f ≤ 52 := by
+    have := (Nat.log2_lt hne).mpr hlt
+    omega
+  have hsum : Nat.log2 f + normShift f = 52 := by
+    rw [normShift]
+    omega
+  refine ⟨⟨?_, ?_⟩, ?_⟩
+  · calc 2 ^ 52 = 2 ^ Nat.log2 f * 2 ^ normShift f := by rw [← pow_add, hsum]
+      _ ≤ f * 2 ^ normShift f :=
+        Nat.mul_le_mul_right _ (Nat.log2_self_le hne)
+  · calc f * 2 ^ normShift f < 2 ^ (Nat.log2 f + 1) * 2 ^ normShift f :=
+        Nat.mul_lt_mul_of_lt_of_le Nat.lt_log2_self le_rfl (Nat.two_pow_pos _)
+      _ = 2 ^ 53 := by rw [← pow_add]; congr 1; omega
+  · have := hin.exp
+    rw [normShift]
+    omega
+
+/-- Normalizing leaves the value where it was: the significand's shift is the
+    exponent's, the other way. -/
+theorem value_normalized (f : ℕ) (e : ℤ) :
+    value (f * 2 ^ normShift f) (e - normShift f) = value f e := by
+  have h : ((2 : ℚ) ^ normShift f) * 2 ^ (e - (normShift f : ℤ)) = 2 ^ e := by
+    rw [← zpow_natCast (2 : ℚ) (normShift f), ← zpow_add₀ (two_ne_zero' ℚ)]
+    congr 1
+    ring
+  simp only [value]
+  push_cast
+  linear_combination (f : ℚ) * h
+
+/-- So a candidate correctly rounded against the normalized pair is correctly
+    rounded against the input, `CorrectlyRounded` reading the pair only through
+    `value`. -/
+theorem correctly_rounded_of_normalized {f : ℕ} {e : ℤ} {d : ℕ} {k : ℤ}
+    (h : CorrectlyRounded (f * 2 ^ normShift f) (e - normShift f) d k) :
+    CorrectlyRounded f e d k := by
+  simpa only [CorrectlyRounded, value_normalized] using h
 
 /-! ## Correctness
 
 The reported significand is correctly rounded on the grid it is reported at,
 which is `half a step` away from the specification and no more, and it has the
-digits asked for, which is `grid_bounds` against the same half step.
+digits asked for, which is `grid_bounds` against the same half step. Both are
+stated of the normalized pair, and `correct` carries them back to the input.
 -/
 
 /-- The scaled value, bounded by the digits asked for: at least `10^(p-1)` and
     below `2·10^p`, over the whole significand box. -/
-theorem exact_bounds (f : ℕ) (e : ℤ) (p : ℕ) (hin : Normalized f e p) :
+theorem exact_bounds (f : ℕ) (e : ℤ) (hin : Normalized f e) (p : ℕ)
+    (hp : 1 ≤ p ∧ p ≤ 18) :
     10 ^ (p - 1) * step e p ≤ exact f e p
       ∧ exact f e p < 2 * 10 ^ p * step e p := by
-  obtain ⟨hlo, hhi⟩ := grid_bounds p (by simpa using hin.prec) e
+  obtain ⟨hlo, hhi⟩ := grid_bounds p (by simpa using hp) e
     (by simpa using hin.exp)
   have hsig := hin.sig
   refine ⟨hlo.trans ?_, lt_of_le_of_lt ?_ hhi⟩
@@ -948,33 +1039,34 @@ theorem exact_bounds (f : ℕ) (e : ℤ) (p : ℕ) (hin : Normalized f e p) :
     its own, so the branches are taken apart here rather than at each use. -/
 private theorem to_decimal_fine {f : ℕ} {e : ℤ} {p : ℕ}
     (hover : roundEven (packed f e p) < 10 ^ p) :
-    (toDecimal f e p).1 = roundEven (packed f e p)
-      ∧ (toDecimal f e p).2 = decExp e p := by
-  constructor <;> simp [toDecimal, hover]
+    (rounded f e p).1 = roundEven (packed f e p)
+      ∧ (rounded f e p).2 = decExp e p := by
+  constructor <;> simp [rounded, hover]
 
 /-- And when it comes out one digit too long. -/
 private theorem to_decimal_coarse {f : ℕ} {e : ℤ} {p : ℕ}
     (hover : ¬roundEven (packed f e p) < 10 ^ p) :
-    (toDecimal f e p).1 = roundEven (demote (packed f e p))
-      ∧ (toDecimal f e p).2 = decExp e p + 1 := by
-  constructor <;> simp [toDecimal, hover]
+    (rounded f e p).1 = roundEven (demote (packed f e p))
+      ∧ (rounded f e p).2 = decExp e p + 1 := by
+  constructor <;> simp [rounded, hover]
 
 /-- The reported significand is correctly rounded on the grid reported with
     it. -/
-theorem rounds_to_nearest (f : ℕ) (e : ℤ) (p : ℕ) (hin : Normalized f e p) :
-    CorrectlyRounded f e (toDecimal f e p).1 (toDecimal f e p).2 := by
-  have hs := point_shift_bounds p (by simpa using hin.prec) e
+theorem rounds_to_nearest (f : ℕ) (e : ℤ) (hin : Normalized f e) (p : ℕ)
+    (hp : 1 ≤ p ∧ p ≤ 18) :
+    CorrectlyRounded f e (rounded f e p).1 (rounded f e p).2 := by
+  have hs := point_shift_bounds p (by simpa using hp) e
     (by simpa using hin.exp)
   have hstep := step_cast e p
   by_cases hover : roundEven (packed f e p) < 10 ^ p
-  · obtain ⟨hlo, hhi, heven⟩ := fine_within_half f e p hin
+  · obtain ⟨hlo, hhi, heven⟩ := fine_within_half f e hin p hp
     simp only [fineDist] at hlo hhi heven
     obtain ⟨hd, hk⟩ := to_decimal_fine hover
     rw [hd, hk]
     exact correctly_rounded_of_dist (step_pos e p) (value_scaled f e p hs.1)
       ⟨by omega, by omega⟩
       fun htie => heven (htie.imp (fun h => by omega) fun h => by omega)
-  · obtain ⟨hlo, hhi, heven⟩ := coarse_within_half f e p hin
+  · obtain ⟨hlo, hhi, heven⟩ := coarse_within_half f e hin p hp
     simp only [coarseDist] at hlo hhi heven
     obtain ⟨hd, hk⟩ := to_decimal_coarse hover
     rw [hd, hk]
@@ -987,11 +1079,11 @@ theorem rounds_to_nearest (f : ℕ) (e : ℤ) (p : ℕ) (hin : Normalized f e p)
 /-- The reported significand has the digits asked for. The lower bound in the
     reround's branch comes from the branch itself: the significand it rerounds
     had one digit too many. -/
-theorem digit_count (f : ℕ) (e : ℤ) (p : ℕ) (hin : Normalized f e p) :
-    10 ^ (p - 1) ≤ (toDecimal f e p).1 ∧ (toDecimal f e p).1 < 10 ^ p := by
-  have hprec := hin.prec
-  obtain ⟨hgridlo, hgridhi⟩ := exact_bounds f e p hin
-  obtain ⟨hflo, hfhi, -⟩ := fine_within_half f e p hin
+theorem digit_count (f : ℕ) (e : ℤ) (hin : Normalized f e) (p : ℕ)
+    (hp : 1 ≤ p ∧ p ≤ 18) :
+    10 ^ (p - 1) ≤ (rounded f e p).1 ∧ (rounded f e p).1 < 10 ^ p := by
+  obtain ⟨hgridlo, hgridhi⟩ := exact_bounds f e hin p hp
+  obtain ⟨hflo, hfhi, -⟩ := fine_within_half f e hin p hp
   simp only [fineDist] at hflo hfhi
   have hspos : 0 < step e p := step_pos e p
   have hstep := step_cast e p
@@ -1018,7 +1110,7 @@ theorem digit_count (f : ℕ) (e : ℤ) (p : ℕ) (hin : Normalized f e p) :
       mul_le_mul_of_nonneg_right h1 (by positivity)
     have : (0 : ℤ) < halfStep e p := by omega
     linarith
-  · obtain ⟨hclo, hchi, -⟩ := coarse_within_half f e p hin
+  · obtain ⟨hclo, hchi, -⟩ := coarse_within_half f e hin p hp
     simp only [coarseDist] at hclo hchi
     rw [(to_decimal_coarse hover).1]
     -- The rerounded significand is a tenth of one that had `p + 1` digits.
@@ -1068,13 +1160,15 @@ theorem reported_eq (d : ℕ) (k : ℤ) (p : ℕ) (hp : 1 ≤ p ∧ p ≤ 18) :
   congr 2
   omega
 
-/-- zmij converts to a chosen precision correctly: the significand it reports
-    has the digits asked for and is correctly rounded on the grid reported with
-    it. -/
-theorem correct (f : ℕ) (e : ℤ) (p : ℕ) (hin : Normalized f e p) :
+/-- zmij converts a positive finite binary64 to a chosen precision correctly:
+    the significand it reports has the digits asked for and is correctly rounded
+    on the grid reported with it. -/
+theorem correct (f : ℕ) (e : ℤ) (hin : Input f e) (p : ℕ)
+    (hp : 1 ≤ p ∧ p ≤ 18) :
     let (d, k) := toDecimal f e p
     10 ^ (p - 1) ≤ d ∧ d < 10 ^ p ∧ CorrectlyRounded f e d k :=
-  ⟨(digit_count f e p hin).1, (digit_count f e p hin).2,
-    rounds_to_nearest f e p hin⟩
+  have hn := normalized_of_input hin
+  ⟨(digit_count _ _ hn p hp).1, (digit_count _ _ hn p hp).2,
+    correctly_rounded_of_normalized (rounds_to_nearest _ _ hn p hp)⟩
 
 end zmij.precision
