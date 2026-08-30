@@ -1810,15 +1810,17 @@ auto write(char* buffer, Float value) noexcept -> char* {
       return buffer + 1;
     }
     dec = ::to_decimal<Float>(bin_sig, 1, true, *d);
-    uint64_t dec_sig = dec.sig * 10 + (-dec.has_last_digit & dec.last_digit);
-    int dec_exp = dec.exp;
-    while (dec_sig < threshold) {
-      dec_sig *= 10;
-      --dec_exp;
+    // to_decimal's power of ten comes from the exponent alone, so a subnormal
+    // significand comes out short; clz estimates its length within a digit, and
+    // dec.sig is 0 for the smallest subnormals, which are all last digit.
+    int num_digits = compute_dec_exp(63 - clz(dec.sig | 1)) + (dec.sig != 0);
+    num_digits += dec.sig >= pow10s[num_digits];
+    int num_zeros = traits::max_digits10 - 3 - num_digits;
+    if (num_zeros >= 0) {
+      // Padding dec_sig, a digit longer than dec.sig, absorbs the last digit.
+      uint64_t dec_sig = dec.sig * 10 + (-dec.has_last_digit & dec.last_digit);
+      dec = {dec_sig * pow10s[num_zeros], dec.exp - num_zeros - 1, 0, false};
     }
-    uint64_t q = div10(dec_sig);
-    int last_digit = dec_sig - q * 10;
-    dec = {q, dec_exp, last_digit, last_digit != 0};
   } else {
     dec = ::to_decimal<Float>(bin_sig | traits::implicit_bit, bin_exp,
                               bin_sig != 0, *d);
