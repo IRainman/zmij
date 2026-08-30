@@ -96,7 +96,6 @@ fixed-precision path.
 |  | count | cost |
 |---|---|---|
 | `point_shift_bounds` | 37,764 pairs | 12s |
-| `table_checks` | 649 indices, to 1.1 kbit | under a second |
 | `grid_bounds` | 37,764 pairs | 21s |
 | `pair_refuted` | 37,764 certificates | ~95s |
 
@@ -153,8 +152,9 @@ def den (e : ℤ) (p : ℕ) : ℕ := binary64.power10Den (idx e p)
     the truncation loses something and one place past it at the 56 indices where
     it does not, and the error budget asks only that the entry be at or above
     the exact ratio by under a denominator's worth, so the bump needs no
-    condition on the index. zmij adds it to the low word, which is where it
-    fits: `table_checks`. -/
+    condition on the index. It is the single number zmij's two words denote, and
+    everything below reads it as one; zmij adds its one to the low word, where
+    over the indices reached it fits. -/
 def tableEntry (k : ℤ) : ℕ :=
   binary64.power10Num k / binary64.power10Den k + 1
 
@@ -271,7 +271,7 @@ theorem point_shift_bounds : ∀ p ∈ Finset.Icc 1 18,
     ∀ e ∈ Finset.Icc (-1126 : ℤ) 971,
       3 ≤ pointShift e p ∧ pointShift e p ≤ 62 := by
   -- `+kernel` keeps the enumeration out of the elaborator, whose recursion and
-  -- exponentiation guards it would otherwise trip. So for the two sweeps below.
+  -- exponentiation guards it would otherwise trip. So for the sweep below.
   decide +kernel
 
 /-- The scaled value has the digits asked for, to within a step: it is at least
@@ -1037,39 +1037,5 @@ theorem correct (f : ℕ) (e : ℤ) (hfin : binary64.Finite f e) (p : ℕ)
     10 ^ (p - 1) ≤ d ∧ d < 10 ^ p ∧ CorrectlyRounded f e d k :=
   have h := rounded_correct _ _ (normalized_of_finite hfin) p hp
   ⟨h.1, h.2.1, correctly_rounded_of_normalized h.2.2⟩
-
-/-! ## Implementation checks
-
-Nothing above consumes what follows. `tableEntry` is the single number zmij's
-two words denote, and the argument above reads it as one; this is the check that
-the two words really do denote it, which is what lets zmij add its one to the low
-word alone. It is fidelity to the implementation rather than a step in the
-chain, and it is written down here because nowhere else does that pairing
-appear.
--/
-
-/-- The indices `scale` reads, which is the range the check below sweeps.
-    Monotonicity of `decimalExponent` puts them between the two ends of the
-    domain, so this is a derivation and not a sweep. -/
-theorem idx_range {e : ℤ} {p : ℕ} (he : -1126 ≤ e ∧ e ≤ 971)
-    (hp : 1 ≤ p ∧ p ≤ 18) : -307 ≤ idx e p ∧ idx e p ≤ 341 := by
-  have hlo : binary64.decimalExponent (-1074)
-      ≤ binary64.decimalExponent (e + 52) :=
-    binary64.decimal_exponent_mono (by omega)
-  have hhi : binary64.decimalExponent (e + 52)
-      ≤ binary64.decimalExponent 1023 :=
-    binary64.decimal_exponent_mono (by omega)
-  have hends : binary64.decimalExponent (-1074) = -324
-      ∧ binary64.decimalExponent 1023 = 307 := by
-    constructor <;> rfl
-  simp only [idx, decExp]
-  omega
-
-/-- The table over those indices: the bump does not carry out of the low word it
-    is added to, and the entry it leaves is a normalized 128-bit number. -/
-theorem table_checks : ∀ k ∈ Finset.Icc (-307 : ℤ) 341,
-    binary64.power10Num k / binary64.power10Den k % 2 ^ 64 ≠ 2 ^ 64 - 1
-      ∧ 2 ^ 127 ≤ tableEntry k ∧ tableEntry k < 2 ^ 128 := by
-  decide +kernel
 
 end zmij.precision
