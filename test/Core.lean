@@ -783,21 +783,21 @@ theorem comparison_stable_of_far {x y l r w : ℕ} (hl : l ≤ r + w)
 The error bounds leave the comparison undecided within a narrow band either side
 of the boundary it tests against. The value tested is a distance to the grid,
 periodic across it and linear in the significand until it wraps, so within one
-grid period it is the residue `g·f mod m`, and the ambiguous band becomes a
-window of residues. In the coarse-window applications, `g` is one ULP in the
+grid period it is the residue `n·f mod m`, and the ambiguous band becomes a
+window of residues. In the coarse-window applications, `n` is one ULP in the
 implementation's integer scale and `m` is the spacing it tests against, a grid
 step or half of one. Refuting a window is a Diophantine question: can the
 residue land in `[lo, hi]` for some significand `f` in `[f0, f1]`? `ModWindows`
 poses that question, knowing nothing about what the residue means.
 
-One multiplier `q` answers the question. Write `y = g·f - m·j` for the residue
-and `r = g·q - m·p` for the error of an approximation `p/q ≈ g/m`. Then
+One multiplier `q` answers the question. Write `r = n·f - m·j` for the residue
+and `ε = n·q - m·p` for the error of an approximation `p/q ≈ n/m`. Then
 
-    m·(p·f - q·j) = q·y - f·r,
+    m·(p·f - q·j) = q·r - f·ε,
 
-so if `q·y - f·r` stays strictly between two consecutive multiples of `m`
-throughout the box `f ∈ [f0, f1]`, `y ∈ [lo, hi]`, no `f` can put the residue in
-the window. Convergent denominators of `g/m` make `r` small enough that such a
+so if `q·r - f·ε` stays strictly between two consecutive multiples of `m`
+throughout the box `f ∈ [f0, f1]`, `r ∈ [lo, hi]`, no `f` can put the residue in
+the window. Convergent denominators of `n/m` make `ε` small enough that such a
 `q` is easy to find.
 
 Everything in this subsection is proof-producing and checked by the kernel. The
@@ -805,30 +805,30 @@ multiplier it takes is a witness, not an assumption, so where the witness comes
 from is a separate question, answered below.
 -/
 
-/-- A modular window problem: the progression `g·f mod m`, the range
+/-- A modular window problem: the progression `n·f mod m`, the range
     `f0 ≤ f ≤ f1` it runs over, and the closed windows of residues to
     exclude. -/
 structure ModWindows where
-  g : ℕ
+  n : ℕ
   m : ℕ
   f0 : ℕ
   f1 : ℕ
   windows : List (ℤ × ℤ)
 
-private def modWindowRefuted (g m f0 f1 lo hi q : ℤ) : Bool :=
-  let p := (2 * (g * q) + m) / (2 * m)
-  let r := g * q - m * p
-  -- `f·r` runs between the two endpoint values, in whichever order the sign
-  -- of `r` dictates.
-  let lo' := q * lo - max (f0 * r) (f1 * r)
-  let hi' := q * hi - min (f0 * r) (f1 * r)
+private def modWindowRefuted (n m f0 f1 lo hi q : ℤ) : Bool :=
+  let p := (2 * (n * q) + m) / (2 * m)
+  let ε := n * q - m * p
+  -- `f·ε` runs between the two endpoint values, in whichever order the sign
+  -- of `ε` dictates.
+  let lo' := q * lo - max (f0 * ε) (f1 * ε)
+  let hi' := q * hi - min (f0 * ε) (f1 * ε)
   decide (0 < q ∧ m * (lo' / m) < lo' ∧ hi' < m * (lo' / m) + m)
 
 /-- Every window of the problem refuted by the one multiplier `q`: a handful of
     big-integer operations per window, with the search for `q` left outside. -/
 def ModWindows.refutedBy (w : ModWindows) (q : ℤ) : Bool :=
   w.windows.all fun window =>
-    modWindowRefuted w.g w.m w.f0 w.f1 window.1 window.2 q
+    modWindowRefuted w.n w.m w.f0 w.f1 window.1 window.2 q
 
 /-- A value strictly between consecutive multiples of `m` is absurd. -/
 private theorem window_gap_absurd {m lo' hi' v : ℤ} (hm : 0 < m)
@@ -846,30 +846,30 @@ private theorem window_gap_absurd {m lo' hi' v : ℤ} (hm : 0 < m)
   omega
 
 /-- The certificate identity and the resulting bounds on the significand box. -/
-private theorem window_bounds {g m f0 f1 lo hi q p r f j y : ℤ}
-    (hq : 0 < q) (hr : r = g * q - m * p)
+private theorem window_bounds {n m f0 f1 lo hi q p ε f j r : ℤ}
+    (hq : 0 < q) (hε : ε = n * q - m * p)
     (hf0 : f0 ≤ f) (hf1 : f ≤ f1)
-    (hy : y = g * f - m * j) (hlo : lo ≤ y) (hhi : y ≤ hi) :
-    q * lo - max (f0 * r) (f1 * r) ≤ m * (p * f - q * j) ∧
-      m * (p * f - q * j) ≤ q * hi - min (f0 * r) (f1 * r) := by
-  have hkey : m * (p * f - q * j) = q * y - f * r := by
-    rw [hy, hr]
+    (hres : r = n * f - m * j) (hlo : lo ≤ r) (hhi : r ≤ hi) :
+    q * lo - max (f0 * ε) (f1 * ε) ≤ m * (p * f - q * j) ∧
+      m * (p * f - q * j) ≤ q * hi - min (f0 * ε) (f1 * ε) := by
+  have hkey : m * (p * f - q * j) = q * r - f * ε := by
+    rw [hres, hε]
     ring
-  have hqy0 : q * lo ≤ q * y := mul_le_mul_of_nonneg_left hlo hq.le
-  have hqy1 : q * y ≤ q * hi := mul_le_mul_of_nonneg_left hhi hq.le
-  have hfr : min (f0 * r) (f1 * r) ≤ f * r ∧ f * r ≤ max (f0 * r) (f1 * r) := by
-    rcases le_total 0 r with hr0 | hr0
-    · exact ⟨le_trans (min_le_left _ _) (mul_le_mul_of_nonneg_right hf0 hr0),
-        le_trans (mul_le_mul_of_nonneg_right hf1 hr0) (le_max_right _ _)⟩
-    · exact ⟨le_trans (min_le_right _ _) (mul_le_mul_of_nonpos_right hf1 hr0),
-        le_trans (mul_le_mul_of_nonpos_right hf0 hr0) (le_max_left _ _)⟩
-  exact ⟨by linarith [hfr.2], by linarith [hfr.1]⟩
+  have hqr0 : q * lo ≤ q * r := mul_le_mul_of_nonneg_left hlo hq.le
+  have hqr1 : q * r ≤ q * hi := mul_le_mul_of_nonneg_left hhi hq.le
+  have hfε : min (f0 * ε) (f1 * ε) ≤ f * ε ∧ f * ε ≤ max (f0 * ε) (f1 * ε) := by
+    rcases le_total 0 ε with hε0 | hε0
+    · exact ⟨le_trans (min_le_left _ _) (mul_le_mul_of_nonneg_right hf0 hε0),
+        le_trans (mul_le_mul_of_nonneg_right hf1 hε0) (le_max_right _ _)⟩
+    · exact ⟨le_trans (min_le_right _ _) (mul_le_mul_of_nonpos_right hf1 hε0),
+        le_trans (mul_le_mul_of_nonpos_right hf0 hε0) (le_max_left _ _)⟩
+  exact ⟨by linarith [hfε.2], by linarith [hfε.1]⟩
 
 /-- A residue as a signed offset from the multiple of the modulus below it.
     Matching the cast of the whole residue in one step is what keeps the
     rewrite off any other modulus in the goal. -/
-theorem cast_mod_eq_sub (a n : ℕ) :
-    ((a % n : ℕ) : ℤ) = a - n * ((a / n : ℕ) : ℤ) := by
+theorem cast_mod_eq_sub (a m : ℕ) :
+    ((a % m : ℕ) : ℤ) = a - m * ((a / m : ℕ) : ℤ) := by
   rw [Int.natCast_emod, Int.emod_def, ← Int.natCast_ediv]
 
 /-- What a certificate says, at any representative of the residue class. The
@@ -878,18 +878,18 @@ theorem cast_mod_eq_sub (a n : ℕ) :
     side. -/
 theorem ModWindows.not_hit_rep (w : ModWindows) (f : ℕ) (hm : 0 < w.m)
     {q : ℤ} (hcert : w.refutedBy q = true)
-    {lo hi : ℤ} (hmem : (lo, hi) ∈ w.windows) {y j : ℤ}
+    {lo hi : ℤ} (hmem : (lo, hi) ∈ w.windows) {r j : ℤ}
     (hf0 : w.f0 ≤ f) (hf1 : f ≤ w.f1)
-    (hy : y = w.g * f - w.m * j) (hlo : lo ≤ y) (hhi : y ≤ hi) :
+    (hres : r = w.n * f - w.m * j) (hlo : lo ≤ r) (hhi : r ≤ hi) :
     False := by
   have hwindow := List.all_eq_true.mp hcert _ hmem
   simp only [modWindowRefuted, decide_eq_true_eq] at hwindow
   obtain ⟨hq, hgap0, hgap1⟩ := hwindow
   obtain ⟨hb0, hb1⟩ :=
     window_bounds (f0 := (w.f0 : ℤ)) (f1 := (w.f1 : ℤ))
-      (p := (2 * ((w.g : ℤ) * q) + w.m) / (2 * w.m))
-      (r := (w.g : ℤ) * q - w.m * _) hq rfl
-      (by exact_mod_cast hf0) (by exact_mod_cast hf1) hy hlo hhi
+      (p := (2 * ((w.n : ℤ) * q) + w.m) / (2 * w.m))
+      (ε := (w.n : ℤ) * q - w.m * _) hq rfl
+      (by exact_mod_cast hf0) (by exact_mod_cast hf1) hres hlo hhi
   exact window_gap_absurd (by exact_mod_cast hm) hb0 hb1 hgap0 hgap1
 
 /-- What a certificate says: no significand in range has its residue in any
@@ -897,16 +897,16 @@ theorem ModWindows.not_hit_rep (w : ModWindows) (f : ℕ) (hm : 0 < w.m)
     the identification of its own quantity with the residue. -/
 theorem ModWindows.not_hit (w : ModWindows) (f : ℕ) (hm : 0 < w.m)
     {q : ℤ} (hcert : w.refutedBy q = true) {lo hi : ℤ}
-    (hmem : (lo, hi) ∈ w.windows) {y : ℕ} (hf0 : w.f0 ≤ f) (hf1 : f ≤ w.f1)
-    (hy : y = w.g * f % w.m)
-    (hlo : lo ≤ (y : ℤ)) (hhi : (y : ℤ) ≤ hi) :
+    (hmem : (lo, hi) ∈ w.windows) {r : ℕ} (hf0 : w.f0 ≤ f) (hf1 : f ≤ w.f1)
+    (hres : r = w.n * f % w.m)
+    (hlo : lo ≤ (r : ℤ)) (hhi : (r : ℤ) ≤ hi) :
     False := by
   -- The residue identity, with the quotient as the multiple of the modulus.
-  have hyz : (y : ℤ) = w.g * f - w.m * ((w.g * f / w.m : ℕ) : ℤ) := by
-    rw [hy, cast_mod_eq_sub]
+  have hrz : (r : ℤ) = w.n * f - w.m * ((w.n * f / w.m : ℕ) : ℤ) := by
+    rw [hres, cast_mod_eq_sub]
     push_cast
     ring
-  exact w.not_hit_rep f hm hcert hmem hf0 hf1 hyz hlo hhi
+  exact w.not_hit_rep f hm hcert hmem hf0 hf1 hrz hlo hhi
 
 /-- A residue known only to be near a boundary is on it. The two windows flank
     the boundary and stop one short of it either way, so refuting both leaves
@@ -916,15 +916,15 @@ theorem ModWindows.not_hit (w : ModWindows) (f : ℕ) (hm : 0 < w.m)
 theorem ModWindows.eq_zero_of_near (w : ModWindows) (f : ℕ) (hm : 0 < w.m)
     {q : ℤ} (hcert : w.refutedBy q = true) {s : ℤ}
     (hbelow : (1 - s, (-1 : ℤ)) ∈ w.windows)
-    (habove : ((1 : ℤ), s - 1) ∈ w.windows) {y j : ℤ}
+    (habove : ((1 : ℤ), s - 1) ∈ w.windows) {r j : ℤ}
     (hf0 : w.f0 ≤ f) (hf1 : f ≤ w.f1)
-    (hy : y = w.g * f - w.m * j) (hlo : -s < y) (hhi : y < s) :
-    y = 0 := by
-  rcases lt_trichotomy y 0 with hneg | hzero | hpos
-  · exact absurd hy fun h =>
+    (hres : r = w.n * f - w.m * j) (hlo : -s < r) (hhi : r < s) :
+    r = 0 := by
+  rcases lt_trichotomy r 0 with hneg | hzero | hpos
+  · exact absurd hres fun h =>
       w.not_hit_rep f hm hcert hbelow hf0 hf1 h (by omega) (by omega)
   · exact hzero
-  · exact absurd hy fun h =>
+  · exact absurd hres fun h =>
       w.not_hit_rep f hm hcert habove hf0 hf1 h (by omega) (by omega)
 
 /-! ### Certificate search
@@ -939,14 +939,13 @@ answer at all.
 
 /--
 The multiplier is searched for rather than tabulated, by the elaborator rather
-than by the kernel. Convergent denominators of `g/m` give the relevant best
+than by the kernel. Convergent denominators of `n/m` give the relevant best
 rational approximations. The Euclidean remainder `v` that produces `qc` is the
-error `|g·qc - m·p|`, and a certificate has to fit `q·(hi - lo) + (f1 - f0)·v`
+error `|n·qc - m·p|`, and a certificate has to fit `q·(hi - lo) + (f1 - f0)·v`
 inside one modulus, so the loop waits for the box term alone to fit. Waiting
 reads no window and skips the small denominators, leaving few window checks per
-problem. Balancing the two terms puts the span at about `2·√(n·(hi-lo)/m)` of
-the modulus for a box of `n` significands, which is what leaves room between
-consecutive multiples.
+problem. Balancing the two terms puts the span at about `2·√((f1-f0)·(hi-lo)/m)`
+of the modulus, which is what leaves room between consecutive multiples.
 -/
 private def modCertSearch (w : ModWindows) : ℕ → ℤ → ℤ → ℤ → ℤ → ℤ
   | 0, _, _, _, qc => qc
@@ -964,7 +963,7 @@ private def modCertSearch (w : ModWindows) : ℕ → ℤ → ℤ → ℤ → ℤ
     steps and binary128 within 74, so 160 leaves both room to spare. The loop
     exits as soon as the problem is refuted, so unused fuel costs nothing. -/
 def ModWindows.search (w : ModWindows) : ℤ :=
-  modCertSearch w 160 w.m ((w.g : ℤ) % (w.m : ℤ)) 0 1
+  modCertSearch w 160 w.m ((w.n : ℤ) % (w.m : ℤ)) 0 1
 
 open Lean Elab Tactic Meta in
 /-- Close a goal `∃ q, w.refutedBy q = true`, where `w` is a definition applied
@@ -999,9 +998,9 @@ implementation proof.
 
 /-- A window problem over the significands `Regular` admits at `e`. The box is
     the tighter one above the minimum exponent, which the certificates need. -/
-def Format.regularWindows (fmt : Format) (g m : ℕ) (e : ℤ)
+def Format.regularWindows (fmt : Format) (n m : ℕ) (e : ℤ)
     (windows : List (ℤ × ℤ)) : ModWindows where
-  g := g
+  n := n
   m := m
   f0 := if e = fmt.emin then 1 else 2 ^ (fmt.prec - 1) + 1
   f1 := 2 ^ fmt.prec - 1
@@ -1010,10 +1009,10 @@ def Format.regularWindows (fmt : Format) (g m : ℕ) (e : ℤ)
 /-- `Regular` puts the significand in the box. Separate from
     `Format.regular_not_hit` because a problem recentred on one significand asks
     the same of the rest. -/
-theorem Format.regular_box {fmt : Format} {g m : ℕ} {e : ℤ}
+theorem Format.regular_box {fmt : Format} {n m : ℕ} {e : ℤ}
     {windows : List (ℤ × ℤ)} {f : ℕ} (hr : fmt.Regular f e) :
-    (fmt.regularWindows g m e windows).f0 ≤ f
-      ∧ f ≤ (fmt.regularWindows g m e windows).f1 := by
+    (fmt.regularWindows n m e windows).f0 ≤ f
+      ∧ f ≤ (fmt.regularWindows n m e windows).f1 := by
   constructor <;> simp only [Format.regularWindows]
   · split_ifs with hmin
     · exact hr.pos
@@ -1026,13 +1025,13 @@ theorem Format.regular_box {fmt : Format} {g m : ℕ} {e : ℤ}
 /-- `not_hit` over that box: `Regular` discharges the significand bounds, so an
     implementation supplies only its modulus being positive and its quantity
     being the residue. -/
-theorem Format.regular_not_hit {fmt : Format} {g m : ℕ} {e : ℤ}
-    {windows : List (ℤ × ℤ)} {q lo hi : ℤ} {y : ℕ} (f : ℕ)
+theorem Format.regular_not_hit {fmt : Format} {n m : ℕ} {e : ℤ}
+    {windows : List (ℤ × ℤ)} {q lo hi : ℤ} {r : ℕ} (f : ℕ)
     (hr : fmt.Regular f e) (hm : 0 < m)
-    (hcert : (fmt.regularWindows g m e windows).refutedBy q = true)
-    (hmem : (lo, hi) ∈ windows) (hy : y = g * f % m)
-    (hlo : lo ≤ (y : ℤ)) (hhi : (y : ℤ) ≤ hi) :
+    (hcert : (fmt.regularWindows n m e windows).refutedBy q = true)
+    (hmem : (lo, hi) ∈ windows) (hres : r = n * f % m)
+    (hlo : lo ≤ (r : ℤ)) (hhi : (r : ℤ) ≤ hi) :
     False :=
-  have hbox := Format.regular_box (g := g) (m := m) (windows := windows) hr
-  (fmt.regularWindows g m e windows).not_hit f hm hcert hmem
-    hbox.1 hbox.2 hy hlo hhi
+  have hbox := Format.regular_box (n := n) (m := m) (windows := windows) hr
+  (fmt.regularWindows n m e windows).not_hit f hm hcert hmem
+    hbox.1 hbox.2 hres hlo hhi

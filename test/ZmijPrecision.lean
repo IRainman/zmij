@@ -180,21 +180,23 @@ def packed (f : ℕ) (e : ℤ) (p : ℕ) : ℕ :=
 
 /-- `round_even`: a packed value to the nearest integer, ties to even, decided
     by its two guard bits. -/
-def roundEven (x : ℕ) : ℕ := (x + 1 + x / 4 % 2) / 4
+def roundEven (packed : ℕ) : ℕ := (packed + 1 + packed / 4 % 2) / 4
 
 /-- Repack a packed value one decimal place coarser, folding the digit that
     leaves into the sticky bit. Unlike the packing above this is written as zmij
     writes it, because the bit it sets may already be set: what the reround must
     not do is present the coarser value as exact when a digit was dropped. -/
-def demote (x : ℕ) : ℕ := x / 10 ||| (if x % 10 = 0 then 0 else 1)
+def demote (packed : ℕ) : ℕ :=
+  packed / 10 ||| (if packed % 10 = 0 then 0 else 1)
 
 /-- The rounding itself, on a normalized significand: `round_even` of the
     packed value, rerounded one place coarser when it comes out a digit too
     long. -/
 def rounded (f : ℕ) (e : ℤ) (p : ℕ) : ℕ × ℤ :=
-  let x := packed f e p
-  let d := roundEven x
-  if d < 10 ^ p then (d, decExp e p) else (roundEven (demote x), decExp e p + 1)
+  let packed := packed f e p
+  let d := roundEven packed
+  if d < 10 ^ p then (d, decExp e p)
+  else (roundEven (demote packed), decExp e p + 1)
 
 /-- `normalize`'s shift, `clz(bin_sig) - 11` written as a logarithm: what it
     takes to bring the significand's leading bit up to bit 52. It is zero once
@@ -286,7 +288,7 @@ theorem grid_bounds : ∀ p ∈ Finset.Icc 1 18, ∀ e ∈ Finset.Icc (-1126 : �
     for either kind of boundary: the reported grid's midpoints are the odd
     multiples of `halfStep` and the reround's grid points the even ones. -/
 def tieWindows (e : ℤ) (p : ℕ) : ModWindows where
-  g := 2 ^ 11 * num e p
+  n := 2 ^ 11 * num e p
   m := halfStep e p
   f0 := 2 ^ 52
   f1 := 2 ^ 53 - 1
@@ -631,8 +633,9 @@ theorem round_even_eq (i b : ℕ) (hb : b ≤ 3) :
   split_ifs <;> omega
 
 /-- `demote` sets the sticky bit unless what it drops is zero. -/
-theorem demote_eq (x : ℕ) :
-    demote x = if x % 10 = 0 then x / 10 else 2 * (x / 20) + 1 := by
+theorem demote_eq (packed : ℕ) :
+    demote packed
+      = if packed % 10 = 0 then packed / 10 else 2 * (packed / 20) + 1 := by
   have hor (y : ℕ) : y ||| 1 = 2 * (y / 2) + 1 := by
     refine Nat.eq_of_testBit_eq fun i => ?_
     cases i with
@@ -790,7 +793,7 @@ private theorem dev_eq_zero (f : ℕ) (e : ℤ) (hnorm : Normalized f e) (p : �
   have hnear := dev_near_of_sticky_eq_zero f e p hnorm.sig.2 hsticky
   -- All this proof supplies is that `dev` is the residue: the integral part and
   -- the 1/2 bit count the multiples of the modulus, and `dev` is what is left.
-  have hres : dev f e p = (tieWindows e p).g * f
+  have hres : dev f e p = (tieWindows e p).n * f
       - (tieWindows e p).m * (2 * integral f e p + half f e p) := by
     have hex := exact_eq f e p (by have := shift_bits_ge hs.1; omega)
     rw [exact] at hex

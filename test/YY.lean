@@ -841,11 +841,11 @@ contributes a window on either side of it; the boundary value itself lies in
 none of them, which is what leaves the exact ties above their room. Soundness
 and completeness for both boundaries therefore reduce to one modular question
 per exponent, of the kind `ModWindows` answers. Writing `num/den` for the exact
-power of ten, the progression is `g = 2·num` modulo `modulus = N·den`, the
-residue is the gap, and any violation forces it into a window of width below
-`den·U`, a relative width of `U/N ≈ 2^-(width-1)`. This is where verify.py
-counts solutions with `floor_sum`; here a refutation certificate reaches the
-same conclusion with one small check per window.
+power of ten, the progression is `n = 2·num` modulo `m = N·den`, the residue
+is the gap, and any violation forces it into a window of width below `den·U`,
+a relative width of `U/N ≈ 2^-(width-1)`. This is where verify.py counts
+solutions with `floor_sum`; here a refutation certificate reaches the same
+conclusion with one small check per window.
 
 A Nadezhin-style separation, as used in Schubfach, still bottoms out in a finite
 Diophantine check over the significand range, and fits yy less closely than the
