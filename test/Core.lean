@@ -31,8 +31,8 @@ exist, but it is not specific to an algorithm, which is the line that decides
 what belongs here.
 
 The third part relates an implementation's arithmetic to the rule. It works in
-integers, so `scaled_cmp_of_int_eq` reads a comparison against the exact value
-off an integer identity; and it observes those quantities through comparisons it
+integers, so `scaled_cmp_of_int_eq` turns an integer identity into a comparison
+against the exact value; and it observes those quantities through comparisons it
 can only afford to make approximately. Away from a decision boundary the loss
 cannot change the answer, which is `comparison_stable_of_far`; near one the
 observation is ambiguous, and the ambiguity is a Diophantine question about a
@@ -685,35 +685,42 @@ instance : binary64.Power10Normalized where
 
 /-! ## Certified exact comparisons
 
-An implementation reads the exact quantities off an integer identity, and the
-comparisons it can afford against them are lossy, so every decision it makes
-splits in two. Away from the boundary the loss cannot matter, and one arithmetic
-fact settles all such cases at once. Near the boundary the comparison is
-genuinely ambiguous, and only there is an argument needed.
+An implementation works with integers, but its decisions are about exact
+rational quantities. It connects the two by scaling an exact value `x` by an
+integer `m` so that `x·m = t` is integral. For a candidate `c`, an identity
+such as
 
-None of this knows an implementation: `scaled_cmp_of_int_eq` for the crossing
-into `ℚ`, `comparison_stable_of_far` away from a boundary, `ModWindows` near
-one. What an implementation supplies is one identity per candidate, the
-identification of its own quantities with exact ones plus errors, and a bound on
-those errors.
+    c·m + dist = t
+
+then expresses the exact distance from `c` to `x` through the integer `dist`.
+`scaled_cmp_of_int_eq` turns identities of this form into exact comparisons.
+
+The implementation's actual comparisons are lossy, so each decision has two
+regimes. Away from a decision boundary, the approximation error cannot change
+the result; `comparison_stable_of_far` handles all such cases at once. Near a
+boundary the result is genuinely ambiguous, and `ModWindows` rules out the
+remaining cases with kernel-checked certificates.
+
+None of this knows a particular implementation. An implementation supplies the
+integer identities connecting its quantities to the exact ones, bounds the
+errors in its approximations, and provides certificates for the boundary cases.
 -/
 
 /-! ### Integer comparison identities
 
-An implementation works in integers, and the scale `m` that clears the grid also
-sends the scaled value to an integer `t`. A candidate `c` then sits at a signed
-integer distance `dist` from it, fixed by `c·m + dist = t`, and a threshold `thr`
-worth `b` over `a` copies of `m` is met exactly when `a·dist` lies in `[-b, b]`.
+The scale `m` is the one that clears the decimal grid, which is what sends the
+scaled value to an integer `t`. A threshold `thr` worth `b` over `a` copies of
+`m` is then met exactly when `a·dist` lies in `[-b, b]`.
 
 The same scale answers the other question the method asks, how many grid steps
-one ULP spans, off an identity of the same shape.
+one ULP spans, through an identity of the same shape.
 
 These are the whole crossing into `ℚ`. Below them an implementation states one
 identity per candidate and reasons in `ℤ`; above them nothing mentions the
 scale. The interval form is deliberate: the conclusions are what `omega` reads.
 -/
 
-/-- The scaled distance from the exact value, read off the integer identity. -/
+/-- The scaled distance from the exact value, given by the integer identity. -/
 theorem scaled_dist_eq {c m : ℕ} {t dist : ℤ} {x : ℚ} (hx : x * m = t)
     (hnat : (c : ℤ) * m + dist = t) :
     ((c : ℚ) - x) * m = -(dist : ℚ) := by
@@ -748,7 +755,7 @@ theorem scaled_cmp_of_int_eq {c m a b : ℕ} {t dist : ℤ} {x thr : ℚ}
     constructor <;> intro h <;> exact_mod_cast h
 
 /-- The two bounds on the decimal grid that `exact_candidate_correct` asks for,
-    read off an integer identity. The scale `m` sends `u`, one ULP measured in
+    from an integer identity. The scale `m` sends `u`, one ULP measured in
     grid steps, to the integer `t`, and `u` then spans between one and ten steps
     as soon as `t` lies between `m` and `10·m`. -/
 theorem ulp_steps_of_int_eq {m t : ℕ} {u : ℚ} (hm : 0 < m) (hu : u * m = t)

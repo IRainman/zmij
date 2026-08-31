@@ -27,7 +27,7 @@ speak of a binary64 value rather than of an already-shifted significand.
 `scale` packs the scaled value above two guard bits, bit 1 the 1/2 place and bit
 0 a sticky bit, and `round_even` reads its decision off those two. That rounding
 can carry the significand to `10^p`, a digit too many; `to_decimal` then
-rerounds off `demote` of the same packed value and steps the exponent. The
+rerounds `demote` of the same packed value and steps the exponent. The
 packed value is inexact twice over, and the two errors are placed so that
 neither can turn a decision:
 
@@ -179,8 +179,8 @@ def sticky (f : ℕ) (e : ℤ) (p : ℕ) : ℕ :=
 def packed (f : ℕ) (e : ℤ) (p : ℕ) : ℕ :=
   4 * integral f e p + 2 * half f e p + sticky f e p
 
-/-- `round_even`: a packed value to the nearest integer, ties to even, off the
-    two guard bits. -/
+/-- `round_even`: a packed value to the nearest integer, ties to even, decided
+    by its two guard bits. -/
 def roundEven (x : ℕ) : ℕ := (x + 1 + x / 4 % 2) / 4
 
 /-- Repack a packed value one decimal place coarser, folding the digit that
@@ -189,7 +189,7 @@ def roundEven (x : ℕ) : ℕ := (x + 1 + x / 4 % 2) / 4
     not do is present the coarser value as exact when a digit was dropped. -/
 def demote (x : ℕ) : ℕ := x / 10 ||| (if x % 10 = 0 then 0 else 1)
 
-/-- The rounding itself, on a normalized significand: `round_even` off the
+/-- The rounding itself, on a normalized significand: `round_even` of the
     packed value, rerounded one place coarser when it comes out a digit too
     long. -/
 def rounded (f : ℕ) (e : ℤ) (p : ℕ) : ℕ × ℤ :=
@@ -477,9 +477,9 @@ theorem gap_lt (f : ℕ) (e : ℤ) (p : ℕ) (hf : f < 2 ^ 53) :
   rw [gap]
   omega
 
-/-- The exact value in the cleared scale, read off the product: the integral
-    part and the 1/2 bit at their weights, plus what the guard bits leave
-    unreported. This is the identity every comparison below is made against. -/
+/-- The exact value in the cleared scale, from the product: the integral part
+    and the 1/2 bit at their weights, plus what the guard bits leave unreported.
+    This is the identity every comparison below is made against. -/
 theorem exact_eq (f : ℕ) (e : ℤ) (p : ℕ) (hn : 1 ≤ shiftBits e p) :
     (exact f e p : ℤ) = 2 * halfStep e p * integral f e p
       + halfStep e p * half f e p + dev f e p := by
@@ -621,8 +621,8 @@ grid is the reported grid with a coarser `G` and nothing else, and
     left over. -/
 def exactPacked (x G : ℕ) : ℕ := 2 * (x / G) + if x % G = 0 then 0 else 1
 
-/-- `round_even`, off the two guard bits: it rounds up when they say the value
-    is past the midpoint, and at the midpoint when what remains is odd. -/
+/-- `round_even` in terms of its two guard bits: it rounds up when they say the
+    value is past the midpoint, and at the midpoint when what remains is odd. -/
 theorem round_even_eq (i b : ℕ) (hb : b ≤ 3) :
     roundEven (4 * i + b)
       = i + if 2 ≤ b ∧ (b = 3 ∨ i % 2 = 1) then 1 else 0 := by
@@ -652,8 +652,8 @@ theorem demote_eq (x : ℕ) :
 private theorem stick_eq (r : ℕ) : (if r = 0 then 0 else 1) = min r 1 := by
   split_ifs <;> omega
 
-/-- The packing read off a split of the value at the half step: `q` half steps
-    and a remainder inside one, which is the shape `exact_eq` leaves. The
+/-- The packing from a split of the value at the half step: `q` half steps and
+    a remainder inside one, which is the shape `exact_eq` leaves. The
     remainder arrives as an integer because that is what `dev` is. -/
 private theorem exact_packed_of_split {x G q : ℕ} {r : ℤ} (hG : 0 < G)
     (hx : (x : ℤ) = G * q + r) (hlo : 0 ≤ r) (hhi : r < G) :
@@ -677,7 +677,7 @@ private theorem demote_pack (Q d s : ℕ) (hd : d < 10) (hs : s ≤ 1) :
 theorem demote_exact_packed (x G : ℕ) (hG : 0 < G) :
     demote (exactPacked x G) = exactPacked x (10 * G) := by
   have hdlt : x / G % 10 < 10 := Nat.mod_lt _ (by omega)
-  -- The coarser quotient and remainder, read off the finer ones: the digit that
+  -- The coarser quotient and remainder, from the finer ones: the digit that
   -- leaves, at its weight, joins the finer remainder.
   have hdiv : x / (10 * G) = x / G / 10 := by
     rw [Nat.div_div_eq_div_mul, Nat.mul_comm G 10]
@@ -718,7 +718,7 @@ theorem round_even_exact_packed (x G : ℕ) (hG : 0 < G) :
   -- so that the cases below can put a literal in its place.
   obtain ⟨c, hc⟩ : ∃ c : ℕ, c =
       if x / G % 2 = 1 ∧ (s = 1 ∨ x / G / 2 % 2 = 1) then 1 else 0 := ⟨_, rfl⟩
-  -- The candidate, off `round_even_eq` in the `4 * i + b` form it reads.
+  -- The candidate, from `round_even_eq` in the `4 * i + b` form it reads.
   have hround : roundEven (exactPacked x G) = x / G / 2 + c := by
     rw [show exactPacked x G = 4 * (x / G / 2) + (2 * (x / G % 2) + s) from by
         rw [exactPacked, ← hs]; omega,
