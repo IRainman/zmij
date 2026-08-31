@@ -790,15 +790,18 @@ step or half of one. Refuting a window is a Diophantine question: can the
 residue land in `[rmin, rmax]` for some significand `f` in `[fmin, fmax]`?
 `ModWindows` poses that question, knowing nothing about what the residue means.
 
-One multiplier `q` answers the question. Write `r = n·f - m·j` for the residue
-and `ε = n·q - m·p` for the error of an approximation `p/q ≈ n/m`. Then
+One multiplier `q` answers the question. Write `n·f = m·j + r`, where `j` is the
+quotient and `r` the residue, and let `ε = n·q - m·p` be the error of an
+approximation `p/q ≈ n/m`. Then
 
-    m·(p·f - q·j) = q·r - f·ε,
+    q·r - f·ε
+      = q·(n·f - m·j) - f·(n·q - m·p)
+      = m·(p·f - q·j).
 
-so if `q·r - f·ε` stays strictly between two consecutive multiples of `m`
-throughout the box `f ∈ [fmin, fmax]`, `r ∈ [rmin, rmax]`, no `f` can put the
-residue in the window. Convergent denominators of `n/m` make `ε` small enough
-that such a `q` is easy to find.
+The `n·f·q` terms cancel, so `q·r - f·ε` is a multiple of `m`. If its bounds
+over the box `f ∈ [fmin, fmax]`, `r ∈ [rmin, rmax]` fall strictly between the
+same two consecutive multiples, no `f` can put the residue in the window. Such
+a `q` is easy to find when the product of the interval widths is well below `m`.
 
 Everything in this subsection is proof-producing and checked by the kernel. The
 multiplier it takes is a witness, not an assumption, so where the witness comes
