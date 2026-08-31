@@ -103,8 +103,8 @@ candidates.
 
 /-! ### The method
 
-The rule above, written down, and the reduction that follows it. Everything
-after this subsection is machinery for `exact_candidate_correct`.
+The rule above, written down. Everything after this subsection is machinery
+for proving `exact_candidate_correct`.
 -/
 
 /-- Whether some multiple of ten round-trips on the grid at `k`. -/
@@ -120,14 +120,6 @@ def ExactCandidate (f : ℕ) (e k : ℤ) (d : ℕ) : Prop :=
   (d % 10 = 0 ∧ Roundtrips f e (d * 10 ^ k)) ∨
     (¬CoarseRoundtrip f e k ∧ |(d : ℚ) - x| ≤ 1 / 2 ∧
       (|(d : ℚ) - x| = 1 / 2 → d % 2 = 0))
-
-/-- Removes trailing zeros from a decimal significand, shifting the exponent to
-    preserve the represented value. -/
-def reduceDecimal (d : ℕ) (k : ℤ) : ℕ × ℤ :=
-  if 0 < d ∧ d % 10 = 0 then reduceDecimal (d / 10) (k + 1)
-  else (d, k)
-termination_by d
-decreasing_by omega
 
 /-! ### The scaled domain
 
@@ -274,6 +266,14 @@ private theorem roundtrips_of_le_half (f : ℕ) (e k : ℤ) (d : ℕ)
   · split_ifs <;> linarith
 
 /-! ### Decimal reduction -/
+
+/-- Removes trailing zeros from a decimal significand, shifting the exponent to
+    preserve the represented value. -/
+def reduceDecimal (d : ℕ) (k : ℤ) : ℕ × ℤ :=
+  if 0 < d ∧ d % 10 = 0 then reduceDecimal (d / 10) (k + 1)
+  else (d, k)
+termination_by d
+decreasing_by omega
 
 private theorem reduce_reduced (d : ℕ) (k : ℤ) :
     (reduceDecimal d k).1 = 0 ∨ (reduceDecimal d k).1 % 10 ≠ 0 := by
