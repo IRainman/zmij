@@ -947,15 +947,15 @@ reads no window and skips the small denominators, leaving few window checks per
 problem. Balancing the two terms puts the span at about `2·√((f1-f0)·(hi-lo)/m)`
 of the modulus, which is what leaves room between consecutive multiples.
 -/
-private def modCertSearch (w : ModWindows) : ℕ → ℤ → ℤ → ℤ → ℤ → ℤ
+private def modCertSearch (w : ModWindows) : (fuel : ℕ) → (u v qp qc : ℤ) → ℤ
   | 0, _, _, _, qc => qc
-  | n + 1, u, v, qp, qc =>
+  | fuel + 1, u, v, qp, qc =>
     if decide (((w.f1 : ℤ) - w.f0) * v < w.m) && w.refutedBy qc then
       qc
     else if v = 0 then
       qc
     else
-      modCertSearch w n v (u % v) qc (u / v * qc + qp)
+      modCertSearch w fuel v (u % v) qc (u / v * qc + qp)
 
 /-- A multiplier refuting every window, or the best attempt at one. Untrusted:
     what it returns is checked by `refutedBy`. The fuel bounds the Euclidean
