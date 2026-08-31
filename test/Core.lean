@@ -784,7 +784,9 @@ The error bounds leave the comparison undecided within a narrow band either side
 of the boundary it tests against. The value tested is a distance to the grid,
 periodic across it and linear in the significand until it wraps, so within one
 grid period it is the residue `g·f mod m`, and the ambiguous band becomes a
-window of residues. Refuting a window is a Diophantine question: can the
+window of residues. In the coarse-window applications, `g` is one ULP in the
+implementation's integer scale and `m` is the spacing it tests against, a grid
+step or half of one. Refuting a window is a Diophantine question: can the
 residue land in `[lo, hi]` for some significand `f` in `[f0, f1]`? `ModWindows`
 poses that question, knowing nothing about what the residue means.
 
