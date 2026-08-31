@@ -848,7 +848,8 @@ private theorem window_gap_absurd {m lo' hi' v : ℤ} (hm : 0 < m)
       _ = m * (lo' / m + 1) := by ring
   omega
 
-/-- The certificate identity and the resulting bounds on the significand box. -/
+/-- If a significand in range has its residue in the window, a multiple of `m`
+    lies between the resulting bounds. -/
 private theorem window_bounds {n m fmin fmax rmin rmax q p ε f j r : ℤ}
     (hq : 0 < q) (hε : ε = n * q - m * p)
     (hfmin : fmin ≤ f) (hfmax : f ≤ fmax)
@@ -858,8 +859,8 @@ private theorem window_bounds {n m fmin fmax rmin rmax q p ε f j r : ℤ}
   have hkey : m * (p * f - q * j) = q * r - f * ε := by
     rw [hres, hε]
     ring
-  have hqr0 : q * rmin ≤ q * r := mul_le_mul_of_nonneg_left hrmin hq.le
-  have hqr1 : q * r ≤ q * rmax := mul_le_mul_of_nonneg_left hrmax hq.le
+  have hqrmin : q * rmin ≤ q * r := mul_le_mul_of_nonneg_left hrmin hq.le
+  have hqrmax : q * r ≤ q * rmax := mul_le_mul_of_nonneg_left hrmax hq.le
   have hfε : min (fmin * ε) (fmax * ε) ≤ f * ε
       ∧ f * ε ≤ max (fmin * ε) (fmax * ε) := by
     rcases le_total 0 ε with hε0 | hε0
