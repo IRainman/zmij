@@ -1399,7 +1399,7 @@ theorem ulp_scaled_bounds (hl : Layout fmt) (e : FPExp fmt) (ha : ChecksAt e) :
     omega
   have hhigh := trim_two_num_lt_scale e ha.trim
   rw [trim_scale_eq_ten_mul] at hhigh
-  exact ulp_steps_of_int_eq (t := 2 * trimNum e) (trim_mul_pos e)
+  exact ulp_steps_of_int_eq (u' := 2 * trimNum e) (trim_mul_pos e)
     (by push_cast
         linear_combination
           2 * trim_mul_half_ulp hl e ha.shift_nonneg ha.shift_lt_four)

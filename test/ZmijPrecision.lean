@@ -598,7 +598,7 @@ theorem correctly_rounded_of_dist {f : ℕ} {e : ℤ} {p : ℕ} {d scale : ℕ} 
       ∨ 2 * ((exact f e p : ℤ) - d * scale) = -(scale : ℤ) → d % 2 = 0) :
     CorrectlyRounded f e d k := by
   obtain ⟨hcmp, -, heq⟩ := scaled_cmp_of_int_eq (c := d) (scale := scale)
-    (a := 2) (b := scale) (t := (exact f e p : ℤ))
+    (a := 2) (b := scale) (x' := (exact f e p : ℤ))
     (dist := (exact f e p : ℤ) - d * scale) (x := value f e * 10 ^ (-k))
     (thr := 1 / 2) hscale two_pos hx (by push_cast; ring) (by ring)
   push_cast at hcmp heq

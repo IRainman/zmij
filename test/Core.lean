@@ -686,10 +686,10 @@ instance : binary64.Power10Normalized where
 
 An implementation works with integers, but its decisions are about exact
 rational quantities. It connects the two by scaling an exact value `x` by an
-integer `scale` so that `x·scale = t` is integral. For a candidate `c`, an
+integer `scale` so that `x·scale = x'` is integral. For a candidate `c`, an
 identity such as
 
-    c·scale + dist = t
+    c·scale + dist = x'
 
 then expresses the exact distance from `c` to `x` through the integer `dist`.
 `scaled_cmp_of_int_eq` turns identities of this form into exact comparisons.
@@ -717,10 +717,10 @@ constraints, which `omega` can solve directly.
 -/
 
 /-- The scaled distance from the exact value, given by the integer identity. -/
-theorem scaled_dist_eq {c scale : ℕ} {t dist : ℤ} {x : ℚ} (hx : x * scale = t)
-    (hnat : (c : ℤ) * scale + dist = t) :
+theorem scaled_dist_eq {c scale : ℕ} {x' dist : ℤ} {x : ℚ} (hx : x * scale = x')
+    (hnat : (c : ℤ) * scale + dist = x') :
     ((c : ℚ) - x) * scale = -(dist : ℚ) := by
-  have hcast : (c : ℚ) * scale + (dist : ℚ) = t := by exact_mod_cast hnat
+  have hcast : (c : ℚ) * scale + (dist : ℚ) = x' := by exact_mod_cast hnat
   rw [sub_mul, hx]
   linarith
 
@@ -728,9 +728,9 @@ theorem scaled_dist_eq {c scale : ℕ} {t dist : ℤ} {x : ℚ} (hx : x * scale 
     interval condition on its signed distance. The threshold is scaled to match,
     `thr·(a·scale) = b`, with `a` accounting for fractional thresholds such as
     a half-ULP. -/
-theorem scaled_cmp_of_int_eq {c scale a b : ℕ} {t dist : ℤ} {x thr : ℚ}
-    (hscale : 0 < scale) (ha : 0 < a) (hx : x * scale = t)
-    (hthr : thr * (a * scale) = b) (hnat : (c : ℤ) * scale + dist = t) :
+theorem scaled_cmp_of_int_eq {c scale a b : ℕ} {x' dist : ℤ} {x thr : ℚ}
+    (hscale : 0 < scale) (ha : 0 < a) (hx : x * scale = x')
+    (hthr : thr * (a * scale) = b) (hnat : (c : ℤ) * scale + dist = x') :
     (|(c : ℚ) - x| ≤ thr ↔ -(b : ℤ) ≤ a * dist ∧ a * dist ≤ b) ∧
       (|(c : ℚ) - x| < thr ↔ -(b : ℤ) < a * dist ∧ a * dist < b) ∧
       (|(c : ℚ) - x| = thr ↔ a * dist = b ∨ a * dist = -(b : ℤ)) := by
@@ -755,10 +755,10 @@ theorem scaled_cmp_of_int_eq {c scale a b : ℕ} {t dist : ℤ} {x thr : ℚ}
 
 /-- The two bounds on the decimal grid that `exact_candidate_correct` asks for,
     from an integer identity. The `scale` sends `u`, one ULP measured in grid
-    steps, to the integer `t`, and `u` then spans between one and ten steps as
-    soon as `t` lies between `scale` and `10·scale`. -/
-theorem ulp_steps_of_int_eq {scale t : ℕ} {u : ℚ} (hscale : 0 < scale)
-    (hu : u * scale = t) (hlo : scale ≤ t) (hhi : t < 10 * scale) :
+    steps, to the integer `u'`, and `u` then spans between one and ten steps as
+    soon as `u'` lies between `scale` and `10·scale`. -/
+theorem ulp_steps_of_int_eq {scale u' : ℕ} {u : ℚ} (hscale : 0 < scale)
+    (hu : u * scale = u') (hlo : scale ≤ u') (hhi : u' < 10 * scale) :
     1 ≤ u ∧ u < 10 := by
   have hscaleq : (0 : ℚ) < scale := by exact_mod_cast hscale
   refine ⟨(mul_le_mul_iff_of_pos_right hscaleq).mp ?_,

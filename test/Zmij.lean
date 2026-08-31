@@ -1552,7 +1552,7 @@ theorem ulp_scaled_bounds (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
     1 ≤ ulp e * 10 ^ (-binary64.decimalExponent e)
       ∧ ulp e * 10 ^ (-binary64.decimalExponent e) < 10 := by
   obtain ⟨hnum, hstep⟩ := grid_bounds e he
-  refine ulp_steps_of_int_eq (t := 10 * num e) (step_pos e) ?_ hstep (by omega)
+  refine ulp_steps_of_int_eq (u' := 10 * num e) (step_pos e) ?_ hstep (by omega)
   have h := half_ulp_grid e he
   push_cast at h ⊢
   linear_combination 2 * h
