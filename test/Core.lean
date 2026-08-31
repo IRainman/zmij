@@ -488,23 +488,22 @@ abbrev Format.p10Width (fmt : Format) : ℕ := 2 * fmt.width
 
 /-! ### Regularly spaced values -/
 
-/-- Whether f·2^e is a regularly spaced positive value of the format: a normal
-    that is not a power of 2, or anything at the minimum exponent, subnormals
-    included, there being no binade below to halve the spacing. -/
-structure Format.Regular (fmt : Format) (f : ℕ) (e : ℤ) : Prop where
-  pos : 0 < f
-  sig_lt : f < 2 ^ fmt.prec
-  normal_or_min : 2 ^ (fmt.prec - 1) < f ∨ e = fmt.emin
-  range : fmt.emin ≤ e ∧ e ≤ fmt.emax
-
 /-- Whether f·2^e is a positive finite value of the format, the powers of two
-    included: `Regular` less `normal_or_min`. A selection rule has to know the
-    spacing below a binade, so it asks for `Regular`; a rounding to a precision
-    the caller names does not, and asks only for this. -/
+    included. A selection rule has to know the spacing below a binade, so it
+    asks for `Regular`; a rounding to a precision the caller names does not, and
+    asks only for this. -/
 structure Format.Finite (fmt : Format) (f : ℕ) (e : ℤ) : Prop where
   pos : 0 < f
   sig_lt : f < 2 ^ fmt.prec
   range : fmt.emin ≤ e ∧ e ≤ fmt.emax
+
+/-- Whether f·2^e is a regularly spaced positive value of the format: a finite
+    value that is a normal other than a power of 2, or anything at the minimum
+    exponent, subnormals included, there being no binade below to halve the
+    spacing. -/
+structure Format.Regular (fmt : Format) (f : ℕ) (e : ℤ) : Prop
+    extends Format.Finite fmt f e where
+  normal_or_min : 2 ^ (fmt.prec - 1) < f ∨ e = fmt.emin
 
 /-! ### The decimal exponent -/
 
