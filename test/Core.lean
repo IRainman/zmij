@@ -778,10 +778,13 @@ theorem comparison_stable_of_far {x y l r w : ℕ} (hl : l ≤ r + w)
 
 /-! ### Modular window certificates
 
-The ambiguity is a narrow window of residues, and closing such a window is a
-Diophantine question: can `g·f mod modulus` land in `[lo, hi]` for some
-significand `f` in `[f0, f1]`? `ModWindows` poses that question, knowing nothing
-about what the residue means.
+The error bounds leave the comparison undecided within a narrow band either side
+of the boundary it tests against. The value tested is a distance to the grid,
+periodic across it and linear in the significand until it wraps, so within one
+grid period it is the residue `g·f mod modulus`, and the ambiguous band becomes
+a window of residues. Refuting a window is a Diophantine question: can the
+residue land in `[lo, hi]` for some significand `f` in `[f0, f1]`? `ModWindows`
+poses that question, knowing nothing about what the residue means.
 
 One multiplier `q` answers the question. Write `y = g·f - modulus·j` for the
 residue and `r = g·q - modulus·p` for the error of an approximation
