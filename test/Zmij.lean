@@ -34,7 +34,7 @@ yy wrote into a flag Żmij writes into a rounding constant.
 Throughout this file:
 * `f`, `e`: binary significand and exponent, denoting `f·2^e`;
 * `d`, `k`: decimal significand and exponent, denoting `d·10^k`;
-* `s`: the shift `exponentShift e`, aligning `f·2^e` with `10^(-k-1)`.
+* `h`: the shift `exponentShift e`, aligning `f·2^e` with `10^(-k-1)`.
 
 Żmij makes three decisions, whose correctness is captured by comparisons of
 naturals in the integer scale of `## Żmij's arithmetic model`:
@@ -98,7 +98,7 @@ decisions are comparisons on those two values.
 
 The extra shift is the nine bits of headroom Żmij leaves below the integral
 part, which `exponentShift` folds in. Nine is not forced: 3 keeps the shift
-non-negative, 10 keeps `f·2^s` inside 64 bits, and 9 lets the digit constant be
+non-negative, 10 keeps `f·2^h` inside 64 bits, and 9 lets the digit constant be
 shared with the base-ten multiply. What the proof needs from it is only that the
 shift stays in `[6, 9]`.
 -/
@@ -108,7 +108,7 @@ shift stays in `[6, 9]`.
 def exponentShift (e : ℤ) : ℕ :=
   Int.toNat (e + (-(binary64.decimalExponent e + 1) * 217_707) / 2 ^ 16 + 10)
 
-/-- The top 128 bits of Żmij's 192-bit product: `⌊f·2^s·p10 / 2^64⌋`. -/
+/-- The top 128 bits of Żmij's 192-bit product: `⌊f·2^h·p10 / 2^64⌋`. -/
 def scaledSignificand (f : ℕ) (e : ℤ) : ℕ :=
   f * 2 ^ exponentShift e
     * binary64.power10Significand (-(binary64.decimalExponent e + 1)) / 2 ^ 64
@@ -183,8 +183,8 @@ theorem exponent_shift_eq (e : ℤ) :
   omega
 
 /-- The shift is at least six and at most nine. The upper bound is what keeps
-    `f·2^s` inside 64 bits in the implementation; the lower bound is what makes
-    `10 - s` a positive shift in `halfUlp`. -/
+    `f·2^h` inside 64 bits in the implementation; the lower bound is what makes
+    `10 - h` a positive shift in `halfUlp`. -/
 theorem exponent_shift_bounds :
     ∀ e ∈ Finset.Icc (-1074 : ℤ) 971,
       6 ≤ e + (-(binary64.decimalExponent e + 1) * 217_707) / 2 ^ 16 + 10 ∧
@@ -202,7 +202,7 @@ theorem exponent_shift_range (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
   have := exponent_shift_eq e
   omega
 
-/-- The shift undoes the power-of-ten exponent: `s - 9 - pe = e`. Both sides
+/-- The shift undoes the power-of-ten exponent: `h - 9 - pe = e`. Both sides
     scale the same fixed-point quotient, so once the shift is known not to have
     been clamped this is arithmetic, whatever the decimal exponent is. -/
 theorem exponent_shift_align (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
@@ -225,12 +225,12 @@ specification is stated over.
 
 The power of ten is a ratio `num / den`, and clearing that denominator turns
 every comparison below into one between naturals. In integers, one step of the
-grid at `k+1` is `2^(137-s)·den`, one ULP of the value is exactly `num`, and the
-fraction Żmij compares is measured in units of `unit·den = 2^(73-s)·den`.
+grid at `k+1` is `2^(137-h)·den`, one ULP of the value is exactly `num`, and the
+fraction Żmij compares is measured in units of `unit·den = 2^(73-h)·den`.
 
 Two divisions of the implementation compose into one here. `integralPart`
 shifts the 192-bit product down by 64 and then by 73, which is a single
-division by `2^(137-s)` once the shift is factored out, and `fractionalPart`
+division by `2^(137-h)` once the shift is factored out, and `fractionalPart`
 reads the same quotient 64 bits lower.
 -/
 
@@ -365,7 +365,7 @@ integers. This is the only place `ℚ` appears.
 -/
 
 /-- One coarse step is the alignment shift with the denominator: the fraction's
-    unit and the 64 bits above it compose into `2^(137-s)`. -/
+    unit and the 64 bits above it compose into `2^(137-h)`. -/
 theorem step_pow (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
     step e = 2 ^ (137 - exponentShift e) * den e := by
   rw [step, unit, ← pow_add,
@@ -384,7 +384,7 @@ theorem step_eq (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
     rw [show (128 : ℤ) = (binary64.p10Width : ℤ) from rfl,
       binary64.power10_exact_ratio, ← num, ← den,
       div_mul_cancel₀ _ (ne_of_gt hd)]
-  -- The inverse scale turns the power-of-ten factor into `2^(137-s)`, which is
+  -- The inverse scale turns the power-of-ten factor into `2^(137-h)`, which is
   -- where the shift alignment is spent.
   have hscale : (10 : ℚ) ^ (-(k + 1)) * 2 ^ (128 - pe)
         * (2 ^ (-e) * 10 ^ (k + 1))
@@ -458,7 +458,7 @@ theorem roundtrips_iff_dist (f : ℕ) (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971)
 /-! ## The error budget
 
 Both coarse flags compare Żmij's truncated fraction with its truncated half
-ULP. In integers, one fraction unit is `edge = 2^(73-s)·den`: the fraction
+ULP. In integers, one fraction unit is `edge = 2^(73-h)·den`: the fraction
 stands for that much of the gap apiece, the half ULP for twice that much of one
 ULP apiece, and each of the two truncations leaves a remainder below one unit,
 `err` from the gap and `errHalf` from the ULP. Those two remainders are the
