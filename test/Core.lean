@@ -24,8 +24,8 @@ produces a shortest, correctly rounded decimal for any positive value, given
 only that the decimal grid is no coarser than one ULP and strictly coarser than
 a tenth of one.
 
-The second part is the vocabulary the implementations share: how a format spaces
-the values they convert, which decimal exponent they report, and the normalized
+The second part is the vocabulary the algorithms share: how a format spaces the
+values they convert, which decimal exponent they report, and the normalized
 power-of-ten table they multiply by. It is the only part that knows formats
 exist, but it is not specific to an algorithm, which is the line that decides
 what belongs here.
@@ -452,7 +452,7 @@ theorem coarse_roundtrip_adjacent (f : ℕ) (e k : ℤ)
     exact_mod_cast (show (d : ℚ) < (c : ℚ) + 20 by linarith)
   omega
 
-/-! ## What the implementations share
+/-! ## What the algorithms share
 
 Nothing above knows an implementation and nothing below knows decimals. Between
 them sits what the implementation proofs have in common: how a format spaces the
@@ -475,7 +475,7 @@ it needs through its own format, as `binary64.decimalExponent`.
     what pins down the exponent range of the checks below. Only the `log₂10`
     side is checked through `Power10Normalized`; what has to hold of `log₁₀2`
     is a bound on the shift an implementation derives from it, which differs
-    between implementations, so each checks its own. -/
+    between algorithms, so each checks its own. -/
 structure Format where
   prec : ℕ
   emin : ℤ
@@ -715,8 +715,8 @@ scaled value to an integer `t`. A threshold `thr` worth `b` over `a` copies of
 The same scale answers the other question the method asks, how many grid steps
 one ULP spans, through an identity of the same shape.
 
-These are the whole crossing into `ℚ`. Below them an implementation states one
-identity per candidate and reasons in `ℤ`; above them nothing mentions the
+These are the whole crossing into `ℚ`. Below them an implementation proof states
+one identity per candidate and reasons in `ℤ`; above them nothing mentions the
 scale. The interval form is deliberate: the conclusions are what `omega` reads.
 -/
 
@@ -994,7 +994,7 @@ def modCertTactic (search : ℤ → ℤ) : TacticM Unit := do
 Nothing above knows what the significands are. Every implementation asks its
 question over the same ones, `Regular` being all it knows about `f`, so the box
 and the two bounds a certificate needs of it belong here rather than in each
-implementation.
+implementation proof.
 -/
 
 /-- A window problem over the significands `Regular` admits at `e`. The box is

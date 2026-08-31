@@ -13,7 +13,7 @@ import Mathlib.Tactic.LinearCombination
 `Core.lean` proves that an exact, Schubfach-like selection rule produces a
 shortest, correctly rounded decimal whenever the decimal grid step is at most
 one ULP and strictly greater than a tenth of one. This file proves that yy
-implements that rule. What yy shares with any other implementation—the format's
+implements that rule. What yy shares with any other algorithm—the format's
 spacing, the decimal exponent, the power-of-ten table—is defined there too.
 
 The whole argument is that each of yy's three packed Boolean decisions is an

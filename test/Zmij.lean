@@ -14,8 +14,8 @@ import Mathlib.Tactic.LinearCombination
 shortest, correctly rounded decimal whenever the decimal grid step is at most
 one ULP and strictly greater than a tenth of one. This file proves that Żmij's
 regular binary64 path implements that rule. What Żmij shares with any other
-implementation—binary64's spacing, the decimal exponent, the power-of-ten
-table—is defined there too.
+algorithm—binary64's spacing, the decimal exponent, the power-of-ten table—is
+defined there too.
 
 Żmij scales by `10^(-k-1)` rather than `10^(-k)`, an optimization by Xiang
 JunBo: one multiply lands the *shorter* 15-16 digit candidate in the integral
