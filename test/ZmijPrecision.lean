@@ -60,10 +60,9 @@ Throughout this file:
 * `n`: `shiftBits e p`, the product bits below the integral part.
 
 The scaled value is `exact f e p / step e p`, and everything between the
-arithmetic and the specification is a comparison of integers in that cleared
-scale. `exact_eq` is the one identity it all rests on: the integral part and the
-1/2 bit at their weights, plus a remainder `dev` that the guard bits do not
-report.
+arithmetic and the specification is a comparison of integers in that scale.
+`exact_eq` is the one identity it all rests on: the integral part and the 1/2
+bit at their weights, plus a remainder `dev` that the guard bits do not report.
 
 ## Dependencies
 
@@ -221,35 +220,35 @@ structure Normalized (f : ℕ) (e : ℤ) : Prop where
   sig : 2 ^ 52 ≤ f ∧ f < 2 ^ 53
   exp : -1126 ≤ e ∧ e ≤ 971
 
-/-! ## The cleared scale
+/-! ## The integer scale
 
 Scaled by `10^(-k)`, the reported grid becomes the integers and the exact value
-becomes `exact / step`. `step` is the factor that clears it: the power of ten's
-denominator times the product's alignment. Every comparison below is between
-integers in that scale, and `halfStep` is the distance a correctly rounded
-significand must stay within.
+becomes `exact / step`. `step` is the factor that takes it there: the power of
+ten's denominator times the product's alignment. Every comparison below is
+between integers in that scale, and `halfStep` is the distance a correctly
+rounded significand must stay within.
 -/
 
-/-- Half a step of the reported grid, cleared. -/
+/-- Half a step of the reported grid, in integers. -/
 def halfStep (e : ℤ) (p : ℕ) : ℕ := den e p * 2 ^ (shiftBits e p - 1)
 
-/-- One step of the reported grid, cleared: the scale that clears it. -/
+/-- One step of the reported grid in integers: the scale that takes it there. -/
 def step (e : ℤ) (p : ℕ) : ℕ := 2 * halfStep e p
 
-/-- The exact scaled value, cleared: `f·2^e·10^(-k)·step`. -/
+/-- The exact scaled value, in integers: `f·2^e·10^(-k)·step`. -/
 def exact (f : ℕ) (e : ℤ) (p : ℕ) : ℕ := f * 2 ^ 11 * num e p
 
-/-- What the discarded low word can be worth, cleared: the bump puts the entry
-    at most one above the exact ratio, which the shifted significand scales by
-    under `2^64`. -/
+/-- What the discarded low word can be worth, in integers: the bump puts the
+    entry at most one above the exact ratio, which the shifted significand
+    scales by under `2^64`. -/
 def slack (e : ℤ) (p : ℕ) : ℕ := 2 ^ 64 * den e p
 
-/-- What the bump added, cleared and scaled by the significand: the difference
-    between the product zmij formed and the exact one. -/
+/-- What the bump added, in integers and scaled by the significand: the
+    difference between the product zmij formed and the exact one. -/
 def gap (f : ℕ) (e : ℤ) (p : ℕ) : ℕ := den e p * product f e p - exact f e p
 
 /-- What the guard bits do not report: the product bits below the 1/2 place,
-    cleared, less what the bump added. It is `dev` being zero that makes an
+    in integers, less what the bump added. It is `dev` being zero that makes an
     apparent tie a real one. -/
 def dev (f : ℕ) (e : ℤ) (p : ℕ) : ℤ := den e p * tail f e p - gap f e p
 
@@ -446,8 +445,8 @@ theorem entry_bounds (k : ℤ) :
   rw [tableEntry, Nat.mul_add]
   omega
 
-/-- What the bump added: the product zmij formed, cleared, is the exact value
-    plus `gap`. -/
+/-- What the bump added: the product zmij formed, in integers, is the exact
+    value plus `gap`. -/
 theorem gap_eq (f : ℕ) (e : ℤ) (p : ℕ) :
     den e p * product f e p = exact f e p + gap f e p := by
   have hle : exact f e p ≤ den e p * product f e p := by
@@ -477,7 +476,7 @@ theorem gap_lt (f : ℕ) (e : ℤ) (p : ℕ) (hf : f < 2 ^ 53) :
   rw [gap]
   omega
 
-/-- The exact value in the cleared scale, from the product: the integral part
+/-- The exact value in the integer scale, from the product: the integral part
     and the 1/2 bit at their weights, plus what the guard bits leave unreported.
     This is the identity every comparison below is made against. -/
 theorem exact_eq (f : ℕ) (e : ℤ) (p : ℕ) (hn : 1 ≤ shiftBits e p) :
@@ -533,9 +532,9 @@ private theorem dev_pos_of_sticky (f : ℕ) (e : ℤ) (p : ℕ) (hf : f < 2 ^ 53
 /-! ## Crossing into ℚ
 
 The specification is about rationals; everything above is about naturals. `step`
-is the factor that clears the grid, and it sends the exact scaled value to
-`exact`, so every distance the specification asks about is a distance of
-integers. Only this section and the normalization below touch `ℚ`.
+is the factor that makes the grid the integers, and it sends the exact scaled
+value to `exact`, so every distance the specification asks about is a distance
+of integers. Only this section and the normalization below touch `ℚ`.
 -/
 
 /-- `step` sends the exact scaled value to the integer `exact`. -/
@@ -544,7 +543,7 @@ theorem value_scaled (f : ℕ) (e : ℤ) (p : ℕ) (hs : 3 ≤ pointShift e p) :
   set pe := binary64.power10Exponent (idx e p) with hpe
   have hd : (0 : ℚ) < (den e p : ℚ) := by
     exact_mod_cast den_pos e p
-  -- The exact power of ten, cleared by its denominator.
+  -- The exact power of ten, multiplied through by its denominator.
   have hnum : (10 : ℚ) ^ idx e p * 2 ^ ((128 : ℤ) - pe) * (den e p : ℚ)
       = (num e p : ℚ) := by
     rw [show (128 : ℤ) = (binary64.p10Width : ℤ) from rfl, hpe,
@@ -586,7 +585,8 @@ theorem value_scaled_coarse (f : ℕ) (e : ℤ) (p : ℕ) (hs : 3 ≤ pointShift
 
 /-- A candidate within half a step of the exact value is correctly rounded on
     the grid at `k`, a candidate exactly half a step away having to be even.
-    `m` is the scale that clears that grid; the rest is `Core.lean`'s bridge. -/
+    `m` is the scale that takes that grid to the integers; the rest is
+    `Core.lean`'s bridge. -/
 theorem correctly_rounded_of_dist {f : ℕ} {e : ℤ} {p : ℕ} {d m : ℕ} {k : ℤ}
     (hm : 0 < m) (hx : value f e * 10 ^ (-k) * (m : ℚ) = (exact f e p : ℚ))
     (hle : -(m : ℤ) ≤ 2 * ((exact f e p : ℤ) - d * m)

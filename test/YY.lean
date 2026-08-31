@@ -513,8 +513,8 @@ state them over `ℚ` trades that for casts and field lemmas, and for restating 
 hypotheses the facts about `%` and `/` that `omega` already knows.
 -/
 
-/-- The exact distance from a candidate to the scaled value, with the
-    denominator of the exact power of ten cleared. -/
+/-- The exact distance from a candidate to the scaled value, in the integer
+    scale. -/
 def stepGap (m f : ℕ) (e : FPExp fmt) : ℕ :=
   trimDen e * stepResidue m f e
     + 2 * f * (trimNum e % trimDen e)
@@ -528,10 +528,10 @@ theorem trim_gap_eq (f : ℕ) (e : FPExp fmt) :
     trimGap f e
       = trimDen e * trimResidue f e + trimErr f e := rfl
 
-/-- The comparison's modulus with the denominator cleared. -/
+/-- The comparison's modulus in the integer scale. -/
 def trimScale (e : FPExp fmt) : ℕ := trimModulus e * trimDen e
 
-/-- One trim-up window unit with the denominator cleared. -/
+/-- One trim-up window unit in the integer scale. -/
 def trimEdgeU (e : FPExp fmt) : ℕ := trimUnitU e * trimDen e
 
 /-- The same for the trim-down comparison, at its own unit. -/
@@ -700,7 +700,7 @@ theorem trim_gap_lt_scale_add (hl : Layout fmt) (f : ℕ) (e : FPExp fmt)
   rw [trim_gap_eq]
   omega
 
-/-- What the trim-down comparison throws away, with the denominator cleared. -/
+/-- What the trim-down comparison throws away, in the integer scale. -/
 def trimDrop (e : FPExp fmt) : ℕ :=
   trimNum e % trimDen e + trimSig e % trimUnit e * trimDen e
 
@@ -1223,7 +1223,7 @@ copies of it. Every candidate bound is then an interval condition on that
 integer distance, and the consumers below never leave `ℤ`.
 -/
 
-/-- The unit step, cleared. The coarse step is ten of them. -/
+/-- The unit step, in integers. The coarse step is ten of them. -/
 def trimMul (e : FPExp fmt) : ℕ :=
   2 ^ (fmt.p10Width - exponentShift e) * trimDen e
 
@@ -1247,7 +1247,7 @@ theorem trim_two_trunc_le_mul (hl : Layout fmt) (e : FPExp fmt)
   rw [trimMul]
   exact Nat.mul_le_mul_right _ (Nat.pow_le_pow_right (by norm_num) (by omega))
 
-/-- Half a grid step, cleared: half a unit step times `den`. -/
+/-- Half a grid step, in integers: half a unit step times `den`. -/
 theorem trim_mul_eq_two_half (hl : Layout fmt) (e : FPExp fmt)
     (hsh : exponentShift e < 4) :
     trimMul e
@@ -1593,8 +1593,8 @@ of `2·oneGap` with `trimMul` in which a midpoint goes up only from an odd
 def oneResidue (f : ℕ) (e : FPExp fmt) : ℕ :=
   stepResidue (2 ^ (fmt.p10Width - exponentShift e)) f e
 
-/-- The gap at the unit step, the distance from `sigHi` to the scaled value once
-    the denominator is cleared. -/
+/-- The gap at the unit step, the distance from `sigHi` to the scaled value in
+    the integer scale. -/
 def oneGap (f : ℕ) (e : FPExp fmt) : ℕ :=
   stepGap (2 ^ (fmt.p10Width - exponentShift e)) f e
 
@@ -1665,8 +1665,8 @@ theorem sig_hi_scaled (hl : Layout fmt) (f : ℕ) (e : FPExp fmt)
     rw [sig_hi_quotient hl f e hsh]; exact step_quotient_add_gap _ f e
   exact_mod_cast h
 
-/-- The unit-step gap is the denominator-cleared remainder plus the
-    power-of-ten truncation error. -/
+/-- The unit-step gap is the remainder in integers plus the power-of-ten
+    truncation error. -/
 theorem one_gap_split (f : ℕ) (e : FPExp fmt) :
     oneGap f e
       = trimDen e * oneResidue f e
@@ -1899,7 +1899,7 @@ theorem round_u1_iff_gap (hl : Layout fmt) (f : ℕ) (e : FPExp fmt)
   have hden := trim_den_pos e
   have hgap := one_gap_split f e
   have hstep := trim_mul_eq_two_half hl e hsh
-  -- One remainder unit is worth `trimDen` of the cleared gap.
+  -- One remainder unit is worth `trimDen` of the gap in integers.
   have hmono (n : ℕ) (h : n ≤ oneResidue f e) :
       trimDen e * n ≤ trimDen e * oneResidue f e :=
     Nat.mul_le_mul_left _ h

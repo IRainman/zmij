@@ -37,7 +37,7 @@ Throughout this file:
 * `s`: the shift `exponentShift e`, aligning `f·2^e` with `10^(-k-1)`.
 
 Żmij makes three decisions, whose correctness is captured by comparisons of
-naturals in the cleared scale of `## Żmij's arithmetic model`:
+naturals in the integer scale of `## Żmij's arithmetic model`:
 
     round_down_iff_gap :  roundDown ↔ 2·gap ≤ num
     round_up_iff_gap   :  roundUp   ↔ 2·step ≤ 2·gap + num
@@ -221,11 +221,11 @@ truncations discard, and how that scale relates to the rationals the
 specification is stated over.
 -/
 
-/-! ### The cleared quantities
+/-! ### The integer quantities
 
 The power of ten is a ratio `num / den`, and clearing that denominator turns
-every comparison below into one between naturals. Cleared, one step of the grid
-at `k+1` is `2^(137-s)·den`, one ULP of the value is exactly `num`, and the
+every comparison below into one between naturals. In integers, one step of the
+grid at `k+1` is `2^(137-s)·den`, one ULP of the value is exactly `num`, and the
 fraction Żmij compares is measured in units of `unit·den = 2^(73-s)·den`.
 
 Two divisions of the implementation compose into one here. `integralPart`
@@ -257,19 +257,19 @@ theorem p10_nat (e : ℤ) : p10 e = num e / den e :=
 theorem num_split (e : ℤ) : den e * p10 e + num e % den e = num e := by
   rw [p10_nat]; exact Nat.div_add_mod _ _
 
-/-- The unit the fraction is measured in, before clearing the denominator. -/
+/-- The unit the fraction is measured in, before the denominator enters. -/
 def unit (e : ℤ) : ℕ := 2 ^ (73 - exponentShift e)
 
 theorem unit_pos (e : ℤ) : 0 < unit e := by rw [unit]; positivity
 
-/-- One step of the coarse grid at `k+1`, with the denominator cleared. -/
+/-- One step of the coarse grid at `k+1`, in the integer scale. -/
 def step (e : ℤ) : ℕ := unit e * 2 ^ 64 * den e
 
 theorem step_pos (e : ℤ) : 0 < step e := by
   rw [step]
   exact Nat.mul_pos (Nat.mul_pos (unit_pos e) (by positivity)) (den_pos e)
 
-/-- Both readouts are one division of the cleared product, by whatever the
+/-- Both readouts are one division of the integer product, by whatever the
     implementation's two shifts compose into: the alignment shift divides out of
     both sides of it. -/
 private theorem scaled_div (f : ℕ) (e : ℤ) {n m : ℕ}
@@ -299,14 +299,14 @@ theorem fraction_quotient (f : ℕ) (e : ℤ) (hs : exponentShift e ≤ 9) :
     omega
   rw [fractionalPart, h]
 
-/-- What that division left behind, the residue of the cleared product in one
+/-- What that division left behind, the residue of the integer product in one
     coarse step. The fraction is its top and the truncation its bottom, and
     both of the digit's boundaries constrain the two together, so both are
     stated about this. -/
 def res (f : ℕ) (e : ℤ) : ℕ := f * p10 e % (unit e * 2 ^ 64)
 
-/-- The gap from the integral part up to the exact scaled value, cleared: what
-    the quotient dropped, plus what the truncated power of ten dropped. -/
+/-- The gap from the integral part up to the exact scaled value, in integers:
+    what the quotient dropped, plus what the truncated power of ten dropped. -/
 def gap (f : ℕ) (e : ℤ) : ℕ := den e * res f e + f * (num e % den e)
 
 /-- The integral part scaled back up, plus the gap, is the scaled value
@@ -329,7 +329,7 @@ theorem integral_add_gap (f : ℕ) (e : ℤ) (hs : exponentShift e ≤ 9) :
 
 Both of Żmij's comparisons are between a truncated 64-bit value and the exact
 quantity it stands for, so each needs the size of what was dropped. The gap is
-the fraction in cleared units plus a remainder below one such unit, and one
+the fraction in integer units plus a remainder below one such unit, and one
 ULP is twice half a ULP in the same units plus a remainder below one. Those two
 remainders are the whole error budget the certificates below have to close.
 -/
@@ -458,14 +458,14 @@ theorem roundtrips_iff_dist (f : ℕ) (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971)
 /-! ## The error budget
 
 Both coarse flags compare Żmij's truncated fraction with its truncated half
-ULP. Cleared, one fraction unit is `edge = 2^(73-s)·den`: the fraction stands
-for that much of the gap apiece, the half ULP for twice that much of one
+ULP. In integers, one fraction unit is `edge = 2^(73-s)·den`: the fraction
+stands for that much of the gap apiece, the half ULP for twice that much of one
 ULP apiece, and each of the two truncations leaves a remainder below one unit,
 `err` from the gap and `errHalf` from the ULP. Those two remainders are the
 whole budget the certificates below have to close.
 -/
 
-/-- One fraction unit with the denominator cleared: the resolution both coarse
+/-- One fraction unit in the integer scale: the resolution both coarse
     comparisons work at. -/
 def edge (e : ℤ) : ℕ := unit e * den e
 
@@ -502,14 +502,14 @@ theorem half_ulp_eq (f : ℕ) (e : ℤ) (hs : exponentShift e ≤ 9) :
     ring
   rw [halfUlp, half, p10, Nat.div_div_eq_div_mul, hpow]
 
-/-- The gap is the fraction in cleared units plus what the fraction
+/-- The gap is the fraction in integer units plus what the fraction
     discarded. -/
 theorem gap_eq_edge_fraction (f : ℕ) (e : ℤ) (hs : exponentShift e ≤ 9) :
     gap f e = edge e * fractionalPart f e + err f e := by
   rw [edge, err]
   exact gap_eq_fraction_add f e hs
 
-/-- One ULP is twice the truncated half ULP in cleared units, plus what that
+/-- One ULP is twice the truncated half ULP in integer units, plus what that
     truncation discarded. -/
 theorem num_eq_edge_half (e : ℤ) :
     num e = 2 * (edge e * half e) + errHalf e := by
@@ -586,7 +586,7 @@ theorem err_bounds (f : ℕ) (e : ℤ) (hr : binary64.Regular f e) :
   have hchk := checks e hr.range
   omega
 
-/-- The power of ten is normalized in cleared form too. -/
+/-- The power of ten is normalized in integer form too. -/
 theorem num_bounds (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
     2 ^ 127 * den e ≤ num e ∧ num e < 2 ^ 128 * den e :=
   binary64.power10_ratio_normalized he.1 he.2
@@ -632,11 +632,11 @@ fraction unit of a boundary. What is left is a band of that width either side of
 each boundary, minus the boundary itself; the certificates say those bands are
 empty, which is what leaves the exact ties their room.
 
-Both boundaries share one modular problem. Cleared, one coarse step is `step`
-and the doubled gap is the residue of `2·num·f` in two steps, so the trim-down
-boundary is `num` and the trim-up boundary `2·step - num`. A violation of either
-puts that residue in a window of relative width about `2^-63`, which is the kind
-of question `ModWindows` answers with one multiplier per exponent.
+Both boundaries share one modular problem. In integers, one coarse step is
+`step` and the doubled gap is the residue of `2·num·f` in two steps, so the
+trim-down boundary is `num` and the trim-up boundary `2·step - num`. A violation
+of either puts that residue in a window of relative width about `2^-63`, which
+is the kind of question `ModWindows` answers with one multiplier per exponent.
 
 Ties are not rare here and not refutable: `10^(-k-1)` for `k` in `[0, 22]` gives
 a scaled ULP with a small denominator, and the boundary is then hit by a whole
@@ -1087,8 +1087,8 @@ doubled.
 -/
 
 /-- Twice the signed distance from Żmij's fine output to the exact value, on the
-    grid at `k` and cleared by `step`: the digit accounts for ten times the gap,
-    and this is what it leaves. -/
+    grid at `k` and multiplied through by `step`: the digit accounts for ten
+    times the gap, and this is what it leaves. -/
 def digitDist (f : ℕ) (e : ℤ) : ℤ :=
   20 * (gap f e : ℤ) - 2 * (toDecimalCandidates f e).digit * step e
 
@@ -1104,8 +1104,8 @@ theorem err_lt (f : ℕ) (e : ℤ) (hr : binary64.Regular f e) :
     calc 20 * 2 ^ 53 ≤ 2 ^ 64 := by norm_num
       _ ≤ 2 ^ (73 - exponentShift e) :=
           Nat.pow_le_pow_right (by norm_num) (by omega)
-  -- The remainder below one unit, with the denominator cleared, is one unit
-  -- short of the whole edge.
+  -- The remainder below one unit, in integers, is one unit short of the whole
+  -- edge.
   have hrest : den e * (f * p10 e % unit e) + den e ≤ edge e := by
     have h : f * p10 e % unit e + 1 ≤ unit e := by
       have := Nat.mod_lt (f * p10 e) (unit_pos e)
@@ -1497,17 +1497,17 @@ theorem digit_nearest (f : ℕ) (e : ℤ) (hr : binary64.Regular f e) :
 /-! ## The grid at k
 
 Everything so far has been stated on the grid at `k+1`, where the coarse
-candidates live, or in cleared integers. The exact method asks for the grid at
-`k`, one power of ten finer: `10^(-k) = 10·10^(-k-1)`. Two things have to be
-said there. One ULP has to fall between one and ten steps of it, which is what
-makes `k` the right exponent to report and is checked per exponent. And Żmij's
-output has to be read on it: the coarse candidates as multiples of ten, and the
-fine one as the integral part with the digit appended.
+candidates live, or in integers. The exact method asks for the grid at `k`, one
+power of ten finer: `10^(-k) = 10·10^(-k-1)`. Two things have to be said there.
+One ULP has to fall between one and ten steps of it, which is what makes `k` the
+right exponent to report and is checked per exponent. And Żmij's output has to
+be read on it: the coarse candidates as multiples of ten, and the fine one as
+the integral part with the digit appended.
 -/
 
-/-- The power of ten is normalized against the grid at `k`: cleared, one ULP is
-    `10·num` where one step of that grid is worth `step`, so a ULP spans at
-    least one step and less than ten. -/
+/-- The power of ten is normalized against the grid at `k`: in integers, one
+    ULP is `10·num` where one step of that grid is worth `step`, so a ULP spans
+    at least one step and less than ten. -/
 def gridHolds (e : ℤ) : Bool :=
   decide (num e < step e ∧ step e ≤ 10 * num e)
 
@@ -1528,7 +1528,7 @@ private theorem grid_pow (e : ℤ) :
     zpow_add_one₀ (by norm_num : (10 : ℚ) ≠ 0)]
   ring
 
-/-- The value on the grid at `k`, cleared by `step`. -/
+/-- The value on the grid at `k`, multiplied through by `step`. -/
 theorem value_scaled_grid (f : ℕ) (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
     value f e * 10 ^ (-binary64.decimalExponent e) * (step e : ℚ)
       = ((10 * (f * num e) : ℕ) : ℚ) := by
@@ -1537,7 +1537,7 @@ theorem value_scaled_grid (f : ℕ) (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
   push_cast at h ⊢
   linear_combination 10 * h
 
-/-- Half a ULP on the grid at `k`, cleared: five `num`. -/
+/-- Half a ULP on the grid at `k`, in integers: five `num`. -/
 theorem half_ulp_grid (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
     ulp e * 10 ^ (-binary64.decimalExponent e) / 2 * (step e : ℚ)
       = ((5 * num e : ℕ) : ℚ) := by
@@ -1589,9 +1589,9 @@ other multiple of ten, and the rounding interval is too narrow to hold one.
 -/
 
 /-- A multiple of ten that round-trips is one of Żmij's two coarse candidates.
-    Cleared by `step`, the lower one sits `10·gap` below the scaled value, and
-    that gap is under one step of the coarse grid, let alone one step plus half
-    a ULP. This bracket is all `coarse_roundtrip_adjacent` needs. -/
+    Multiplied through by `step`, the lower one sits `10·gap` below the scaled
+    value, and that gap is under one step of the coarse grid, let alone one step
+    plus half a ULP. This bracket is all `coarse_roundtrip_adjacent` needs. -/
 theorem coarse_candidate_cases (f : ℕ) (e : ℤ)
     (hr : binary64.Regular f e) (d : ℕ)
     (h10 : d % 10 = 0)
