@@ -870,17 +870,17 @@ private theorem window_bounds {n m fmin fmax rmin rmax q p ε f j r : ℤ}
         le_trans (mul_le_mul_of_nonpos_right hfmin hε0) (le_max_left _ _)⟩
   exact ⟨by linarith [hfε.2], by linarith [hfε.1]⟩
 
-/-- A residue as a signed offset from the multiple of the modulus below it.
-    Matching the cast of the whole residue in one step is what keeps the
-    rewrite off any other modulus in the goal. -/
+/-- The quotient-remainder identity for `a mod m`, cast to `ℤ`. The cast on the
+    left anchors a rewrite to the residue named; inlining the `Int.emod_def`
+    step would match any remainder in the goal. -/
 theorem cast_mod_eq_sub (a m : ℕ) :
     ((a % m : ℕ) : ℤ) = a - m * ((a / m : ℕ) : ℤ) := by
   rw [Int.natCast_emod, Int.emod_def, ← Int.natCast_ediv]
 
-/-- What a certificate says, at any representative of the residue class. The
-    canonical one is what an implementation usually has, but a window recentred
-    on a known occupant measures offsets from it, and those run negative on one
-    side. -/
+/-- A certificate excludes every listed window from any integer representative
+    `r = n·f - m·j` of the residue class, for any significand in range. This
+    general form handles recentred windows whose representatives may be
+    signed. -/
 theorem ModWindows.not_hit_rep (w : ModWindows) (f : ℕ) (hm : 0 < w.m)
     {q : ℤ} (hcert : w.refutedBy q = true)
     {rmin rmax : ℤ} (hmem : (rmin, rmax) ∈ w.windows) {r j : ℤ}
@@ -897,9 +897,10 @@ theorem ModWindows.not_hit_rep (w : ModWindows) (f : ℕ) (hm : 0 < w.m)
       (by exact_mod_cast hfmin) (by exact_mod_cast hfmax) hres hrmin hrmax
   exact window_gap_absurd (by exact_mod_cast hm) hb0 hb1 hgap0 hgap1
 
-/-- What a certificate says: no significand in range has its residue in any
-    window the multiplier refutes. Everything an implementation has to supply is
-    the identification of its own quantity with the residue. -/
+/-- A certificate excludes every listed window from the canonical residue
+    `n·f mod m`, for any significand in range. This is the form implementations
+    normally use; identifying their own quantity with that residue is all it
+    asks. Recentred signed representatives are handled by `not_hit_rep`. -/
 theorem ModWindows.not_hit (w : ModWindows) (f : ℕ) (hm : 0 < w.m)
     {q : ℤ} (hcert : w.refutedBy q = true) {rmin rmax : ℤ}
     (hmem : (rmin, rmax) ∈ w.windows) {r : ℕ}
