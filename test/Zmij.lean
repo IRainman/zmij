@@ -727,11 +727,11 @@ private theorem exp_windows_refuted (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
 
 /-- A doubled gap landing in a refuted window is impossible: it is the residue
     of `2·num·f` modulo two coarse steps. -/
-private theorem no_window_hit {lo hi q : ℤ} (f : ℕ) (e : ℤ)
+private theorem no_window_hit {rmin rmax q : ℤ} (f : ℕ) (e : ℤ)
     (hr : binary64.Regular f e)
     (hcert : (expWindows e).refutedBy q = true)
-    (hmem : (lo, hi) ∈ (expWindows e).windows)
-    (hlo : lo ≤ 2 * (rest f e : ℤ)) (hhi : 2 * (rest f e : ℤ) ≤ hi) :
+    (hmem : (rmin, rmax) ∈ (expWindows e).windows)
+    (hrmin : rmin ≤ 2 * (rest f e : ℤ)) (hrmax : 2 * (rest f e : ℤ) ≤ rmax) :
     False :=
   binary64.regular_not_hit f hr (by have := step_pos e; omega) hcert hmem
     (rest_mod f e hr).symm (by push_cast; omega) (by push_cast; omega)
@@ -1229,14 +1229,14 @@ private theorem digit_high_refuted (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971) :
 /-- A fraction together with a bound on the remainder below the unit is a
     point of `res`, which is the residue of `f·p10` modulo one coarse step, so
     a refuted window rules the pair out. -/
-private theorem no_res_hit {lo hi q : ℤ} {windows : List (ℤ × ℤ)} (f : ℕ)
+private theorem no_res_hit {rmin rmax q : ℤ} {windows : List (ℤ × ℤ)} (f : ℕ)
     (e : ℤ) (hr : binary64.Regular f e)
     (hcert : (binary64.regularWindows (p10 e) (unit e * 2 ^ 64) e
       windows).refutedBy q = true)
-    (hmem : (lo, hi) ∈ windows)
-    (hlo : lo ≤ (res f e : ℤ)) (hhi : (res f e : ℤ) ≤ hi) : False :=
+    (hmem : (rmin, rmax) ∈ windows)
+    (hrmin : rmin ≤ (res f e : ℤ)) (hrmax : (res f e : ℤ) ≤ rmax) : False :=
   binary64.regular_not_hit f hr (by have := unit_pos e; positivity) hcert hmem
-    (by rw [res, Nat.mul_comm]) hlo hhi
+    (by rw [res, Nat.mul_comm]) hrmin hrmax
 
 /-- No significand pairs one of the six low fractions with a truncation
     that reaches the boundary. -/

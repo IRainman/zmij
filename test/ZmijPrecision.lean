@@ -290,8 +290,8 @@ theorem grid_bounds : ∀ p ∈ Finset.Icc 1 18, ∀ e ∈ Finset.Icc (-1126 : �
 def tieWindows (e : ℤ) (p : ℕ) : ModWindows where
   n := 2 ^ 11 * num e p
   m := halfStep e p
-  f0 := 2 ^ 52
-  f1 := 2 ^ 53 - 1
+  fmin := 2 ^ 52
+  fmax := 2 ^ 53 - 1
   windows :=
     let w : ℤ := slack e p
     [(1 - w, -1), (1, w - 1)]

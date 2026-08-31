@@ -907,17 +907,17 @@ def expWindows (e : FPExp fmt) : ModWindows :=
 
 /-- A gap landing in a refuted window is impossible: the gap is the residue of
     `2·num·f` modulo the window modulus, as long as it has not wrapped. -/
-theorem exp_no_window_hit {lo hi q : ℤ} (f : ℕ) (e : FPExp fmt)
+theorem exp_no_window_hit {rmin rmax q : ℤ} (f : ℕ) (e : FPExp fmt)
     (hr : fmt.Regular f e)
     (hcert : (expWindows e).refutedBy q = true)
-    (hmem : (lo, hi) ∈ (expWindows e).windows)
+    (hmem : (rmin, rmax) ∈ (expWindows e).windows)
     (hwrap : trimGap f e < trimScale e)
-    (hlo : lo ≤ (trimGap f e : ℤ)) (hhi : (trimGap f e : ℤ) ≤ hi) :
+    (hrmin : rmin ≤ (trimGap f e : ℤ)) (hrmax : (trimGap f e : ℤ) ≤ rmax) :
     False :=
   Format.regular_not_hit f hr
     (by rw [trimScale, trimModulus]
         exact Nat.mul_pos (by positivity) (trim_den_pos e))
-    hcert hmem (trim_gap_mod f e hwrap).symm hlo hhi
+    hcert hmem (trim_gap_mod f e hwrap).symm hrmin hrmax
 
 /-- What a refuting multiplier buys at one significand: its gap misses every
     exceptional window. Stated per significand rather than as the certificate
@@ -925,14 +925,14 @@ theorem exp_no_window_hit {lo hi q : ℤ} (f : ℕ) (e : FPExp fmt)
     the same conclusion another way. -/
 def ExpAvoids (f : ℕ) (e : FPExp fmt) : Prop :=
   trimGap f e < trimScale e →
-    ∀ lo hi : ℤ, (lo, hi) ∈ (expWindows e).windows →
-      (trimGap f e : ℤ) < lo ∨ hi < (trimGap f e : ℤ)
+    ∀ rmin rmax : ℤ, (rmin, rmax) ∈ (expWindows e).windows →
+      (trimGap f e : ℤ) < rmin ∨ rmax < (trimGap f e : ℤ)
 
 /-- A certificate for the whole box gives it at every significand. -/
 theorem exp_avoids_of_cert {q : ℤ} (f : ℕ) (e : FPExp fmt)
     (hr : fmt.Regular f e) (hcert : (expWindows e).refutedBy q = true) :
     ExpAvoids f e := by
-  intro hwrap lo hi hmem
+  intro hwrap rmin rmax hmem
   by_contra hcon
   push Not at hcon
   exact exp_no_window_hit f e hr hcert hmem hwrap hcon.1 hcon.2
@@ -962,8 +962,8 @@ def expResidue (b : ℕ) (e : FPExp fmt) : ℕ := 2 * trimNum e * b % trimScale 
     find the quantity it varies. -/
 def expWindowsAbove (b : ℕ) (e : FPExp fmt) (i : ℕ) : ModWindows :=
   { expWindows e with
-    f0 := 2 ^ i
-    f1 := 2 ^ (i + 1) - 1
+    fmin := 2 ^ i
+    fmax := 2 ^ (i + 1) - 1
     windows := (expWindows e).windows.map fun p =>
       (p.1 - expResidue b e, p.2 - expResidue b e) }
 
@@ -971,8 +971,8 @@ def expWindowsAbove (b : ℕ) (e : FPExp fmt) (i : ℕ) : ModWindows :=
     are negated. -/
 def expWindowsBelow (b : ℕ) (e : FPExp fmt) (i : ℕ) : ModWindows :=
   { expWindows e with
-    f0 := 2 ^ i
-    f1 := 2 ^ (i + 1) - 1
+    fmin := 2 ^ i
+    fmax := 2 ^ (i + 1) - 1
     windows := (expWindows e).windows.map fun p =>
       (expResidue b e - p.2, expResidue b e - p.1) }
 
@@ -983,10 +983,10 @@ theorem exp_avoids_of_blocks {b : ℕ} (f : ℕ) (e : FPExp fmt)
     (ha : ∀ i < fmt.prec, ∃ q, (expWindowsAbove b e i).refutedBy q = true)
     (hb : ∀ i < fmt.prec, ∃ q, (expWindowsBelow b e i).refutedBy q = true) :
     ExpAvoids f e := by
-  intro hwrap lo hi hmem
+  intro hwrap rmin rmax hmem
   by_contra hcon
   push Not at hcon
-  obtain ⟨hlo, hhi⟩ := hcon
+  obtain ⟨hrmin, hrmax⟩ := hcon
   have hfp : f < 2 ^ fmt.prec := hr.sig_lt
   have hmod : 0 < trimScale e := by
     rw [trimScale, trimModulus]
@@ -1022,7 +1022,8 @@ theorem exp_avoids_of_blocks {b : ℕ} (f : ℕ) (e : FPExp fmt)
       push_cast
       ring
     exact (expWindowsBelow b e _).not_hit_rep (b - f) hmod hcert
-      (lo := (expResidue b e : ℤ) - hi) (hi := (expResidue b e : ℤ) - lo)
+      (rmin := (expResidue b e : ℤ) - rmax)
+      (rmax := (expResidue b e : ℤ) - rmin)
       (List.mem_map_of_mem (f := fun p : ℤ × ℤ =>
         ((expResidue b e : ℤ) - p.2, (expResidue b e : ℤ) - p.1)) hmem)
       hd0 hd1 hy (by omega) (by omega)
@@ -1038,7 +1039,8 @@ theorem exp_avoids_of_blocks {b : ℕ} (f : ℕ) (e : FPExp fmt)
       push_cast
       ring
     exact (expWindowsAbove b e _).not_hit_rep (f - b) hmod hcert
-      (lo := lo - (expResidue b e : ℤ)) (hi := hi - (expResidue b e : ℤ))
+      (rmin := rmin - (expResidue b e : ℤ))
+      (rmax := rmax - (expResidue b e : ℤ))
       (List.mem_map_of_mem (f := fun p : ℤ × ℤ =>
         (p.1 - (expResidue b e : ℤ), p.2 - (expResidue b e : ℤ))) hmem)
       hd0 hd1 hy (by omega) (by omega)
@@ -1743,15 +1745,15 @@ theorem one_parity_residue_split (hl : Layout fmt) (f : ℕ) (e : FPExp fmt)
   rw [hhi, hlo]
 
 /-- A doubled residue landing in a refuted window is impossible. -/
-private theorem one_no_window_hit {lo hi q : ℤ} (f : ℕ) (e : FPExp fmt)
+private theorem one_no_window_hit {rmin rmax q : ℤ} (f : ℕ) (e : FPExp fmt)
     (hr : fmt.Regular f e)
     (hcert : (oneWindows e).refutedBy q = true)
-    (hmem : (lo, hi) ∈ (oneWindows e).windows)
-    (hlo : lo ≤ (oneParityResidue f e : ℤ))
-    (hhi : (oneParityResidue f e : ℤ) ≤ hi) :
+    (hmem : (rmin, rmax) ∈ (oneWindows e).windows)
+    (hrmin : rmin ≤ (oneParityResidue f e : ℤ))
+    (hrmax : (oneParityResidue f e : ℤ) ≤ rmax) :
     False :=
   Format.regular_not_hit f hr (by positivity) hcert hmem
-    (by rw [oneParityResidue, stepResidue, Nat.mul_right_comm]) hlo hhi
+    (by rw [oneParityResidue, stepResidue, Nat.mul_right_comm]) hrmin hrmax
 
 /-- A truncated power-of-ten approximation adds the midpoint and the truncation
     error's reach below it, one for each parity of `sigHi`. -/
