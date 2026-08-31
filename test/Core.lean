@@ -707,16 +707,13 @@ errors in its approximations, and provides certificates for the boundary cases.
 
 /-! ### Integer comparison identities
 
-The scale `m` is the one that clears the decimal grid, which is what sends the
-scaled value to an integer `t`. A threshold `thr` worth `b` over `a` copies of
-`m` is then met exactly when `a·dist` lies in `[-b, b]`.
+These lemmas are the only crossing into `ℚ`. An implementation supplies integer
+identities for its candidates and, through the common scale `m`, turns them into
+exact distance comparisons and bounds on the number of grid steps per ULP.
 
-The same scale answers the other question the method asks, how many grid steps
-one ULP spans, through an identity of the same shape.
-
-These are the whole crossing into `ℚ`. Below them an implementation proof states
-one identity per candidate and reasons in `ℤ`; above them nothing mentions the
-scale. The interval form is deliberate: the conclusions are what `omega` reads.
+Below this layer an implementation proof reasons in `ℤ`; above it the scale
+disappears. The exact comparisons are deliberately reduced to integer interval
+constraints, which `omega` can solve directly.
 -/
 
 /-- The scaled distance from the exact value, given by the integer identity. -/
@@ -728,7 +725,9 @@ theorem scaled_dist_eq {c m : ℕ} {t dist : ℤ} {x : ℚ} (hx : x * m = t)
   linarith
 
 /-- Every comparison of a candidate against the exact value, as an integer
-    interval condition on its signed distance. -/
+    interval condition on its signed distance. The threshold is scaled to match,
+    `thr·(a·m) = b`, with `a` accounting for fractional thresholds such as
+    a half-ULP. -/
 theorem scaled_cmp_of_int_eq {c m a b : ℕ} {t dist : ℤ} {x thr : ℚ}
     (hm : 0 < m) (ha : 0 < a) (hx : x * m = t) (hthr : thr * (a * m) = b)
     (hnat : (c : ℤ) * m + dist = t) :
