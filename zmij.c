@@ -308,6 +308,29 @@ static ZMIJ_INLINE uint64_t div10(uint64_t x) {
   return ZMIJ_USE_INT128 ? umul128_hi64(x, div10_sig64) : x / 10;
 }
 
+// Powers of ten that fit in 64 bits, indexed by exponent.
+static const uint64_t pow10s[] = {
+    1,
+    10,
+    100,
+    1000,
+    10000,
+    100000,
+    1000000,
+    10000000,
+    100000000,
+    1000000000,
+    10000000000,
+    100000000000,
+    1000000000000,
+    10000000000000,
+    100000000000000,
+    1000000000000000,
+    10000000000000000,
+    100000000000000000,
+    1000000000000000000,
+};
+
 enum {
   double_num_bits = 64,
   double_num_sig_bits = DBL_MANT_DIG - 1,
@@ -315,6 +338,17 @@ enum {
   double_exp_mask = (1 << double_num_exp_bits) - 1,
   double_exp_bias = (1 << (double_num_exp_bits - 1)) - 1,
   double_exp_offset = double_exp_bias + double_num_sig_bits,
+
+  // Bounds for the exact big-integer path (write_big): the significand times
+  // 5**k (k up to exp_offset + num_sig_bits - 1) fits in big_bits bits, hence
+  // big_limbs base-2**32 limbs and big_digits decimal digits. 2322/1000 and
+  // 30103/100000 over-approximate log2(5) and log10(2); the +2 rounds the
+  // digit count up and reserves one carry digit. A float is exact as a double,
+  // so float precision output goes through these bounds too.
+  double_big_bits = double_num_sig_bits + 2 +
+                    (double_exp_offset + double_num_sig_bits - 1) * 2322 / 1000,
+  double_big_limbs = (double_big_bits + 31) / 32,
+  double_big_digits = double_big_bits * 30103 / 100000 + 2,
 };
 
 typedef uint64_t double_sig_type;
@@ -388,14 +422,14 @@ static int compute_dec_exp(int bin_exp, bool regular) {
 // 10^dec_exp puts the decimal point in different bit positions:
 //   3 * 2**59 / 100 = 1.72...e+16  (needs shift = 1 + 1)
 //   3 * 2**60 / 100 = 3.45...e+16  (needs shift = 2 + 1)
-static ZMIJ_INLINE unsigned char compute_exp_shift(int bin_exp, int dec_exp) {
+static ZMIJ_INLINE signed char compute_exp_shift(int bin_exp, int dec_exp) {
   assert(dec_exp >= -350 && dec_exp <= 350);
   // log2_pow10_sig = round(log2(10) * 2**log2_pow10_exp) + 1
   const int log2_pow10_sig = 217707, log2_pow10_exp = 16;
   // pow10_bin_exp = floor(log2(10**-dec_exp))
   int pow10_bin_exp = -dec_exp * log2_pow10_sig >> log2_pow10_exp;
   // pow10 = ((pow10_hi << 64) | pow10_lo) * 2**(pow10_bin_exp - 127)
-  return bin_exp + pow10_bin_exp + 1;
+  return (signed char)(bin_exp + pow10_bin_exp + 1);
 }
 
 static inline int count_trailing_nonzeros(uint64_t x) {
@@ -452,6 +486,13 @@ static const uint64_t zeros = 0x0101010101010101u * '0';
 
 static inline void write8(char* buffer, uint64_t value) {
   memcpy(buffer, &value, 8);
+}
+
+static ZMIJ_INLINE char* write2(char* out, char a, char b) {
+  uint16_t v = (uint16_t)((uint8_t)a | (uint8_t)b << 8);
+  if (is_big_endian) v = (uint16_t)(v << 8 | v >> 8);
+  memcpy(out, &v, 2);
+  return out + 2;
 }
 
 #if ZMIJ_USE_SSE && !ZMIJ_MSC_VER
@@ -565,8 +606,10 @@ typedef struct {
   // 308].
   uint64_t exp_strings[633];
 #endif
-  // 128-bit significands of powers of 10 rounded down.
-  ZMIJ_ALIGNAS(64) uint128 pow10_significands[618];
+  // 128-bit significands of powers of 10 rounded down, for 10**-307 to
+  // 10**341. The shortest path only reaches 10**-293 to 10**324; the
+  // precision paths scale by up to 17 extra powers of ten at either end.
+  ZMIJ_ALIGNAS(64) uint128 pow10_significands[649];
   fixed_layout_entry fixed_layouts[20];
   // Shuffle indices for SIMD digit shift. Offset 0 = identity, offset 1 =
   // shift left by 1 (drops the leading '0' of a 16-digit significand).
@@ -862,6 +905,20 @@ static const zmij_data static_data = {
 #endif  // ZMIJ_USE_EXP_STRING_TABLE
     // .pow10_significands =
     {
+        {0x8fd0c16206306bab, 0xa5d3b6d479f8e056},  // -307
+        {0xb3c4f1ba87bc8696, 0x8f48a4899877186c},  // -306
+        {0xe0b62e2929aba83c, 0x331acdabfe94de87},  // -305
+        {0x8c71dcd9ba0b4925, 0x9ff0c08b7f1d0b14},  // -304
+        {0xaf8e5410288e1b6f, 0x07ecf0ae5ee44dd9},  // -303
+        {0xdb71e91432b1a24a, 0xc9e82cd9f69d6150},  // -302
+        {0x892731ac9faf056e, 0xbe311c083a225cd2},  // -301
+        {0xab70fe17c79ac6ca, 0x6dbd630a48aaf406},  // -300
+        {0xd64d3d9db981787d, 0x092cbbccdad5b108},  // -299
+        {0x85f0468293f0eb4e, 0x25bbf56008c58ea5},  // -298
+        {0xa76c582338ed2621, 0xaf2af2b80af6f24e},  // -297
+        {0xd1476e2c07286faa, 0x1af5af660db4aee1},  // -296
+        {0x82cca4db847945ca, 0x50d98d9fc890ed4d},  // -295
+        {0xa37fce126597973c, 0xe50ff107bab528a0},  // -294
         {0xcc5fc196fefd7d0c, 0x1e53ed49a96272c8},  // -293
         {0xff77b1fcbebcdc4f, 0x25e8e89c13bb0f7a},  // -292
         {0x9faacf3df73609b1, 0x77b191618c54e9ac},  // -291
@@ -1480,6 +1537,23 @@ static const zmij_data static_data = {
         {0xca5e89b18b602368, 0x385bb19cb14bdfc4},  //  322
         {0xfcf62c1dee382c42, 0x46729e03dd9ed7b5},  //  323
         {0x9e19db92b4e31ba9, 0x6c07a2c26a8346d1},  //  324
+        {0xc5a05277621be293, 0xc7098b7305241885},  //  325
+        {0xf70867153aa2db38, 0xb8cbee4fc66d1ea7},  //  326
+        {0x9a65406d44a5c903, 0x737f74f1dc043328},  //  327
+        {0xc0fe908895cf3b44, 0x505f522e53053ff2},  //  328
+        {0xf13e34aabb430a15, 0x647726b9e7c68fef},  //  329
+        {0x96c6e0eab509e64d, 0x5eca783430dc19f5},  //  330
+        {0xbc789925624c5fe0, 0xb67d16413d132072},  //  331
+        {0xeb96bf6ebadf77d8, 0xe41c5bd18c57e88f},  //  332
+        {0x933e37a534cbaae7, 0x8e91b962f7b6f159},  //  333
+        {0xb80dc58e81fe95a1, 0x723627bbb5a4adb0},  //  334
+        {0xe61136f2227e3b09, 0xcec3b1aaa30dd91c},  //  335
+        {0x8fcac257558ee4e6, 0x213a4f0aa5e8a7b1},  //  336
+        {0xb3bd72ed2af29e1f, 0xa988e2cd4f62d19d},  //  337
+        {0xe0accfa875af45a7, 0x93eb1b80a33b8605},  //  338
+        {0x8c6c01c9498d8b88, 0xbc72f130660533c3},  //  339
+        {0xaf87023b9bf0ee6a, 0xeb8fad7c7f8680b4},  //  340
+        {0xdb68c2ca82ed2a05, 0xa67398db9f6820e1},  //  341
     },
     // .fixed_layouts =
     {
@@ -1651,9 +1725,13 @@ static const zmij_data static_data = {
 };
 #undef ZMIJ_FIXED_SSE
 
+// Returns the 128-bit significand of 10**dec_exp.
 static uint128 get_pow10_significand(int dec_exp, const zmij_data* d) {
-  const int dec_exp_min = -293;
-  return d->pow10_significands[dec_exp - dec_exp_min];
+  const int dec_exp_min = -307;
+  int index = dec_exp - dec_exp_min;
+  assert(index >= 0 && (size_t)index < sizeof(d->pow10_significands) /
+                                           sizeof(*d->pow10_significands));
+  return d->pow10_significands[index];
 }
 
 typedef struct {
@@ -1933,6 +2011,106 @@ static ZMIJ_INLINE void write_digits_float(char* buffer, uint64_t digits,
   memmove(buffer, buffer + drop_leading_zero, sizeof(digits));
 }
 
+// Writes "inf"/"nan" with one 4-byte store, so the buffer must hold 4 bytes.
+static char* write_inf_nan(char* buffer, bool is_nan) {
+  memcpy(buffer, is_nan ? "nan" : "inf", 4);
+  return buffer + 3;
+}
+
+// Writes the exponent as 'e', a sign and at least two digits (e.g. e+05).
+// Only double reaches a third digit.
+static ZMIJ_INLINE char* write_exp(char* buffer, int dec_exp,
+                                   const int num_bits) {
+  buffer = write2(buffer, 'e', dec_exp >= 0 ? '+' : '-');
+  uint32_t abs_exp = dec_exp >= 0 ? (uint32_t)dec_exp : (uint32_t)-dec_exp;
+  if (num_bits == 64) {
+    uint32_t hi = use_umul128_hi64
+                      ? (uint32_t)umul128_hi64(abs_exp, 0x290000000000000)
+                      : (abs_exp * div100_sig) >> div100_exp;
+    *buffer = (char)('0' + hi);  // hundreds (0-3)
+    buffer += abs_exp >= 100;
+    abs_exp -= hi * 100;
+  }
+  memcpy(buffer, digits2(abs_exp), 2);
+  return buffer + 2;
+}
+
+// Writes the decimal exponent as 'e', a sign and at least two digits, up to
+// four (e.g. e+05 or e+4932). Used by the big-integer path, which is not on a
+// hot path and so does not specialize on the type's exponent range.
+static char* write_big_exp(char* buffer, int dec_exp) {
+  buffer = write2(buffer, 'e', dec_exp >= 0 ? '+' : '-');
+  uint32_t abs_exp = dec_exp >= 0 ? (uint32_t)dec_exp : (uint32_t)-dec_exp;
+  uint32_t hi = (abs_exp * div100_sig) >> div100_exp;  // abs_exp / 100
+  *buffer = (char)('0' + hi / 10);
+  buffer += hi >= 10;
+  *buffer = (char)('0' + hi % 10);
+  buffer += abs_exp >= 100;
+  memcpy(buffer, digits2(abs_exp - hi * 100), 2);
+  return buffer + 2;
+}
+
+// Scales a subnormal significand up so that its leading bit lands at the
+// implicit-bit position, adjusting the raw exponent to keep the value the same.
+static ZMIJ_INLINE void normalize(uint64_t* bin_sig, int64_t* bin_exp,
+                                  int num_sig_bits) {
+  // clz counts from the top of its 64-bit operand, so measure from that width.
+  int shift = clz(*bin_sig) - (64 - 1 - num_sig_bits);
+  *bin_sig <<= shift;
+  *bin_exp = 1 - shift;
+}
+
+// Writes num_digits significant digits in scientific form, d[.ddd]e±EE
+// (trailing zeros kept), from the top 16 BCD digits `digits` and low two digits
+// lo. dec_exp is the leading digit's exponent.
+static ZMIJ_INLINE char* write_scientific_digits(
+    char* buffer, digits_double_type digits, unsigned lo, int num_digits,
+    int dec_exp, const int num_bits, const zmij_data* d) {
+  write_digits_double(buffer + 1, digits, false, d);
+  memcpy(buffer + 17, digits2(lo), 2);
+  buffer[0] = buffer[1];
+  buffer[1] = '.';  // Overwritten by the exponent when num_digits is 1.
+  return write_exp(buffer + num_digits + (num_digits > 1), dec_exp, num_bits);
+}
+
+// An output sink that appends to `out`, discarding anything past `end`.
+typedef struct {
+  char* out;
+  char* end;
+  size_t count;  // total chars, including any dropped past `end`
+} writer;
+
+// The write functions return `count`, the running total of requested chars.
+static ZMIJ_INLINE size_t write_char(writer* w, char c) {
+  if (w->out < w->end) *w->out++ = c;
+  return ++w->count;
+}
+
+// Copies at most `end - out` chars of `s[0..n)`; `n` must be non-negative.
+static ZMIJ_INLINE size_t write_chars(writer* w, const char* s, int n) {
+  assert(n >= 0);
+  size_t take = n < w->end - w->out ? (size_t)n : (size_t)(w->end - w->out);
+  memcpy(w->out, s, take);
+  w->out += take;
+  return w->count += (size_t)n;
+}
+
+// Writes at most `end - out` copies of '0'; `n` must be non-negative.
+static ZMIJ_INLINE size_t write_zeros(writer* w, int n) {
+  assert(n >= 0);
+  size_t take = n < w->end - w->out ? (size_t)n : (size_t)(w->end - w->out);
+  memset(w->out, '0', take);
+  w->out += take;
+  return w->count += (size_t)n;
+}
+
+// Returns true if any character in [first, last) is not '0'.
+static bool any_nonzero(const char* first, const char* last) {
+  for (; first < last; ++first)
+    if (*first != '0') return true;
+  return false;
+}
+
 typedef struct {
   long long sig;
   int exp;
@@ -2070,6 +2248,368 @@ static ZMIJ_INLINE to_decimal_result to_decimal_float(uint32_t bin_sig,
   to_decimal_result result = {integral, dec_exp, digit,
                               (round_up + round_down) == 0};
   return result;
+}
+
+// Scales bin_sig * 2**bin_exp by 10**-dec_exp and packs the result into an
+// integer above two guard bits (bit 1 is the 1/2 place, bit 0 the sticky bit),
+// Schubfach-style.
+static ZMIJ_INLINE uint64_t scale_pow10(uint64_t bin_sig, int bin_exp,
+                                        int dec_exp, int num_sig_bits,
+                                        const zmij_data* d) {
+  const int shift = 64 - (num_sig_bits + 1);
+  int point_shift = shift - compute_exp_shift(bin_exp, dec_exp);
+  uint128 pow10 = get_pow10_significand(-dec_exp, d);
+  // Bump the entry so it never falls below the exact power of ten and so can't
+  // mimic an exact tie; the +1 stays in the low word, never carrying.
+  uint128 p = umul192_hi128(pow10.hi, pow10.lo + 1, bin_sig << shift);
+  // One shifted read carries the integral part, the 1/2 bit and one bit below
+  // it, which the sticky bit may keep: bit 0 only says that something below 1/2
+  // is set. The ceiling makes the low 64 product bits unreliable, so they are
+  // not among the bits it reads.
+  return (p.hi >> (point_shift - 2)) |
+         (((p.hi << (66 - point_shift)) | p.lo) != 0);
+}
+
+// Rounds a packed scaled value (integral << 2 | half << 1 | sticky) to the
+// nearest integral, half to even, off the two guard bits.
+static ZMIJ_INLINE uint64_t round_even(uint64_t x) {
+  return (x + 1 + ((x >> 2) & 1)) >> 2;
+}
+
+// A value rounded to `precision` significant digits.
+typedef struct {
+  uint64_t sig;  // precision significant digits, zero-padded right to 18.
+  int lead_exp;  // Leading digit's decimal exponent.
+} precision_decimal;
+
+// Converts a binary FP number bin_sig * 2**bin_exp to a correctly rounded
+// decimal with `precision` significant digits.
+static ZMIJ_INLINE precision_decimal to_decimal_precision(uint64_t bin_sig,
+                                                          int bin_exp,
+                                                          int precision,
+                                                          int num_sig_bits,
+                                                          const zmij_data* d) {
+  // Choose dec_exp so the scaled integer part (dec_sig) has precision digits.
+  int dec_exp = compute_dec_exp(bin_exp + num_sig_bits, true) - (precision - 1);
+  uint64_t scaled = scale_pow10(bin_sig, bin_exp, dec_exp, num_sig_bits, d);
+  uint64_t dec_sig = round_even(scaled);
+  if (dec_sig >= pow10s[precision]) {  // One digit too many (overshoot/carry).
+    // Drop one decimal digit and reround from the same guard bits in a single
+    // pass, folding the dropped digit into the sticky bit (idea by Russ Cox).
+    // A multiple of ten is even, so the old sticky bit needs no term.
+    dec_sig = round_even(scaled / 10 | (scaled % 10 != 0));
+    ++dec_exp;
+  }
+  precision_decimal result = {dec_sig * pow10s[18 - precision],
+                              dec_exp + precision - 1};
+  return result;
+}
+
+// A minimal binary big integer (little-endian base-2**32 limbs) over caller-
+// provided storage.
+typedef struct {
+  uint32_t* limbs;
+  int num_limbs;  // Significant limbs; 0 represents zero.
+  int max_limbs;  // Available limbs in `limbs`.
+} bigint;
+
+static void bigint_trim(bigint* n) {
+  while (n->num_limbs > 0 && n->limbs[n->num_limbs - 1] == 0) --n->num_limbs;
+}
+
+// Callers must size `max_limbs` for the largest value the number will reach.
+static bigint bigint_init(uint64_t value, uint32_t* buffer, int max_limbs) {
+  bigint n;
+  assert(max_limbs >= 2);
+  n.limbs = buffer;
+  n.max_limbs = max_limbs;
+  buffer[0] = (uint32_t)value;
+  buffer[1] = (uint32_t)(value >> 32);
+  n.num_limbs = 2;
+  bigint_trim(&n);
+  return n;
+}
+
+// Shifts left by `n`.
+static void bigint_shl(bigint* x, int n) {
+  assert(n >= 0);
+  if (x->num_limbs == 0) return;
+  uint32_t* limbs = x->limbs;
+  int limb_shift = n >> 5, bit_shift = n & 31;
+  assert(x->num_limbs + limb_shift + (bit_shift != 0) <= x->max_limbs);
+  if (bit_shift == 0) {
+    for (int i = x->num_limbs - 1; i >= 0; --i)
+      limbs[i + limb_shift] = limbs[i];
+    x->num_limbs += limb_shift;
+  } else {
+    limbs[x->num_limbs + limb_shift] =
+        limbs[x->num_limbs - 1] >> (32 - bit_shift);
+    for (int i = x->num_limbs - 1; i > 0; --i) {
+      limbs[i + limb_shift] =
+          limbs[i] << bit_shift | limbs[i - 1] >> (32 - bit_shift);
+    }
+    limbs[limb_shift] = limbs[0] << bit_shift;
+    x->num_limbs += limb_shift + 1;
+  }
+  for (int i = 0; i < limb_shift; ++i) limbs[i] = 0;
+  bigint_trim(x);
+}
+
+// Divides by 10**9 in place and returns the remainder.
+static uint32_t bigint_divmod_1e9(bigint* x) {
+  uint64_t rem = 0;
+  for (int i = x->num_limbs - 1; i >= 0; --i) {
+    uint64_t div = rem << 32 | x->limbs[i];
+    x->limbs[i] = (uint32_t)(div / 1000000000u);
+    rem = div % 1000000000u;
+  }
+  bigint_trim(x);
+  return (uint32_t)rem;
+}
+
+// Multiplies in place by a nonzero `factor`.
+static void bigint_mul(bigint* x, uint32_t factor) {
+  assert(factor != 0);
+  uint64_t carry = 0;
+  for (int i = 0; i < x->num_limbs; ++i) {
+    uint64_t product = (uint64_t)x->limbs[i] * factor + carry;
+    x->limbs[i] = (uint32_t)product;
+    carry = product >> 32;
+  }
+  if (carry == 0) return;
+  assert(x->num_limbs < x->max_limbs);
+  x->limbs[x->num_limbs++] = (uint32_t)carry;
+}
+
+// Multiplies in place by 5**n.
+static void bigint_mul_pow5(bigint* x, int n) {
+  assert(n >= 0);
+  static const uint32_t pow5[] = {1,       5,        25,       125,    625,
+                                  3125,    15625,    78125,    390625, 1953125,
+                                  9765625, 48828125, 244140625};
+  while (n >= 13) {  // 5**13 is the largest power of five below 2**32.
+    bigint_mul(x, 1220703125u);
+    n -= 13;
+  }
+  if (n != 0) bigint_mul(x, pow5[n]);
+}
+
+// Emits n's decimal digits (most significant first) ending at `end`, consuming
+// n, and returns a pointer to the first (most significant) digit.
+static char* write_bigint_digits(bigint n, char* end) {
+  char* p = end;
+  uint32_t group = bigint_divmod_1e9(&n);
+  while (n.num_limbs != 0) {  // Lower groups keep all 9 digits.
+    for (int k = 0; k < 9; ++k, group /= 10) *--p = (char)('0' + group % 10);
+    group = bigint_divmod_1e9(&n);
+  }
+  do {  // The most significant group drops its leading zeros.
+    *--p = (char)('0' + group % 10);
+  } while ((group /= 10) != 0);
+  return p;
+}
+
+// Floating-point formatting style. Values match zmij::format.
+typedef enum {
+  zmij_format_scientific = 1,
+  zmij_format_fixed = 2,
+  zmij_format_general = 3,
+} zmij_format;
+
+// Emits the digit run digits[0..num_digits) with the decimal point placed per
+// lead_exp, in fixed or scientific notation. Fixed pads to decimal_places
+// fractional digits; scientific appends num_tail_zeros to the fraction.
+static size_t write_number(writer* w, const char* digits, int num_digits,
+                           int lead_exp, bool fixed, int decimal_places,
+                           int num_tail_zeros) {
+  if (!fixed) {
+    // Emit scientific notation d.ddde±XX.
+    write_char(w, digits[0]);
+    // Emit a point only when fractional digits follow it.
+    if (num_digits - 1 + num_tail_zeros > 0) {
+      write_char(w, '.');
+      write_chars(w, digits + 1, num_digits - 1);
+      write_zeros(w, num_tail_zeros);  // pad the fraction to precision
+    }
+    char exp[8];
+    char* end = write_big_exp(exp, lead_exp);
+    return write_chars(w, exp, (int)(end - exp));
+  }
+
+  // Emit fixed notation.
+  int point_pos = lead_exp + 1;
+  int num_int_digits = 0;  // significant digits before the point
+  if (point_pos <= 0) {    // |value| < 1, e.g. 0.00123
+    write_char(w, '0');
+  } else {
+    num_int_digits = point_pos < num_digits ? point_pos : num_digits;
+    write_chars(w, digits, num_int_digits);
+    write_zeros(w, point_pos - num_int_digits);  // integer zeros, e.g. 12300
+  }
+  if (decimal_places <= 0) return w->count;
+  write_char(w, '.');
+  int num_lead_zeros = point_pos < 0 ? -point_pos : 0;
+  write_zeros(w, num_lead_zeros);  // 0.00...
+  int num_frac_digits = num_digits - num_int_digits;
+  write_chars(w, digits + num_int_digits, num_frac_digits);
+  return write_zeros(w, decimal_places - num_lead_zeros - num_frac_digits);
+}
+
+static size_t write_big(writer* w, bigint num, int bin_exp, int precision,
+                        char* digits, int digits_size, zmij_format fmt) {
+  bool general = fmt == zmij_format_general;
+  bool fixed = fmt == zmij_format_fixed;
+  assert(precision >= general);
+
+  digits[0] = '0';
+  char* p = digits;
+  int num_digits = 1;
+  int lead_exp = 0;  // exponent of the leading digit
+
+  if (num.num_limbs != 0) {
+    // Represent the value exactly as an integer num times a power of ten:
+    // value = sig * 2**bin_exp = num * 10**base_exp, so its decimal digits are
+    // num's. For bin_exp < 0 the identity 2**bin_exp = 5**-bin_exp *
+    // 10**bin_exp keeps num integral via a power-of-five multiply.
+    int base_exp = 0;
+    if (bin_exp >= 0) {
+      bigint_shl(&num, bin_exp);
+    } else {
+      bigint_mul_pow5(&num, -bin_exp);
+      base_exp = bin_exp;
+    }
+
+    p = write_bigint_digits(num, digits + digits_size);
+    num_digits = (int)(digits + digits_size - p);
+    lead_exp = num_digits - 1 + base_exp;
+
+    // Significant digits to keep: precision for %g. For %e/%f it counts
+    // fractional digits, so add one leading digit; %f adds lead_exp more.
+    int max_digits = precision + !general + (fixed ? lead_exp : 0);
+    // Round to max_digits significant digits, ties to even.
+    if (max_digits < 1) {
+      // |value| < 10**-precision: rounds to 0, or up to 10**-precision when the
+      // discarded part exceeds half a unit (a tie rounds to even, i.e. 0).
+      bool round_up = false;
+      if (max_digits == 0) {
+        round_up =
+            p[0] > '5' || (p[0] == '5' && any_nonzero(p + 1, p + num_digits));
+      }
+      digits[0] = (char)('0' + round_up);
+      p = digits;
+      num_digits = 1;
+      lead_exp = round_up ? -precision : 0;
+    } else if (num_digits > max_digits) {
+      char dropped = p[max_digits];
+      bool round_up = dropped > '5';
+      // A dropped 5 ties to even unless a lower nonzero digit rounds up.
+      if (dropped == '5') {
+        round_up = ((p[max_digits - 1] - '0') & 1) != 0 ||
+                   any_nonzero(p + max_digits + 1, p + num_digits);
+      }
+      num_digits = max_digits;
+      if (round_up) {
+        char* q = p + max_digits - 1;
+        // Propagate the carry over trailing nines.
+        while (*q == '9') *q-- = '0';
+        // 999.. rolling over to 1000.. adds a significant digit.
+        if (q < p) {
+          *--p = '1';
+          ++lead_exp;
+        } else {
+          ++*q;
+        }
+      }
+    }
+  }
+
+  int decimal_places = precision;  // fractional digit positions to emit
+  if (general) {
+    // Drop trailing zeros and pick fixed or scientific.
+    while (num_digits > 1 && p[num_digits - 1] == '0') --num_digits;
+    fixed = lead_exp >= -4 && lead_exp < precision;
+    decimal_places = num_digits - lead_exp - 1;
+  }
+
+  // %e pads the fraction to `precision` digits; %g and shortest emit none.
+  int num_tail_zeros = general ? 0 : precision - num_digits + 1;
+  return write_number(w, p, num_digits, lead_exp, fixed, decimal_places,
+                      num_tail_zeros);
+}
+
+// Writes `value` with `precision` digits in `fmt` notation using exact
+// big-integer arithmetic, for precisions beyond the 64-bit path's reach. A
+// float is exact as a double, so both types share this entry point.
+static size_t do_write_big(char* out, size_t n, double value, int precision,
+                           zmij_format fmt) {
+  uint64_t bits = double_to_bits(value);
+  int64_t bin_exp = double_get_exp(bits);
+  uint64_t bin_sig = double_get_sig(bits);
+
+  writer w;
+  w.out = out;
+  w.end = out + n;
+  w.count = 0;
+  if (double_is_negative(bits)) write_char(&w, '-');
+
+  bool is_normal = (unsigned)(bin_exp - 1) < (unsigned)(double_exp_mask - 1);
+  if (ZMIJ_UNLIKELY(!is_normal)) {
+    if (bin_exp != 0)  // inf or nan
+      return write_chars(&w, bin_sig != 0 ? "nan" : "inf", 3);
+    if (bin_sig != 0) normalize(&bin_sig, &bin_exp, double_num_sig_bits);
+    // Paired with the unconditional flip below, this leaves zero at zero and
+    // restores the implicit bit that normalize shifted in.
+    bin_sig ^= double_implicit_bit;
+  }
+  bin_sig ^= double_implicit_bit;
+
+  // One scratch block holds the big integer's limbs followed by the decimal
+  // digits.
+  enum {
+    digit_words = (double_big_digits + 3) / 4,
+    scratch_words = double_big_limbs + digit_words,
+  };
+  uint32_t scratch[scratch_words];
+  bigint num = bigint_init(bin_sig, scratch, double_big_limbs);
+  return write_big(&w, num, (int)(bin_exp - double_exp_offset), precision,
+                   (char*)(scratch + double_big_limbs), double_big_digits, fmt);
+}
+
+// Shared implementation of the public write_scientific entry points.
+// `num_digits` is the number of significant digits, in [1, 18]; `num_bits` is a
+// compile-time constant after ZMIJ_INLINE, so the branches on it fold away.
+static ZMIJ_INLINE char* do_write_scientific(uint64_t bin_sig, int64_t bin_exp,
+                                             bool negative, char* buffer,
+                                             int num_digits,
+                                             const int num_bits) {
+  assert(num_digits >= 1 && num_digits <= 18);
+  const zmij_data* d = &static_data;
+  const int exp_mask = num_bits == 64 ? double_exp_mask : float_exp_mask;
+  const int num_sig_bits =
+      num_bits == 64 ? double_num_sig_bits : float_num_sig_bits;
+  const int exp_offset = num_bits == 64 ? double_exp_offset : float_exp_offset;
+  const uint64_t implicit_bit = (uint64_t)1 << num_sig_bits;
+
+  *buffer = '-';
+  buffer += negative;
+
+  bool is_normal = (unsigned)(bin_exp - 1) < (unsigned)(exp_mask - 1);
+  if (ZMIJ_UNLIKELY(!is_normal)) {
+    if (bin_exp != 0) return write_inf_nan(buffer, bin_sig != 0);
+    if (bin_sig == 0) {  // zero, e.g. 0.000e+00
+      memset(buffer, '0', (size_t)num_digits + 1);
+      buffer[1] = '.';  // Overwritten by the exponent when num_digits is 1.
+      return write_exp(buffer + num_digits + (num_digits > 1), 0, num_bits);
+    }
+    normalize(&bin_sig, &bin_exp, num_sig_bits);
+  }
+
+  precision_decimal dec =
+      to_decimal_precision(bin_sig | implicit_bit, (int)(bin_exp - exp_offset),
+                           num_digits, num_sig_bits, d);
+  dec_digits_double dig = to_digits_double(dec.sig / 100, d);
+  return write_scientific_digits(buffer, dig.digits, (unsigned)(dec.sig % 100),
+                                 num_digits, dec.lead_exp, num_bits, d);
 }
 
 // Shared implementation of the public write entry points. `num_bits` is a
@@ -2238,4 +2778,27 @@ char* zmij_detail_write_double(double value, char* buffer) {
   int64_t bin_exp = double_get_exp(bits);   // binary exponent
   uint64_t bin_sig = double_get_sig(bits);  // binary significand
   return do_write(bin_sig, bin_exp, double_is_negative(bits), buffer, 64);
+}
+
+char* zmij_detail_write_scientific_float(float value, char* buffer,
+                                         int num_digits) {
+  uint32_t bits = float_to_bits(value);
+  int64_t bin_exp = float_get_exp(bits);   // binary exponent
+  uint32_t bin_sig = float_get_sig(bits);  // binary significand
+  return do_write_scientific(bin_sig, bin_exp, float_is_negative(bits), buffer,
+                             num_digits, 32);
+}
+
+char* zmij_detail_write_scientific_double(double value, char* buffer,
+                                          int num_digits) {
+  uint64_t bits = double_to_bits(value);
+  int64_t bin_exp = double_get_exp(bits);   // binary exponent
+  uint64_t bin_sig = double_get_sig(bits);  // binary significand
+  return do_write_scientific(bin_sig, bin_exp, double_is_negative(bits), buffer,
+                             num_digits, 64);
+}
+
+size_t zmij_detail_write_scientific_big(char* out, size_t n, double value,
+                                        int precision) {
+  return do_write_big(out, n, value, precision, zmij_format_scientific);
 }
