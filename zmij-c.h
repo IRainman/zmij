@@ -19,13 +19,19 @@ char* zmij_detail_write_scientific_double(double value, char* buffer,
                                           int num_digits);
 size_t zmij_detail_write_scientific_big(char* out, size_t n, double value,
                                         int precision);
+char* zmij_detail_write_general_float(float value, char* buffer, int precision);
+char* zmij_detail_write_general_double(double value, char* buffer,
+                                       int precision);
+size_t zmij_detail_write_general_big(char* out, size_t n, double value,
+                                     int precision);
 
 enum {
   // Minimum buffer sizes for the shortest zmij_write_*.
   zmij_float_buffer_size = 17,
   zmij_double_buffer_size = 34,
   // Buffer sizes that always suffice for zmij_write_scientific_* with
-  // precision up to 17; higher precision needs `precision + 8` bytes.
+  // precision up to 17 and zmij_write_general_* with precision up to 18;
+  // higher precision needs `precision + 8` bytes.
   zmij_float_scientific_buffer_size = 24,
   zmij_double_scientific_buffer_size = 25,
 };
@@ -90,6 +96,50 @@ static inline char* zmij_write_scientific_float(char* out, size_t n,
   char buffer[zmij_float_scientific_buffer_size];
   size_t size =
       zmij_detail_write_scientific_float(value, buffer, precision + 1) - buffer;
+  if (size > n) size = n;
+  memcpy(out, buffer, size);
+  return out + size;
+}
+
+/// Writes `value` in general format with up to `precision` significant digits
+/// and no trailing zeros (e.g. 1.5 or 1.5e+20) to `out`, without a null
+/// terminator. Fixed notation is used when `value`'s decimal exponent is in
+/// [-4, precision), and scientific otherwise. A negative `precision` defaults
+/// to 6 and zero is treated as 1, matching printf.
+///
+/// Returns a pointer past the last character written; if the representation
+/// exceeds `n` characters, only the first `n` are written.
+static inline char* zmij_write_general_double(char* out, size_t n, double value,
+                                              int precision) {
+  if (precision <= 1) precision = precision < 0 ? 6 : 1;
+  if (precision > 18) {
+    size_t size = zmij_detail_write_general_big(out, n, value, precision);
+    return out + (size < n ? size : n);
+  }
+  if (n >= zmij_double_scientific_buffer_size)
+    return zmij_detail_write_general_double(value, out, precision);
+  char buffer[zmij_double_scientific_buffer_size];
+  size_t size =
+      zmij_detail_write_general_double(value, buffer, precision) - buffer;
+  if (size > n) size = n;
+  memcpy(out, buffer, size);
+  return out + size;
+}
+
+static inline char* zmij_write_general_float(char* out, size_t n, float value,
+                                             int precision) {
+  if (precision <= 1) precision = precision < 0 ? 6 : 1;
+  if (precision > 18) {
+    // A float is exact as a double, so both produce the same digits.
+    size_t size =
+        zmij_detail_write_general_big(out, n, (double)value, precision);
+    return out + (size < n ? size : n);
+  }
+  if (n >= zmij_float_scientific_buffer_size)
+    return zmij_detail_write_general_float(value, out, precision);
+  char buffer[zmij_float_scientific_buffer_size];
+  size_t size =
+      zmij_detail_write_general_float(value, buffer, precision) - buffer;
   if (size > n) size = n;
   memcpy(out, buffer, size);
   return out + size;

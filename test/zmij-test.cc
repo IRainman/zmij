@@ -43,6 +43,14 @@ auto write_scientific(char* out, size_t n, float value, int precision) noexcept
     -> char* {
   return zmij_write_scientific_float(out, n, value, precision);
 }
+auto write_general(char* out, size_t n, double value, int precision) noexcept
+    -> char* {
+  return zmij_write_general_double(out, n, value, precision);
+}
+auto write_general(char* out, size_t n, float value, int precision) noexcept
+    -> char* {
+  return zmij_write_general_float(out, n, value, precision);
+}
 }  // namespace zmij
 #endif
 
@@ -118,7 +126,6 @@ static auto to_scientific(double value, int precision) -> std::string {
           zmij::write_scientific(buffer, sizeof(buffer), value, precision)};
 }
 
-#if !ZMIJ_C
 // Writes `value` with up to `precision` significant digits in general format.
 static auto to_general(float value, int precision) -> std::string {
   char buffer[zmij::buffer_sizes<float>::scientific];
@@ -131,6 +138,7 @@ static auto to_general(double value, int precision) -> std::string {
           zmij::write_general(buffer, sizeof(buffer), value, precision)};
 }
 
+#if !ZMIJ_C
 TEST(float_test, to_chars) {
   char buffer[zmij::float_buffer_size];
   auto result = zmij::to_chars(buffer, buffer + sizeof(buffer), 6.62607e-34f);
@@ -239,11 +247,11 @@ TEST(float_test, write_big) {
     snprintf(ref, sizeof(ref), "%.*e", precision, double(value));
     EXPECT_EQ(std::string(buf, end), std::string(ref))
         << "scientific value=" << value << " precision=" << precision;
-#if !ZMIJ_C  // The C API has no write_general or write_fixed yet.
     end = zmij::write_general(buf, sizeof(buf), value, precision);
     snprintf(ref, sizeof(ref), "%.*g", precision, double(value));
     EXPECT_EQ(std::string(buf, end), std::string(ref))
         << "general value=" << value << " precision=" << precision;
+#if !ZMIJ_C  // The C API has no write_fixed yet.
     end = zmij::write_fixed(buf, sizeof(buf), value, precision);
     snprintf(ref, sizeof(ref), "%.*f", precision, double(value));
     EXPECT_EQ(std::string(buf, end), std::string(ref))
@@ -613,17 +621,17 @@ TEST(double_test, negative_precision) {
   char* end = zmij::write_scientific(buf, sizeof(buf), value, -1);
   snprintf(ref, sizeof(ref), "%.*e", -1, value);
   EXPECT_EQ(std::string(buf, end), ref);
-#if !ZMIJ_C  // The C API has no write_general or write_fixed yet.
+#if !ZMIJ_C  // The C API has no write_fixed yet.
   end = zmij::write_fixed(buf, sizeof(buf), value, -5);
   snprintf(ref, sizeof(ref), "%.*f", -5, value);
   EXPECT_EQ(std::string(buf, end), ref);
+#endif
   end = zmij::write_general(buf, sizeof(buf), value, -1);
   snprintf(ref, sizeof(ref), "%.*g", -1, value);
   EXPECT_EQ(std::string(buf, end), ref);
   end = zmij::write_general(buf, sizeof(buf), value, 0);
   snprintf(ref, sizeof(ref), "%.*g", 0, value);
   EXPECT_EQ(std::string(buf, end), ref);
-#endif
 }
 
 TEST(double_test, write_precision_irregular) {
@@ -649,11 +657,11 @@ TEST(double_test, write_big) {
     snprintf(ref, sizeof(ref), "%.*e", precision, value);
     EXPECT_EQ(std::string(buf, end), std::string(ref))
         << "scientific value=" << value << " precision=" << precision;
-#if !ZMIJ_C  // The C API has no write_general or write_fixed yet.
     end = zmij::write_general(buf, sizeof(buf), value, precision);
     snprintf(ref, sizeof(ref), "%.*g", precision, value);
     EXPECT_EQ(std::string(buf, end), std::string(ref))
         << "general value=" << value << " precision=" << precision;
+#if !ZMIJ_C  // The C API has no write_fixed yet.
     end = zmij::write_fixed(buf, sizeof(buf), value, precision);
     snprintf(ref, sizeof(ref), "%.*f", precision, value);
     EXPECT_EQ(std::string(buf, end), std::string(ref))
@@ -691,13 +699,13 @@ TEST(double_test, write_big_truncated) {
   EXPECT_EQ(end, buf + 5);
   EXPECT_EQ(buf[5], '?');  // no overrun past the requested size
 
-#if !ZMIJ_C  // The C API has no write_general or write_fixed yet.
   memset(buf, '?', sizeof(buf));
   end = zmij::write_general(buf, 5, 0.1, 30);
   EXPECT_EQ(std::string(buf, end), "0.100");  // first 5 of 0.10000...
   EXPECT_EQ(end, buf + 5);
   EXPECT_EQ(buf[5], '?');
 
+#if !ZMIJ_C  // The C API has no write_fixed yet.
   memset(buf, '?', sizeof(buf));
   end = zmij::write_fixed(buf, 5, 1.5, 30);
   EXPECT_EQ(std::string(buf, end), "1.500");  // first 5 of 1.5000...
@@ -1043,6 +1051,8 @@ TEST(long_double_test, write_shortest) {
   }
 }
 
+#endif  // !ZMIJ_C
+
 TEST(float_test, write_general) {
   EXPECT_EQ(to_general(1.5f, 6), "1.5");
   EXPECT_EQ(to_general(0.0001f, 6), "0.0001");  // exp10 == -4 -> fixed
@@ -1097,6 +1107,7 @@ TEST(double_test, write_general_irregular) {
   }
 }
 
+#if !ZMIJ_C
 template <typename Float> static auto to_hex(Float value) -> std::string {
   char buffer[zmij::buffer_sizes<Float>::hex];
   return {buffer, zmij::write_hex(buffer, sizeof(buffer), value)};

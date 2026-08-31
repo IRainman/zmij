@@ -2612,6 +2612,69 @@ static ZMIJ_INLINE char* do_write_scientific(uint64_t bin_sig, int64_t bin_exp,
                                  num_digits, dec.lead_exp, num_bits, d);
 }
 
+// Shared implementation of the public write_general entry points. `precision`
+// is the number of significant digits, in [1, 18]; `num_bits` is a
+// compile-time constant after ZMIJ_INLINE, so the branches on it fold away.
+static ZMIJ_INLINE char* do_write_general(uint64_t bin_sig, int64_t bin_exp,
+                                          bool negative, char* buffer,
+                                          int precision, const int num_bits) {
+  assert(precision >= 1 && precision <= 18);
+  const zmij_data* d = &static_data;
+  const int exp_mask = num_bits == 64 ? double_exp_mask : float_exp_mask;
+  const int num_sig_bits =
+      num_bits == 64 ? double_num_sig_bits : float_num_sig_bits;
+  const int exp_offset = num_bits == 64 ? double_exp_offset : float_exp_offset;
+  const uint64_t implicit_bit = (uint64_t)1 << num_sig_bits;
+
+  *buffer = '-';
+  buffer += negative;
+
+  bool is_normal = (unsigned)(bin_exp - 1) < (unsigned)(exp_mask - 1);
+  if (ZMIJ_UNLIKELY(!is_normal)) {
+    if (bin_exp != 0) return write_inf_nan(buffer, bin_sig != 0);
+    if (bin_sig == 0) {  // zero
+      *buffer = '0';
+      return buffer + 1;
+    }
+    normalize(&bin_sig, &bin_exp, num_sig_bits);
+  }
+
+  precision_decimal dec =
+      to_decimal_precision(bin_sig | implicit_bit, (int)(bin_exp - exp_offset),
+                           precision, num_sig_bits, d);
+  dec_digits_double dig = to_digits_double(dec.sig / 100, d);
+  // to_decimal_precision pads on the right with zeros, so the significant
+  // digits run to the last nonzero one: in the low pair, or in the top sixteen
+  // when both of those are zero.
+  unsigned lo = (unsigned)(dec.sig % 100);
+  int num_digits = lo != 0 ? 18 - (lo % 10 == 0) : dig.num_digits;
+  int lead_exp = dec.lead_exp;
+
+  if (lead_exp < -4 || lead_exp >= precision)
+    return write_scientific_digits(buffer, dig.digits, lo, num_digits, lead_exp,
+                                   num_bits, d);
+
+  if (lead_exp < 0) {  // fixed with a leading 0.00...: lead_exp in [-4, -1]
+    // "0.", then -lead_exp-1 zeros.
+    memcpy(buffer, "0.0000", (size_t)(1 - lead_exp));
+    write_digits_double(buffer + 1 - lead_exp, dig.digits, false, d);
+    memcpy(buffer + 17 - lead_exp, digits2(lo), 2);
+    return buffer + (1 - lead_exp) + num_digits;
+  }
+
+  write_digits_double(buffer, dig.digits, false, d);
+  memcpy(buffer + 16, digits2(lo), 2);
+  int point_pos = lead_exp + 1;
+  if (point_pos >= num_digits) {  // All significant digits are integral.
+    memset(buffer + num_digits, '0', (size_t)(point_pos - num_digits));
+    return buffer + point_pos;
+  }
+  memmove(buffer + point_pos + 1, buffer + point_pos,
+          (size_t)(num_digits - point_pos));
+  buffer[point_pos] = '.';
+  return buffer + num_digits + 1;
+}
+
 // Shared implementation of the public write entry points. `num_bits` is a
 // compile-time constant after ZMIJ_INLINE; the few branches on it fold away.
 static ZMIJ_INLINE char* do_write(uint64_t bin_sig, int64_t bin_exp,
@@ -2801,4 +2864,27 @@ char* zmij_detail_write_scientific_double(double value, char* buffer,
 size_t zmij_detail_write_scientific_big(char* out, size_t n, double value,
                                         int precision) {
   return do_write_big(out, n, value, precision, zmij_format_scientific);
+}
+
+char* zmij_detail_write_general_float(float value, char* buffer,
+                                      int precision) {
+  uint32_t bits = float_to_bits(value);
+  int64_t bin_exp = float_get_exp(bits);   // binary exponent
+  uint32_t bin_sig = float_get_sig(bits);  // binary significand
+  return do_write_general(bin_sig, bin_exp, float_is_negative(bits), buffer,
+                          precision, 32);
+}
+
+char* zmij_detail_write_general_double(double value, char* buffer,
+                                       int precision) {
+  uint64_t bits = double_to_bits(value);
+  int64_t bin_exp = double_get_exp(bits);   // binary exponent
+  uint64_t bin_sig = double_get_sig(bits);  // binary significand
+  return do_write_general(bin_sig, bin_exp, double_is_negative(bits), buffer,
+                          precision, 64);
+}
+
+size_t zmij_detail_write_general_big(char* out, size_t n, double value,
+                                     int precision) {
+  return do_write_big(out, n, value, precision, zmij_format_general);
 }
