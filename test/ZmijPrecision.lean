@@ -287,7 +287,7 @@ theorem grid_bounds : ∀ p ∈ Finset.Icc 1 18, ∀ e ∈ Finset.Icc (-1126 : �
     multiples of `halfStep` and the reround's grid points the even ones. -/
 def tieWindows (e : ℤ) (p : ℕ) : ModWindows where
   g := 2 ^ 11 * num e p
-  modulus := halfStep e p
+  m := halfStep e p
   f0 := 2 ^ 52
   f1 := 2 ^ 53 - 1
   windows :=
@@ -791,7 +791,7 @@ private theorem dev_eq_zero (f : ℕ) (e : ℤ) (hnorm : Normalized f e) (p : �
   -- All this proof supplies is that `dev` is the residue: the integral part and
   -- the 1/2 bit count the multiples of the modulus, and `dev` is what is left.
   have hres : dev f e p = (tieWindows e p).g * f
-      - (tieWindows e p).modulus * (2 * integral f e p + half f e p) := by
+      - (tieWindows e p).m * (2 * integral f e p + half f e p) := by
     have hex := exact_eq f e p (by have := shift_bits_ge hs.1; omega)
     rw [exact] at hex
     simp only [tieWindows]

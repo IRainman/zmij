@@ -803,12 +803,12 @@ multiplier it takes is a witness, not an assumption, so where the witness comes
 from is a separate question, answered below.
 -/
 
-/-- A modular window problem: the progression `g·f mod modulus`, the range
+/-- A modular window problem: the progression `g·f mod m`, the range
     `f0 ≤ f ≤ f1` it runs over, and the closed windows of residues to
     exclude. -/
 structure ModWindows where
   g : ℕ
-  modulus : ℕ
+  m : ℕ
   f0 : ℕ
   f1 : ℕ
   windows : List (ℤ × ℤ)
@@ -826,7 +826,7 @@ private def modWindowRefuted (g m f0 f1 lo hi q : ℤ) : Bool :=
     big-integer operations per window, with the search for `q` left outside. -/
 def ModWindows.refutedBy (w : ModWindows) (q : ℤ) : Bool :=
   w.windows.all fun window =>
-    modWindowRefuted w.g w.modulus w.f0 w.f1 window.1 window.2 q
+    modWindowRefuted w.g w.m w.f0 w.f1 window.1 window.2 q
 
 /-- A value strictly between consecutive multiples of `m` is absurd. -/
 private theorem window_gap_absurd {m lo' hi' v : ℤ} (hm : 0 < m)
@@ -874,57 +874,56 @@ theorem cast_mod_eq_sub (a n : ℕ) :
     canonical one is what an implementation usually has, but a window recentred
     on a known occupant measures offsets from it, and those run negative on one
     side. -/
-theorem ModWindows.not_hit_rep (w : ModWindows) (f : ℕ)
-    (hmodulus : 0 < w.modulus) {q : ℤ} (hcert : w.refutedBy q = true)
+theorem ModWindows.not_hit_rep (w : ModWindows) (f : ℕ) (hm : 0 < w.m)
+    {q : ℤ} (hcert : w.refutedBy q = true)
     {lo hi : ℤ} (hmem : (lo, hi) ∈ w.windows) {y j : ℤ}
     (hf0 : w.f0 ≤ f) (hf1 : f ≤ w.f1)
-    (hy : y = w.g * f - w.modulus * j) (hlo : lo ≤ y) (hhi : y ≤ hi) :
+    (hy : y = w.g * f - w.m * j) (hlo : lo ≤ y) (hhi : y ≤ hi) :
     False := by
   have hwindow := List.all_eq_true.mp hcert _ hmem
   simp only [modWindowRefuted, decide_eq_true_eq] at hwindow
   obtain ⟨hq, hgap0, hgap1⟩ := hwindow
   obtain ⟨hb0, hb1⟩ :=
     window_bounds (f0 := (w.f0 : ℤ)) (f1 := (w.f1 : ℤ))
-      (p := (2 * ((w.g : ℤ) * q) + w.modulus) / (2 * w.modulus))
-      (r := (w.g : ℤ) * q - w.modulus * _) hq rfl
+      (p := (2 * ((w.g : ℤ) * q) + w.m) / (2 * w.m))
+      (r := (w.g : ℤ) * q - w.m * _) hq rfl
       (by exact_mod_cast hf0) (by exact_mod_cast hf1) hy hlo hhi
-  exact window_gap_absurd (by exact_mod_cast hmodulus) hb0 hb1 hgap0 hgap1
+  exact window_gap_absurd (by exact_mod_cast hm) hb0 hb1 hgap0 hgap1
 
 /-- What a certificate says: no significand in range has its residue in any
     window the multiplier refutes. Everything an implementation has to supply is
     the identification of its own quantity with the residue. -/
-theorem ModWindows.not_hit (w : ModWindows) (f : ℕ) (hmodulus : 0 < w.modulus)
+theorem ModWindows.not_hit (w : ModWindows) (f : ℕ) (hm : 0 < w.m)
     {q : ℤ} (hcert : w.refutedBy q = true) {lo hi : ℤ}
     (hmem : (lo, hi) ∈ w.windows) {y : ℕ} (hf0 : w.f0 ≤ f) (hf1 : f ≤ w.f1)
-    (hy : y = w.g * f % w.modulus)
+    (hy : y = w.g * f % w.m)
     (hlo : lo ≤ (y : ℤ)) (hhi : (y : ℤ) ≤ hi) :
     False := by
   -- The residue identity, with the quotient as the multiple of the modulus.
-  have hyz : (y : ℤ)
-      = w.g * f - w.modulus * ((w.g * f / w.modulus : ℕ) : ℤ) := by
+  have hyz : (y : ℤ) = w.g * f - w.m * ((w.g * f / w.m : ℕ) : ℤ) := by
     rw [hy, cast_mod_eq_sub]
     push_cast
     ring
-  exact w.not_hit_rep f hmodulus hcert hmem hf0 hf1 hyz hlo hhi
+  exact w.not_hit_rep f hm hcert hmem hf0 hf1 hyz hlo hhi
 
 /-- A residue known only to be near a boundary is on it. The two windows flank
     the boundary and stop one short of it either way, so refuting both leaves
     nothing between `-s` and `s` but zero itself. An implementation that can
     bound its own quantity without deciding it asks the question in this
     shape. -/
-theorem ModWindows.eq_zero_of_near (w : ModWindows) (f : ℕ)
-    (hmodulus : 0 < w.modulus) {q : ℤ} (hcert : w.refutedBy q = true) {s : ℤ}
+theorem ModWindows.eq_zero_of_near (w : ModWindows) (f : ℕ) (hm : 0 < w.m)
+    {q : ℤ} (hcert : w.refutedBy q = true) {s : ℤ}
     (hbelow : (1 - s, (-1 : ℤ)) ∈ w.windows)
     (habove : ((1 : ℤ), s - 1) ∈ w.windows) {y j : ℤ}
     (hf0 : w.f0 ≤ f) (hf1 : f ≤ w.f1)
-    (hy : y = w.g * f - w.modulus * j) (hlo : -s < y) (hhi : y < s) :
+    (hy : y = w.g * f - w.m * j) (hlo : -s < y) (hhi : y < s) :
     y = 0 := by
   rcases lt_trichotomy y 0 with hneg | hzero | hpos
   · exact absurd hy fun h =>
-      w.not_hit_rep f hmodulus hcert hbelow hf0 hf1 h (by omega) (by omega)
+      w.not_hit_rep f hm hcert hbelow hf0 hf1 h (by omega) (by omega)
   · exact hzero
   · exact absurd hy fun h =>
-      w.not_hit_rep f hmodulus hcert habove hf0 hf1 h (by omega) (by omega)
+      w.not_hit_rep f hm hcert habove hf0 hf1 h (by omega) (by omega)
 
 /-! ### Certificate search
 
@@ -950,7 +949,7 @@ consecutive multiples.
 private def modCertSearch (w : ModWindows) : ℕ → ℤ → ℤ → ℤ → ℤ → ℤ
   | 0, _, _, _, qc => qc
   | n + 1, u, v, qp, qc =>
-    if decide (((w.f1 : ℤ) - w.f0) * v < w.modulus) && w.refutedBy qc then
+    if decide (((w.f1 : ℤ) - w.f0) * v < w.m) && w.refutedBy qc then
       qc
     else if v = 0 then
       qc
@@ -963,7 +962,7 @@ private def modCertSearch (w : ModWindows) : ℕ → ℤ → ℤ → ℤ → ℤ
     steps and binary128 within 74, so 160 leaves both room to spare. The loop
     exits as soon as the problem is refuted, so unused fuel costs nothing. -/
 def ModWindows.search (w : ModWindows) : ℤ :=
-  modCertSearch w 160 w.modulus ((w.g : ℤ) % (w.modulus : ℤ)) 0 1
+  modCertSearch w 160 w.m ((w.g : ℤ) % (w.m : ℤ)) 0 1
 
 open Lean Elab Tactic Meta in
 /-- Close a goal `∃ q, w.refutedBy q = true`, where `w` is a definition applied
@@ -1001,7 +1000,7 @@ implementation proof.
 def Format.regularWindows (fmt : Format) (g m : ℕ) (e : ℤ)
     (windows : List (ℤ × ℤ)) : ModWindows where
   g := g
-  modulus := m
+  m := m
   f0 := if e = fmt.emin then 1 else 2 ^ (fmt.prec - 1) + 1
   f1 := 2 ^ fmt.prec - 1
   windows := windows
