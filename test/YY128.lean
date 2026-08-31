@@ -18,9 +18,11 @@ The split is the one from `YY.lean`'s header — algebraic identities are
 parameterized, numerical approximation properties are checked — and this file is
 the checking half at the wider format. `Layout binary128` is two inequalities
 between the parameters. `Checks binary128` is six facts at each of binary128's
-32,766 exponents, and where binary64 needs 2,046 of each, the numbers involved
-are also four times as wide: the exact power of ten at the extremes of the range
-runs to about 16,500 bits. That is the whole reason this file exists separately.
+32,766 exponents, sixteen times the 2,046 binary64 needs. That count is the
+whole reason this file exists separately; the numbers involved are also four
+times as wide — the exact power of ten at the extremes of the range runs to
+about 16,500 bits — but width turns out to cost nothing, for the reason the
+section below gives.
 
 ## Why it is not in the default build
 
@@ -33,24 +35,33 @@ explicit request to verify binary128.
 
 |  | count | cost |
 |---|---|---|
-| `shift_nonneg_sweep` | 32,766 | 11s |
-| `Power10Normalized` | 9,865 indices, to 16.5 kbit | 5s |
-| `trim_sweep` | 32,766, to 16.5 kbit | 28s |
+| `shift_nonneg_sweep` | 32,766 exponents | 11s |
+| `Power10Normalized` | 9,865 indices | 5s |
+| `trim_sweep` | 32,766 exponents | 28s |
 | `exp_refuted`, `one_refuted` | 32,766 certificates each | ~3 min |
+
+Three quarters of the four minutes is the kernel reducing closed terms, and what
+that costs is the number of arithmetic operations rather than their width: it
+spends tens of microseconds unfolding the instance and `Decidable` layers around
+an operation, and a fraction of one performing it on GMP integers. A
+`trimChecksHold` exponent costs about 0.5ms and a certificate about 2ms at
+either end of the range, which is what binary64's certificates cost too, on
+numbers a fraction of the width.
 
 The certificates are the point of the exercise and are also where the cost is
 least obvious, so it is worth saying where it does *not* go. The multiplier is
 found by `ModWindows.search` during elaboration and only the literal reaches the
-proof term, so the kernel checks `refutedBy` and never runs the Euclidean search.
-That division matters more at this width than at binary64's: having the kernel
-search as well costs about 395ms per certificate against 4ms for checking one,
-which would turn three minutes into seven hours.
+proof term, so the kernel checks `refutedBy` and never runs the Euclidean
+search: letting it search as well costs about 13ms per certificate against the
+2ms of checking one. The remainder of a certificate is the machinery around it,
+about 0.3ms for `interval_cases` to produce the case and 0.2ms for the search,
+so a fifth of the three minutes is elaboration rather than kernel time.
 
 The underlying Diophantine problem is *easier* here, not harder. The window width
 relative to the modulus falls from about `2^-63` to about `2^-127` while the
 significand box only grows to `2^113`, so certificates are found sooner — within
 74 Euclidean steps, against binary64's 44. The cost is entirely that there are
-sixteen times as many of them and each is four times as wide.
+sixteen times as many of them.
 
 ## The one exponent that needs more than a certificate
 
