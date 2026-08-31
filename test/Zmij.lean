@@ -445,8 +445,8 @@ theorem roundtrips_iff_dist (f : ℕ) (e : ℤ) (he : -1074 ≤ e ∧ e ≤ 971)
     Roundtrips f e (c * 10 ^ (binary64.decimalExponent e + 1))
       ↔ if f % 2 = 0 then -(num e : ℤ) ≤ 2 * dist ∧ 2 * dist ≤ num e
         else -(num e : ℤ) < 2 * dist ∧ 2 * dist < num e := by
-  obtain ⟨hle, hlt, -⟩ := scaled_cmp_of_int_eq (c := c) (m := step e) (a := 2)
-    (b := num e) (dist := dist)
+  obtain ⟨hle, hlt, -⟩ := scaled_cmp_of_int_eq (c := c) (scale := step e)
+    (a := 2) (b := num e) (dist := dist)
     (x := value f e * 10 ^ (-(binary64.decimalExponent e + 1)))
     (thr := ulp e * 10 ^ (-(binary64.decimalExponent e + 1)) / 2)
     (step_pos e) two_pos (value_scaled f e he) (half_ulp_scaled e he) hc
@@ -1671,7 +1671,7 @@ theorem fine_output_nearest (f : ℕ) (e : ℤ) (hr : binary64.Regular f e)
   have hid : (integralPart f e : ℤ) * step e + gap f e = f * num e := by
     exact_mod_cast integral_add_gap f e (exponent_shift_range e hr.range).2
   obtain ⟨hle, -, heq⟩ := scaled_cmp_of_int_eq (c := (toDecimal f e).1)
-    (m := step e) (a := 2) (b := step e) (x := x) (thr := 1 / 2)
+    (scale := step e) (a := 2) (b := step e) (x := x) (thr := 1 / 2)
     (dist := 10 * (gap f e : ℤ) - (toDecimalCandidates f e).digit * step e)
     (step_pos e) two_pos (value_scaled_grid f e hr.range) (by push_cast; ring)
     (by rw [hd]; push_cast; linear_combination 10 * hid)

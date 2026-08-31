@@ -585,19 +585,20 @@ theorem value_scaled_coarse (f : ℕ) (e : ℤ) (p : ℕ) (hs : 3 ≤ pointShift
 
 /-- A candidate within half a step of the exact value is correctly rounded on
     the grid at `k`, a candidate exactly half a step away having to be even.
-    `m` is the scale that takes that grid to the integers; the rest is
-    `Core.lean`'s bridge. -/
-theorem correctly_rounded_of_dist {f : ℕ} {e : ℤ} {p : ℕ} {d m : ℕ} {k : ℤ}
-    (hm : 0 < m) (hx : value f e * 10 ^ (-k) * (m : ℚ) = (exact f e p : ℚ))
-    (hle : -(m : ℤ) ≤ 2 * ((exact f e p : ℤ) - d * m)
-      ∧ 2 * ((exact f e p : ℤ) - d * m) ≤ m)
-    (heven : 2 * ((exact f e p : ℤ) - d * m) = m
-      ∨ 2 * ((exact f e p : ℤ) - d * m) = -(m : ℤ) → d % 2 = 0) :
+    `scale` takes that grid to the integers; the rest is `Core.lean`'s
+    bridge. -/
+theorem correctly_rounded_of_dist {f : ℕ} {e : ℤ} {p : ℕ} {d scale : ℕ} {k : ℤ}
+    (hscale : 0 < scale)
+    (hx : value f e * 10 ^ (-k) * (scale : ℚ) = (exact f e p : ℚ))
+    (hle : -(scale : ℤ) ≤ 2 * ((exact f e p : ℤ) - d * scale)
+      ∧ 2 * ((exact f e p : ℤ) - d * scale) ≤ scale)
+    (heven : 2 * ((exact f e p : ℤ) - d * scale) = scale
+      ∨ 2 * ((exact f e p : ℤ) - d * scale) = -(scale : ℤ) → d % 2 = 0) :
     CorrectlyRounded f e d k := by
-  obtain ⟨hcmp, -, heq⟩ := scaled_cmp_of_int_eq (c := d) (m := m) (a := 2)
-    (b := m) (t := (exact f e p : ℤ)) (dist := (exact f e p : ℤ) - d * m)
-    (x := value f e * 10 ^ (-k)) (thr := 1 / 2) hm two_pos hx
-    (by push_cast; ring) (by ring)
+  obtain ⟨hcmp, -, heq⟩ := scaled_cmp_of_int_eq (c := d) (scale := scale)
+    (a := 2) (b := scale) (t := (exact f e p : ℤ))
+    (dist := (exact f e p : ℤ) - d * scale) (x := value f e * 10 ^ (-k))
+    (thr := 1 / 2) hscale two_pos hx (by push_cast; ring) (by ring)
   push_cast at hcmp heq
   exact correctly_rounded_of_le_half f e d k (hcmp.mpr hle)
     fun h => heven (heq.mp h)
@@ -1018,7 +1019,7 @@ theorem rounded_correct (f : ℕ) (e : ℤ) (hnorm : Normalized f e) (p : ℕ)
         (by linarith)
     · exact_mod_cast lt_of_le_dist (H := (10 : ℤ) ^ p) (by linarith) hclo
         (by linarith)
-    · exact correctly_rounded_of_dist (m := 10 * step e p)
+    · exact correctly_rounded_of_dist (scale := 10 * step e p)
         (by have := step_pos e p; omega) (value_scaled_coarse f e p hs.1)
         ⟨by push_cast; rw [hstep]; linarith, by push_cast; rw [hstep]; linarith⟩
         fun htie => hceven (htie.imp

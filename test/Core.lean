@@ -686,10 +686,10 @@ instance : binary64.Power10Normalized where
 
 An implementation works with integers, but its decisions are about exact
 rational quantities. It connects the two by scaling an exact value `x` by an
-integer `m` so that `x·m = t` is integral. For a candidate `c`, an identity
-such as
+integer `scale` so that `x·scale = t` is integral. For a candidate `c`, an
+identity such as
 
-    c·m + dist = t
+    c·scale + dist = t
 
 then expresses the exact distance from `c` to `x` through the integer `dist`.
 `scaled_cmp_of_int_eq` turns identities of this form into exact comparisons.
@@ -708,7 +708,7 @@ errors in its approximations, and provides certificates for the boundary cases.
 /-! ### Integer comparison identities
 
 These lemmas are the only crossing into `ℚ`. An implementation supplies integer
-identities for its candidates and, through the common scale `m`, turns them into
+identities for its candidates and, through the common `scale`, turns them into
 exact distance comparisons and bounds on the number of grid steps per ULP.
 
 Below this layer an implementation proof reasons in `ℤ`; above it the scale
@@ -717,30 +717,31 @@ constraints, which `omega` can solve directly.
 -/
 
 /-- The scaled distance from the exact value, given by the integer identity. -/
-theorem scaled_dist_eq {c m : ℕ} {t dist : ℤ} {x : ℚ} (hx : x * m = t)
-    (hnat : (c : ℤ) * m + dist = t) :
-    ((c : ℚ) - x) * m = -(dist : ℚ) := by
-  have hcast : (c : ℚ) * m + (dist : ℚ) = t := by exact_mod_cast hnat
+theorem scaled_dist_eq {c scale : ℕ} {t dist : ℤ} {x : ℚ} (hx : x * scale = t)
+    (hnat : (c : ℤ) * scale + dist = t) :
+    ((c : ℚ) - x) * scale = -(dist : ℚ) := by
+  have hcast : (c : ℚ) * scale + (dist : ℚ) = t := by exact_mod_cast hnat
   rw [sub_mul, hx]
   linarith
 
 /-- Every comparison of a candidate against the exact value, as an integer
     interval condition on its signed distance. The threshold is scaled to match,
-    `thr·(a·m) = b`, with `a` accounting for fractional thresholds such as
+    `thr·(a·scale) = b`, with `a` accounting for fractional thresholds such as
     a half-ULP. -/
-theorem scaled_cmp_of_int_eq {c m a b : ℕ} {t dist : ℤ} {x thr : ℚ}
-    (hm : 0 < m) (ha : 0 < a) (hx : x * m = t) (hthr : thr * (a * m) = b)
-    (hnat : (c : ℤ) * m + dist = t) :
+theorem scaled_cmp_of_int_eq {c scale a b : ℕ} {t dist : ℤ} {x thr : ℚ}
+    (hscale : 0 < scale) (ha : 0 < a) (hx : x * scale = t)
+    (hthr : thr * (a * scale) = b) (hnat : (c : ℤ) * scale + dist = t) :
     (|(c : ℚ) - x| ≤ thr ↔ -(b : ℤ) ≤ a * dist ∧ a * dist ≤ b) ∧
       (|(c : ℚ) - x| < thr ↔ -(b : ℤ) < a * dist ∧ a * dist < b) ∧
       (|(c : ℚ) - x| = thr ↔ a * dist = b ∨ a * dist = -(b : ℤ)) := by
-  have hmq : (0 : ℚ) < m := by exact_mod_cast hm
+  have hscaleq : (0 : ℚ) < scale := by exact_mod_cast hscale
   have haq : (0 : ℚ) < a := by exact_mod_cast ha
-  have hp : (0 : ℚ) < (a : ℚ) * m := by positivity
+  have hp : (0 : ℚ) < (a : ℚ) * scale := by positivity
   -- The scale comes out of the absolute value, leaving one integer magnitude.
-  have habs : |(c : ℚ) - x| * ((a : ℚ) * m) = |(((a : ℤ) * dist : ℤ) : ℚ)| := by
-    rw [show ((a : ℚ) * m) = |(m : ℚ)| * |(a : ℚ)| from by
-        rw [abs_of_pos hmq, abs_of_pos haq]; ring,
+  have habs :
+      |(c : ℚ) - x| * ((a : ℚ) * scale) = |(((a : ℤ) * dist : ℤ) : ℚ)| := by
+    rw [show ((a : ℚ) * scale) = |(scale : ℚ)| * |(a : ℚ)| from by
+        rw [abs_of_pos hscaleq, abs_of_pos haq]; ring,
       ← mul_assoc, ← abs_mul, scaled_dist_eq hx hnat, abs_neg, ← abs_mul]
     push_cast
     rw [mul_comm]
@@ -753,14 +754,15 @@ theorem scaled_cmp_of_int_eq {c m a b : ℕ} {t dist : ℤ} {x thr : ℚ}
     constructor <;> intro h <;> exact_mod_cast h
 
 /-- The two bounds on the decimal grid that `exact_candidate_correct` asks for,
-    from an integer identity. The scale `m` sends `u`, one ULP measured in
-    grid steps, to the integer `t`, and `u` then spans between one and ten steps
-    as soon as `t` lies between `m` and `10·m`. -/
-theorem ulp_steps_of_int_eq {m t : ℕ} {u : ℚ} (hm : 0 < m) (hu : u * m = t)
-    (hlo : m ≤ t) (hhi : t < 10 * m) : 1 ≤ u ∧ u < 10 := by
-  have hmq : (0 : ℚ) < m := by exact_mod_cast hm
-  refine ⟨(mul_le_mul_iff_of_pos_right hmq).mp ?_,
-    (mul_lt_mul_iff_of_pos_right hmq).mp ?_⟩
+    from an integer identity. The `scale` sends `u`, one ULP measured in grid
+    steps, to the integer `t`, and `u` then spans between one and ten steps as
+    soon as `t` lies between `scale` and `10·scale`. -/
+theorem ulp_steps_of_int_eq {scale t : ℕ} {u : ℚ} (hscale : 0 < scale)
+    (hu : u * scale = t) (hlo : scale ≤ t) (hhi : t < 10 * scale) :
+    1 ≤ u ∧ u < 10 := by
+  have hscaleq : (0 : ℚ) < scale := by exact_mod_cast hscale
+  refine ⟨(mul_le_mul_iff_of_pos_right hscaleq).mp ?_,
+    (mul_lt_mul_iff_of_pos_right hscaleq).mp ?_⟩
   · rw [one_mul, hu]; exact_mod_cast hlo
   · rw [hu]; exact_mod_cast hhi
 
