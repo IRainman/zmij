@@ -1468,13 +1468,13 @@ theorem round_d0_iff_gap (hl : Layout fmt) (f : ℕ) (e : FPExp fmt)
     split_ifs
     · rw [show trimNum e + trimErr f e + 1 * trimEdge e
           = trimNum e + (trimErr f e + trimEdge e) from by ring]
-      exact (comparison_stable_of_far (l := trimDrop e)
-        (r := trimErr f e + trimEdge e) (w := trimEdge e)
+      exact (comparison_stable_of_far (dx := trimDrop e)
+        (db := trimErr f e + trimEdge e) (w := trimEdge e)
         (by omega) (by omega) hfar).1
     · rw [show trimNum e + trimErr f e + 0 * trimEdge e
           = trimNum e + trimErr f e from by ring]
-      exact (comparison_stable_of_far (l := trimDrop e)
-        (r := trimErr f e) (w := trimEdge e)
+      exact (comparison_stable_of_far (dx := trimDrop e)
+        (db := trimErr f e) (w := trimEdge e)
         (by omega) (by omega) hfar).2
 
 /-- `roundD0` fires exactly when the trim-down candidate round-trips. -/

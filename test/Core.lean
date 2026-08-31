@@ -769,13 +769,13 @@ theorem ulp_steps_of_int_eq {scale t : ℕ} {u : ℚ} (hscale : 0 < scale)
 /-! ### Stability away from a boundary -/
 
 /-- Far from the boundary a bounded approximation error cannot change a
-    comparison. `x` is the exact value and `y` the exact boundary; a lossy test
-    compares `x + l` with `y + r`, the two offsets differing by at most `w`.
-    Once `x` is more than `w` from `y`, the lossy test agrees with both exact
+    comparison. `x` is the exact value and `b` the exact boundary; a lossy test
+    compares `x + dx` with `b + db`, the two offsets differing by at most `w`.
+    Once `x` is more than `w` from `b`, the lossy test agrees with both exact
     tests, which there agree with each other. -/
-theorem comparison_stable_of_far {x y l r w : ℕ} (hl : l ≤ r + w)
-    (hr : r ≤ l + w) (hfar : y + w < x ∨ x + w < y) :
-    ((x + l < y + r) ↔ x ≤ y) ∧ ((x + l < y + r) ↔ x < y) := by
+theorem comparison_stable_of_far {x b dx db w : ℕ} (hdx : dx ≤ db + w)
+    (hdb : db ≤ dx + w) (hfar : b + w < x ∨ x + w < b) :
+    ((x + dx < b + db) ↔ x ≤ b) ∧ ((x + dx < b + db) ↔ x < b) := by
   omega
 
 /-! ### Modular window certificates
