@@ -554,7 +554,8 @@ constexpr uint32_t pow10_fixups[] = {
 
 // 128-bit significands of powers of 10 rounded down.
 struct pow10_significand_table {
-  static constexpr bool compress = ZMIJ_OPTIMIZE_SIZE != 0;
+  static constexpr bool compress =
+      ZMIJ_OPTIMIZE_SIZE != 0 || ZMIJ_USE_CONSTEXPR == 0;
   static constexpr bool split_tables = !compress && ZMIJ_AARCH64 != 0;
   static constexpr int num_pow10s = 649;
   uint64_t data[compress ? 1 : num_pow10s * 2] = {};
@@ -578,17 +579,19 @@ struct pow10_significand_table {
     return result;
   }
 
-  ZMIJ_CONSTEXPR pow10_significand_table() {
+  static ZMIJ_CONSTEXPR auto make() -> pow10_significand_table {
+    pow10_significand_table t;
     for (int i = 0; i < num_pow10s && !compress; ++i) {
       uint128 result = compute(i);
       if (split_tables) {
-        data[num_pow10s - i - 1] = result.hi;
-        data[num_pow10s * 2 - i - 1] = result.lo;
+        t.data[num_pow10s - i - 1] = result.hi;
+        t.data[num_pow10s * 2 - i - 1] = result.lo;
       } else {
-        data[i * 2] = result.hi;
-        data[i * 2 + 1] = result.lo;
+        t.data[i * 2] = result.hi;
+        t.data[i * 2 + 1] = result.lo;
       }
     }
+    return t;
   }
 
   ZMIJ_CONSTEXPR20 auto operator[](int dec_exp) const noexcept -> uint128 {
@@ -652,23 +655,26 @@ struct exp_shift_table {
 // An optional table of precomputed exponent strings for exponential notation.
 // Each entry packs "e+dd" or "e+ddd" into a uint64_t with the length in byte 7.
 struct exp_string_table {
-  static constexpr bool enable = ZMIJ_USE_EXP_STRING_TABLE;
+  static constexpr bool enable =
+      ZMIJ_USE_EXP_STRING_TABLE && ZMIJ_USE_CONSTEXPR;
   using traits = float_traits<double>;
   static constexpr int min_dec_exp =
       traits::min_exponent10 - traits::max_digits10;
   static constexpr int offset = -min_dec_exp;
   uint64_t data[enable ? traits::max_exponent10 - min_dec_exp + 1 : 1] = {};
 
-  ZMIJ_CONSTEXPR exp_string_table() {
+  static ZMIJ_CONSTEXPR auto make() -> exp_string_table {
+    exp_string_table t;
     for (int e = min_dec_exp; e <= traits::max_exponent10 && enable; ++e) {
       uint64_t abs_e = e >= 0 ? e : -e;
       uint64_t bc = abs_e % 100;
       uint64_t val = ((bc % 10 + '0') << 8) | (bc / 10 + '0');
       if (uint64_t a = abs_e / 100) val = (val << 8) | (a + '0');
       uint64_t len = 4 + (abs_e >= 100);
-      data[e + offset] =
+      t.data[e + offset] =
           (len << 48) | (val << 16) | (uint64_t(e >= 0 ? '+' : '-') << 8) | 'e';
     }
+    return t;
   }
 };
 
@@ -701,13 +707,14 @@ struct exp_float_shuffle_table {
     return entry{&data[idx * 16], data[idx * 16 + 15]};
   }
 
-  ZMIJ_CONSTEXPR exp_float_shuffle_table() {
+  static ZMIJ_CONSTEXPR auto make() -> exp_float_shuffle_table {
+    exp_float_shuffle_table t;
     for (int idx = 0; idx < 32 && enable; ++idx) {
       int num_digits = (idx >> 2) + 1;
       bool has_last_digit = ((idx >> 1) & 1) != 0;
       bool has_extra_digit = (idx & 1) != 0;
 
-      unsigned char* out = &data[idx * 16];
+      unsigned char* out = &t.data[idx * 16];
       for (int i = 0; i < 16; ++i) out[i] = 0x80;  // shuffle high bit: output 0
       unsigned char leading_digit_pos = has_extra_digit ? 7 : 6;
       unsigned char length = 0;
@@ -729,6 +736,7 @@ struct exp_float_shuffle_table {
       for (unsigned char i = 0; i < 4; ++i) out[length++] = exp_pos + i;
       out[15] = length;
     }
+    return t;
   }
 };
 
@@ -916,10 +924,15 @@ struct data {
   uint128 zeros = splat64(::zeros);
 #endif    // ZMIJ_USE_SSE
 
-  exp_string_table exp_strings;
-  alignas(64) pow10_significand_table pow10_significands;
+  exp_string_table exp_strings =
+      exp_string_table::enable ? exp_string_table::make() : exp_string_table();
+  alignas(64) pow10_significand_table pow10_significands =
+      pow10_significand_table::compress ? pow10_significand_table()
+                                        : pow10_significand_table::make();
   fixed_layout_table fixed_layouts;
-  exp_float_shuffle_table exp_float_shuffles;
+  exp_float_shuffle_table exp_float_shuffles =
+      exp_float_shuffle_table::enable ? exp_float_shuffle_table::make()
+                                      : exp_float_shuffle_table();
 
   // Shuffle indices for SIMD digit shift. Offset 0 = identity, offset 1 =
   // shift left by 1 (drops the leading '0' of a 16-digit significand).
