@@ -142,13 +142,9 @@ static_assert(!ZMIJ_USE_SSE4_1 || ZMIJ_USE_SSE);
 #  define ZMIJ_CONST_DECL static constexpr
 #endif
 
-// Detect C++14 relaxed constexpr.
-#ifdef ZMIJ_USE_CONSTEXPR
-// Use the provided definition.
-#elif defined(__cpp_constexpr) && __cpp_constexpr >= 201304L
+// Disabling C++14 relaxed constexpr costs ~2x, so it is opt-in, not detected.
+#ifndef ZMIJ_USE_CONSTEXPR
 #  define ZMIJ_USE_CONSTEXPR 1
-#else
-#  define ZMIJ_USE_CONSTEXPR 0
 #endif
 #if ZMIJ_USE_CONSTEXPR
 #  define ZMIJ_CONSTEXPR constexpr
@@ -750,6 +746,7 @@ constexpr auto fixed_entry_align() noexcept -> int {
 // Each entry holds the byte positions of the leading zeros, decimal point,
 // and end of output, indexed by the decimal exponent (dec_exp).
 struct fixed_layout_table {
+  static constexpr bool enable = ZMIJ_USE_CONSTEXPR != 0;
   using traits = float_traits<double>;
   static constexpr int num_entries =
       traits::max_fixed_dec_exp - traits::min_fixed_dec_exp + 1;
@@ -774,46 +771,54 @@ struct fixed_layout_table {
     // Offset past the end of fixed-notation output, indexed by sig length - 1.
     unsigned char end_pos[traits::max_digits10];
   };
-  entry data[num_entries] = {};
+  entry data[enable ? num_entries : 1] = {};
 
-  ZMIJ_CONSTEXPR fixed_layout_table() {
-    for (int dec_exp = traits::min_fixed_dec_exp;
-         dec_exp <= traits::max_fixed_dec_exp; ++dec_exp) {
-      auto& e = data[dec_exp - traits::min_fixed_dec_exp];
+  static ZMIJ_CONSTEXPR auto compute(int dec_exp) noexcept -> entry {
+    entry e = {};
 
-      e.start_pos = dec_exp < -0 ? 1 - dec_exp : 0;
-      e.point_pos = dec_exp >= 0 ? 1 + dec_exp : 1;
-      e.shift_pos = e.point_pos + (dec_exp >= 0);
+    e.start_pos = dec_exp < -0 ? 1 - dec_exp : 0;
+    e.point_pos = dec_exp >= 0 ? 1 + dec_exp : 1;
+    e.shift_pos = e.point_pos + (dec_exp >= 0);
 
 #if ZMIJ_USE_SSE4_1
-      constexpr int bcd_size = 16;
-      for (int extra = 0; extra < 2; ++extra) {
-        int len = bcd_size + extra - 1;
-        e.last_digit_pos[extra] = len + (0 <= dec_exp && dec_exp < len);
-      }
+    constexpr int bcd_size = 16;
+    for (int extra = 0; extra < 2; ++extra) {
+      int len = bcd_size + extra - 1;
+      e.last_digit_pos[extra] = len + (0 <= dec_exp && dec_exp < len);
+    }
 
-      // Build the shuffle tables from natural-order BCD (to_digits puts BCD[k]
-      // at byte k). extra_digit == 0 drops the leading zero, so digits start at
-      // BCD[!extra]; point_slot gets a pshufb zero-marker (0xFF) for the point.
-      int point_slot = (dec_exp >= 0 && dec_exp <= 14) ? 1 + dec_exp : 128;
-      for (int extra = 0; extra < 2; ++extra) {
-        unsigned char bcd_idx = !extra;
-        for (int i = 0; i < bcd_size; ++i)
-          e.shuffle[extra][i] = i == point_slot ? 0xFF : bcd_idx++;
-      }
+    // Build the shuffle tables from natural-order BCD (to_digits puts BCD[k]
+    // at byte k). extra_digit == 0 drops the leading zero, so digits start at
+    // BCD[!extra]; point_slot gets a pshufb zero-marker (0xFF) for the point.
+    int point_slot = (dec_exp >= 0 && dec_exp <= 14) ? 1 + dec_exp : 128;
+    for (int extra = 0; extra < 2; ++extra) {
+      unsigned char bcd_idx = !extra;
+      for (int i = 0; i < bcd_size; ++i)
+        e.shuffle[extra][i] = i == point_slot ? 0xFF : bcd_idx++;
+    }
 #endif  // ZMIJ_USE_SSE4_1
 
-      for (int n = 1; n <= traits::max_digits10; ++n) {
-        int end_pos = n;
-        if (dec_exp >= 0) end_pos = n > dec_exp + 1 ? n + 1 : dec_exp + 1;
-        e.end_pos[n - 1] = end_pos;
-      }
+    for (int n = 1; n <= traits::max_digits10; ++n) {
+      int end_pos = n;
+      if (dec_exp >= 0) end_pos = n > dec_exp + 1 ? n + 1 : dec_exp + 1;
+      e.end_pos[n - 1] = end_pos;
     }
+    return e;
   }
 
-  ZMIJ_CONSTEXPR auto get(int dec_exp) const noexcept -> const entry& {
+  static ZMIJ_CONSTEXPR auto make() -> fixed_layout_table {
+    fixed_layout_table t;
+    for (int dec_exp = traits::min_fixed_dec_exp;
+         dec_exp <= traits::max_fixed_dec_exp && enable; ++dec_exp)
+      t.data[dec_exp - traits::min_fixed_dec_exp] = compute(dec_exp);
+    return t;
+  }
+
+  ZMIJ_CONSTEXPR auto get(int dec_exp, entry& scratch) const noexcept
+      -> const entry& {
     constexpr auto min = traits::min_fixed_dec_exp;
     assert(dec_exp >= min && dec_exp <= traits::max_fixed_dec_exp);
+    if (!enable) return scratch = compute(dec_exp);
     return data[unsigned(dec_exp - min)];
   }
 };
@@ -929,7 +934,9 @@ struct data {
   alignas(64) pow10_significand_table pow10_significands =
       pow10_significand_table::compress ? pow10_significand_table()
                                         : pow10_significand_table::make();
-  fixed_layout_table fixed_layouts;
+  fixed_layout_table fixed_layouts = fixed_layout_table::enable
+                                         ? fixed_layout_table::make()
+                                         : fixed_layout_table();
   exp_float_shuffle_table exp_float_shuffles =
       exp_float_shuffle_table::enable ? exp_float_shuffle_table::make()
                                       : exp_float_shuffle_table();
@@ -1881,7 +1888,8 @@ auto write(char* buffer, Float value) noexcept -> char* {
     const auto* fixed_layouts = &d->fixed_layouts;
     if (ZMIJ_AARCH64) ZMIJ_ASM(("" : "+r"(fixed_layouts)));
 
-    const auto& layout = fixed_layouts->get(dec_exp);
+    fixed_layout_table::entry scratch;
+    const auto& layout = fixed_layouts->get(dec_exp, scratch);
     buffer += layout.start_pos;
 #if ZMIJ_USE_SSE4_1
     if (bcd_size == 16) {
