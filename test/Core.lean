@@ -982,10 +982,10 @@ def modCertTactic (search : ℤ → ℤ) : TacticM Unit := do
 
 /-! ### Windows over regular values
 
-Nothing above knows which significands a format admits. The implementation
-proofs ask their window questions over the same ones, and `Regular` is all any
-of them knows about `f`, so the box and the bounds a certificate needs belong
-here rather than in each implementation proof.
+The modular machinery above knows nothing about which significands a format
+admits. Implementation proofs pose their window questions over regular values,
+so the box and the bounds a certificate needs belong here rather than in each
+implementation proof.
 -/
 
 /-- A window problem over the significands `Regular` admits at `e`. At the
@@ -999,9 +999,9 @@ def Format.regularWindows (fmt : Format) (n m : ℕ) (e : ℤ)
   fmax := 2 ^ fmt.prec - 1
   windows := windows
 
-/-- `not_hit` over that box: `Regular` discharges the significand bounds, so a
-    caller never mentions `fmin` or `fmax`; it supplies positivity of the
-    modulus and identifies its quantity with the residue. -/
+/-- Applies `not_hit` to the significand range described by `Regular`. A caller
+    therefore never mentions `fmin` or `fmax`; it supplies positivity of the
+    modulus and a proof that the value it tests is the residue `n * f % m`. -/
 theorem Format.regular_not_hit {fmt : Format} {n m : ℕ} {e : ℤ}
     {windows : List (ℤ × ℤ)} {q rmin rmax : ℤ} {r : ℕ} (f : ℕ)
     (hr : fmt.Regular f e) (hm : 0 < m)
