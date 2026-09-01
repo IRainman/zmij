@@ -14,8 +14,7 @@ import Mathlib.Tactic.Positivity
 
 /-! # Exact decimal conversion and certified comparisons
 
-The foundations of verifying shortest decimal conversion that no one algorithm
-owns.
+Algorithm-independent foundations for verifying shortest decimal conversion.
 
 The first part specifies the problem and states the exact Schubfach-like
 selection rule: prefer a multiple of ten that round-trips, and settle for a

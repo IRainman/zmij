@@ -921,17 +921,17 @@ private theorem step_cast (e : ℤ) (p : ℕ) :
 /-- A candidate within half a step of the value reaches every grid point the
     value is above: half a step is not enough to fall back over one. `h` is half
     the step, which is the form the packing's bound comes in. -/
-private theorem le_of_dist_le {x d h L : ℤ} (hh : 0 < h)
-    (hd : x - d * (2 * h) ≤ h) (hx : (2 * L - 1) * h < x) : L ≤ d := by
+private theorem le_of_dist_le {x d h lo : ℤ} (hh : 0 < h)
+    (hd : x - d * (2 * h) ≤ h) (hx : (2 * lo - 1) * h < x) : lo ≤ d := by
   by_contra hlt
-  have := mul_le_mul_of_nonneg_right (show d + 1 ≤ L by omega) hh.le
+  have := mul_le_mul_of_nonneg_right (show d + 1 ≤ lo by omega) hh.le
   linarith
 
 /-- And stays below every grid point the value stays half a step clear of. -/
-private theorem lt_of_le_dist {x d h H : ℤ} (hh : 0 < h)
-    (hd : -h ≤ x - d * (2 * h)) (hx : x < (2 * H - 1) * h) : d < H := by
+private theorem lt_of_le_dist {x d h hi : ℤ} (hh : 0 < h)
+    (hd : -h ≤ x - d * (2 * h)) (hx : x < (2 * hi - 1) * h) : d < hi := by
   by_contra hge
-  have := mul_le_mul_of_nonneg_right (show H ≤ d by omega) hh.le
+  have := mul_le_mul_of_nonneg_right (show hi ≤ d by omega) hh.le
   linarith
 
 /-- The scaled value, bounded by the digits asked for: at least `10^(p-1)` and
@@ -997,7 +997,7 @@ theorem rounded_correct (f : ℕ) (e : ℤ) (hnorm : Normalized f e) (p : ℕ)
   · obtain ⟨hd, hk⟩ := to_decimal_fine hover
     rw [hd, hk]
     refine ⟨?_, hover, ?_⟩
-    · exact_mod_cast le_of_dist_le (L := (10 : ℤ) ^ (p - 1)) hh hfhi
+    · exact_mod_cast le_of_dist_le (lo := (10 : ℤ) ^ (p - 1)) hh hfhi
         (by linarith)
     · exact correctly_rounded_of_dist (step_pos e p) (value_scaled f e p hs.1)
         ⟨by rw [hstep]; linarith, by rw [hstep]; linarith⟩
@@ -1027,9 +1027,9 @@ theorem rounded_correct (f : ℕ) (e : ℤ) (hnorm : Normalized f e) (p : ℕ)
     have hone : (halfStep e p : ℤ) ≤ 10 ^ p * halfStep e p :=
       le_mul_of_one_le_left hh.le (one_le_pow₀ (by norm_num))
     refine ⟨?_, ?_, ?_⟩
-    · exact_mod_cast le_of_dist_le (L := (10 : ℤ) ^ (p - 1)) (by linarith) hchi
+    · exact_mod_cast le_of_dist_le (lo := (10 : ℤ) ^ (p - 1)) (by linarith) hchi
         (by linarith)
-    · exact_mod_cast lt_of_le_dist (H := (10 : ℤ) ^ p) (by linarith) hclo
+    · exact_mod_cast lt_of_le_dist (hi := (10 : ℤ) ^ p) (by linarith) hclo
         (by linarith)
     · exact correctly_rounded_of_dist (scale := 10 * step e p)
         (by have := step_pos e p; omega) (value_scaled_coarse f e p hs.1)
