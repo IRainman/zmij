@@ -854,7 +854,7 @@ modular windows below.
 `expWindows` is stated against the format, so the same definition poses the
 question at either width. The answer need not be a certificate, though:
 `ExpAvoids` below is the per-significand form of it, which is what lets
-binary128's one occupied window be handled at all.
+`YY128.lean` handle binary128's one occupied window at all.
 -/
 
 /-- Scaling the window residue by `den` and adding back the truncation error
@@ -937,113 +937,7 @@ theorem exp_avoids_of_cert {q : ℤ} (f : ℕ) (e : FPExp fmt)
   push Not at hcon
   exact exp_no_window_hit f e hr hcert hmem hwrap hcon.1 hcon.2
 
-/-! ### Recentring on an occupant
-
-A multiplier can only refute a window that nothing occupies, and the refutation
-is an interval hull, so shrinking the box around an occupant does not help
-either: the hull barely moves and goes on trapping the same multiple. What does
-work is to stop indexing the progression by the significand and index it by the
-distance from the occupant instead. The occupant is then at distance zero,
-outside every box, and the windows move with it, becoming signed offsets from
-its own residue.
-
-One certificate per side is still too much to ask — the hull spans the whole box
-at a width that leaves no room — but the distances split into dyadic blocks, and
-each block is a box small enough to refute. There are `prec` of them per side
-and they are needed at one exponent, so the cost does not show.
--/
-
-/-- The residue `expWindows` reads at a significand. -/
-def expResidue (b : ℕ) (e : FPExp fmt) : ℕ := 2 * trimNum e * b % trimScale e
-
-/-- `expWindows` seen by the significands a distance `2^i ≤ d < 2^(i+1)` above
-    `b`, indexed by that distance and with the windows measured from `b`'s own
-    residue. The block index comes last, where a certificate search expects to
-    find the quantity it varies. -/
-def expWindowsAbove (b : ℕ) (e : FPExp fmt) (i : ℕ) : ModWindows :=
-  { expWindows e with
-    fmin := 2 ^ i
-    fmax := 2 ^ (i + 1) - 1
-    windows := (expWindows e).windows.map fun p =>
-      (p.1 - expResidue b e, p.2 - expResidue b e) }
-
-/-- And by those below, where the distance runs the other way, so the offsets
-    are negated. -/
-def expWindowsBelow (b : ℕ) (e : FPExp fmt) (i : ℕ) : ModWindows :=
-  { expWindows e with
-    fmin := 2 ^ i
-    fmax := 2 ^ (i + 1) - 1
-    windows := (expWindows e).windows.map fun p =>
-      (expResidue b e - p.2, expResidue b e - p.1) }
-
-/-- Certificates for every block around `b` do what one for the whole box
-    would, at every significand but `b` itself. -/
-theorem exp_avoids_of_blocks {b : ℕ} (f : ℕ) (e : FPExp fmt)
-    (hr : fmt.Regular f e) (hne : f ≠ b) (hbp : b < 2 ^ fmt.prec)
-    (ha : ∀ i < fmt.prec, ∃ q, (expWindowsAbove b e i).refutedBy q = true)
-    (hb : ∀ i < fmt.prec, ∃ q, (expWindowsBelow b e i).refutedBy q = true) :
-    ExpAvoids f e := by
-  intro hwrap rmin rmax hmem
-  by_contra hcon
-  push Not at hcon
-  obtain ⟨hrmin, hrmax⟩ := hcon
-  have hfp : f < 2 ^ fmt.prec := hr.sig_lt
-  have hmod : 0 < trimScale e := by
-    rw [trimScale, trimModulus]
-    exact Nat.mul_pos (by positivity) (trim_den_pos e)
-  -- Both residues as offsets from their own multiple of the modulus, so that
-  -- the difference of the two is the residue at the distance between them.
-  have hyf : (trimGap f e : ℤ) = 2 * trimNum e * f
-      - trimScale e * ((2 * trimNum e * f / trimScale e : ℕ) : ℤ) := by
-    rw [← trim_gap_mod f e hwrap, cast_mod_eq_sub]
-    push_cast
-    ring
-  have hyb : (expResidue b e : ℤ) = 2 * trimNum e * b
-      - trimScale e * ((2 * trimNum e * b / trimScale e : ℕ) : ℤ) := by
-    rw [expResidue, cast_mod_eq_sub]
-    push_cast
-    ring
-  -- The distance and the block it falls in.
-  have hblock : ∀ d : ℕ, d ≠ 0 → d < 2 ^ fmt.prec →
-      Nat.log 2 d < fmt.prec ∧ 2 ^ Nat.log 2 d ≤ d
-        ∧ d ≤ 2 ^ (Nat.log 2 d + 1) - 1 := by
-    intro d hd0 hdp
-    have := Nat.lt_pow_succ_log_self (b := 2) (by norm_num) d
-    exact ⟨Nat.log_lt_of_lt_pow hd0 hdp, Nat.pow_log_le_self 2 hd0, by omega⟩
-  rcases lt_trichotomy f b with hfb | hfb | hfb
-  · obtain ⟨hip, hd0, hd1⟩ := hblock (b - f) (by omega) (by omega)
-    obtain ⟨q, hcert⟩ := hb _ hip
-    have hy : (expResidue b e : ℤ) - trimGap f e
-        = ((2 * trimNum e : ℕ) : ℤ) * ((b - f : ℕ) : ℤ)
-          - ((trimScale e : ℕ) : ℤ)
-            * (((2 * trimNum e * b / trimScale e : ℕ) : ℤ)
-              - ((2 * trimNum e * f / trimScale e : ℕ) : ℤ)) := by
-      rw [show ((b - f : ℕ) : ℤ) = (b : ℤ) - f from by omega, hyf, hyb]
-      push_cast
-      ring
-    exact (expWindowsBelow b e _).not_hit_rep (b - f) hmod hcert
-      (rmin := (expResidue b e : ℤ) - rmax)
-      (rmax := (expResidue b e : ℤ) - rmin)
-      (List.mem_map_of_mem (f := fun p : ℤ × ℤ =>
-        ((expResidue b e : ℤ) - p.2, (expResidue b e : ℤ) - p.1)) hmem)
-      hd0 hd1 hy (by omega) (by omega)
-  · exact hne hfb
-  · obtain ⟨hip, hd0, hd1⟩ := hblock (f - b) (by omega) (by omega)
-    obtain ⟨q, hcert⟩ := ha _ hip
-    have hy : (trimGap f e : ℤ) - expResidue b e
-        = ((2 * trimNum e : ℕ) : ℤ) * ((f - b : ℕ) : ℤ)
-          - ((trimScale e : ℕ) : ℤ)
-            * (((2 * trimNum e * f / trimScale e : ℕ) : ℤ)
-              - ((2 * trimNum e * b / trimScale e : ℕ) : ℤ)) := by
-      rw [show ((f - b : ℕ) : ℤ) = (f : ℤ) - b from by omega, hyf, hyb]
-      push_cast
-      ring
-    exact (expWindowsAbove b e _).not_hit_rep (f - b) hmod hcert
-      (rmin := rmin - (expResidue b e : ℤ))
-      (rmax := rmax - (expResidue b e : ℤ))
-      (List.mem_map_of_mem (f := fun p : ℤ × ℤ =>
-        (p.1 - (expResidue b e : ℤ), p.2 - (expResidue b e : ℤ))) hmem)
-      hd0 hd1 hy (by omega) (by omega)
+/-! ### The per-format obligations -/
 
 /-- The undecided bands of the unit step, as windows on the doubled residue.
     The truncation error is below `2^(prec+1)·den`, so `2^(prec+1)` bounds its
@@ -1107,6 +1001,8 @@ structure ChecksAt (e : FPExp fmt) : Prop where
     over an interval smaller than the one `Regular` admits. -/
 def Checks (fmt : Format) : Prop :=
   ∀ e : FPExp fmt, fmt.emin ≤ e → e ≤ fmt.emax → ChecksAt e
+
+/-! ### What a refutation buys -/
 
 /-- Either the gap sits exactly on a boundary, a genuine exact tie, or it is
     outside the windows either side of it, where the packed comparison cannot be
