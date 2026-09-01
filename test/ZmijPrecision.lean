@@ -615,14 +615,14 @@ this section.
 
 `demote_exact_packed` is why there is one rounding argument here rather than two.
 A demoted packing is the packing at ten times the half step, so the reround's
-grid is the reported grid with a coarser `G` and nothing else, and
+grid is the reported grid with a coarser step and nothing else, and
 `round_even_exact_packed` serves both.
 -/
 
-/-- The canonical packing of `x` at half step `G`: the half steps it covers,
+/-- The canonical packing of `x` at half step `h`: the half steps it covers,
     which the 1/2 bit's weight makes twice the count, and whether anything is
     left over. -/
-def exactPacked (x G : ℕ) : ℕ := 2 * (x / G) + if x % G = 0 then 0 else 1
+def exactPacked (x h : ℕ) : ℕ := 2 * (x / h) + if x % h = 0 then 0 else 1
 
 /-- `round_even` in terms of its two guard bits: it rounds up when they say the
     value is past the midpoint, and at the midpoint when what remains is odd. -/
@@ -659,12 +659,12 @@ private theorem stick_eq (r : ℕ) : (if r = 0 then 0 else 1) = min r 1 := by
 /-- The packing from a split of the value at the half step: `q` half steps and
     a remainder inside one, which is the shape `exact_eq` leaves. The
     remainder arrives as an integer because that is what `dev` is. -/
-private theorem exact_packed_of_split {x G q : ℕ} {r : ℤ} (hG : 0 < G)
-    (hx : (x : ℤ) = G * q + r) (hlo : 0 ≤ r) (hhi : r < G) :
-    exactPacked x G = 2 * q + if r = 0 then 0 else 1 := by
-  have hx' : x = r.toNat + G * q := by omega
-  have hrlt : r.toNat < G := by omega
-  rw [exactPacked, hx', Nat.add_mul_div_left _ _ hG, Nat.add_mul_mod_self_left,
+private theorem exact_packed_of_split {x h q : ℕ} {r : ℤ} (hh : 0 < h)
+    (hx : (x : ℤ) = h * q + r) (hlo : 0 ≤ r) (hhi : r < h) :
+    exactPacked x h = 2 * q + if r = 0 then 0 else 1 := by
+  have hx' : x = r.toNat + h * q := by omega
+  have hrlt : r.toNat < h := by omega
+  rw [exactPacked, hx', Nat.add_mul_div_left _ _ hh, Nat.add_mul_mod_self_left,
     Nat.div_eq_of_lt hrlt, Nat.mod_eq_of_lt hrlt, Nat.zero_add]
   split_ifs <;> omega
 
@@ -678,74 +678,74 @@ private theorem demote_pack (Q d s : ℕ) (hd : d < 10) (hs : s ≤ 1) :
 /-- Demoting a canonical packing is the canonical packing at ten times the half
     step. The reported grid and the reround's are therefore the same packing,
     which is what collapses the two rounding arguments into one. -/
-theorem demote_exact_packed (x G : ℕ) (hG : 0 < G) :
-    demote (exactPacked x G) = exactPacked x (10 * G) := by
-  have hdlt : x / G % 10 < 10 := Nat.mod_lt _ (by omega)
+theorem demote_exact_packed (x h : ℕ) (hh : 0 < h) :
+    demote (exactPacked x h) = exactPacked x (10 * h) := by
+  have hdlt : x / h % 10 < 10 := Nat.mod_lt _ (by omega)
   -- The coarser quotient and remainder, from the finer ones: the digit that
   -- leaves, at its weight, joins the finer remainder.
-  have hdiv : x / (10 * G) = x / G / 10 := by
-    rw [Nat.div_div_eq_div_mul, Nat.mul_comm G 10]
-  have hmod : x % (10 * G) = G * (x / G % 10) + x % G := by
-    rw [← Nat.mod_mul_left_div_self x G 10,
-      ← Nat.mod_mod_of_dvd x (dvd_mul_left G 10)]
-    exact (Nat.div_add_mod _ G).symm
+  have hdiv : x / (10 * h) = x / h / 10 := by
+    rw [Nat.div_div_eq_div_mul, Nat.mul_comm h 10]
+  have hmod : x % (10 * h) = h * (x / h % 10) + x % h := by
+    rw [← Nat.mod_mul_left_div_self x h 10,
+      ← Nat.mod_mod_of_dvd x (dvd_mul_left h 10)]
+    exact (Nat.div_add_mod _ h).symm
   -- So the coarse sticky bit is the digit that leaves, or else the fine one.
-  have hstick : min (G * (x / G % 10) + x % G) 1
-      = min (2 * (x / G % 10) + min (x % G) 1) 1 := by
-    rcases Nat.eq_zero_or_pos (x / G % 10) with h1 | h1
+  have hstick : min (h * (x / h % 10) + x % h) 1
+      = min (2 * (x / h % 10) + min (x % h) 1) 1 := by
+    rcases Nat.eq_zero_or_pos (x / h % 10) with h1 | h1
     · rw [h1, Nat.mul_zero]
       omega
-    · have : 0 < G * (x / G % 10) := Nat.mul_pos hG h1
+    · have : 0 < h * (x / h % 10) := Nat.mul_pos hh h1
       omega
   rw [exactPacked, stick_eq,
-    show x / G = 10 * (x / G / 10) + x / G % 10 from (Nat.div_add_mod _ 10).symm,
+    show x / h = 10 * (x / h / 10) + x / h % 10 from (Nat.div_add_mod _ 10).symm,
     demote_pack _ _ _ hdlt (by omega), exactPacked, hdiv, hmod, stick_eq, hstick]
 
 /-- Rounding a canonical packing is round-to-nearest-even on the value packed:
     the candidate is at most half a step away, and exactly half a step away only
     when it is even. Nothing about Żmij enters, and both grids below read their
     bound off this one statement. -/
-theorem round_even_exact_packed (x G : ℕ) (hG : 0 < G) :
-    -(G : ℤ) ≤ (x : ℤ) - roundEven (exactPacked x G) * (2 * G)
-      ∧ (x : ℤ) - roundEven (exactPacked x G) * (2 * G) ≤ G
-      ∧ ((x : ℤ) - roundEven (exactPacked x G) * (2 * G) = G
-          ∨ (x : ℤ) - roundEven (exactPacked x G) * (2 * G) = -(G : ℤ)
-        → roundEven (exactPacked x G) % 2 = 0) := by
-  have hrlt : x % G < G := Nat.mod_lt _ hG
-  set s : ℕ := if x % G = 0 then 0 else 1 with hs
+theorem round_even_exact_packed (x h : ℕ) (hh : 0 < h) :
+    -(h : ℤ) ≤ (x : ℤ) - roundEven (exactPacked x h) * (2 * h)
+      ∧ (x : ℤ) - roundEven (exactPacked x h) * (2 * h) ≤ h
+      ∧ ((x : ℤ) - roundEven (exactPacked x h) * (2 * h) = h
+          ∨ (x : ℤ) - roundEven (exactPacked x h) * (2 * h) = -(h : ℤ)
+        → roundEven (exactPacked x h) % 2 = 0) := by
+  have hrlt : x % h < h := Nat.mod_lt _ hh
+  set s : ℕ := if x % h = 0 then 0 else 1 with hs
   have hsle : s ≤ 1 := by rw [hs]; split_ifs <;> omega
   -- The sticky bit together with what it reports, which is the pair the cases
   -- below need.
-  have hsr : s = 0 ∧ x % G = 0 ∨ s = 1 ∧ 0 < x % G := by
+  have hsr : s = 0 ∧ x % h = 0 ∨ s = 1 ∧ 0 < x % h := by
     rw [hs]; split_ifs <;> omega
   -- The increment the guard bits call for, as a variable and not a definition,
   -- so that the cases below can put a literal in its place.
   obtain ⟨c, hc⟩ : ∃ c : ℕ, c =
-      if x / G % 2 = 1 ∧ (s = 1 ∨ x / G / 2 % 2 = 1) then 1 else 0 := ⟨_, rfl⟩
+      if x / h % 2 = 1 ∧ (s = 1 ∨ x / h / 2 % 2 = 1) then 1 else 0 := ⟨_, rfl⟩
   -- The candidate, from `round_even_eq` in the `4 * i + b` form it reads.
-  have hround : roundEven (exactPacked x G) = x / G / 2 + c := by
-    rw [show exactPacked x G = 4 * (x / G / 2) + (2 * (x / G % 2) + s) from by
+  have hround : roundEven (exactPacked x h) = x / h / 2 + c := by
+    rw [show exactPacked x h = 4 * (x / h / 2) + (2 * (x / h % 2) + s) from by
         rw [exactPacked, ← hs]; omega,
       round_even_eq _ _ (by omega), hc]
     congr 1
     split_ifs <;> omega
   -- The distance, with the whole steps cancelled: the value split at the half
   -- step, and that quotient split again at the whole one.
-  have hdist : (x : ℤ) - (x / G / 2 + c : ℕ) * (2 * G)
-      = G * (x / G % 2 : ℕ) + (x % G : ℕ) - 2 * G * c := by
-    have h1 : (x : ℤ) = G * (x / G : ℕ) + (x % G : ℕ) := by
-      exact_mod_cast (Nat.div_add_mod x G).symm
-    have h2 : ((x / G : ℕ) : ℤ) = 2 * (x / G / 2 : ℕ) + (x / G % 2 : ℕ) := by
-      exact_mod_cast (Nat.div_add_mod (x / G) 2).symm
+  have hdist : (x : ℤ) - (x / h / 2 + c : ℕ) * (2 * h)
+      = h * (x / h % 2 : ℕ) + (x % h : ℕ) - 2 * h * c := by
+    have h1 : (x : ℤ) = h * (x / h : ℕ) + (x % h : ℕ) := by
+      exact_mod_cast (Nat.div_add_mod x h).symm
+    have h2 : ((x / h : ℕ) : ℤ) = 2 * (x / h / 2 : ℕ) + (x / h % 2 : ℕ) := by
+      exact_mod_cast (Nat.div_add_mod (x / h) 2).symm
     push_cast at h1 h2 ⊢
-    linear_combination h1 + G * h2
+    linear_combination h1 + h * h2
   rw [hround, hdist]
-  -- Eight cases, each linear once the 1/2 bit is a literal and so `G * h` is no
-  -- longer a product of two unknowns.
-  rcases show x / G % 2 = 0 ∨ x / G % 2 = 1 from by omega with hh | hh <;>
-    rw [hh] at hc ⊢ <;>
+  -- Eight cases, each linear once the 1/2 bit is a literal, which leaves `h`
+  -- multiplied by a constant rather than by an unknown.
+  rcases show x / h % 2 = 0 ∨ x / h % 2 = 1 from by omega with hb | hb <;>
+    rw [hb] at hc ⊢ <;>
       rcases hsr with ⟨hsv, hr⟩ | ⟨hsv, hr⟩ <;>
-        rcases show x / G / 2 % 2 = 0 ∨ x / G / 2 % 2 = 1 from by omega with
+        rcases show x / h / 2 % 2 = 0 ∨ x / h / 2 % 2 = 1 from by omega with
           hi | hi <;>
           rw [hsv, hi] at hc <;> norm_num at hc <;> subst hc <;> omega
 
@@ -977,7 +977,7 @@ theorem rounded_correct (f : ℕ) (e : ℤ) (hnorm : Normalized f e) (p : ℕ)
   have hs := point_shift_bounds p (by simpa using hp) e
     (by simpa using hnorm.exp)
   have hstep := step_cast e p
-  have hG : (0 : ℤ) < halfStep e p := by exact_mod_cast half_step_pos e p
+  have hh : (0 : ℤ) < halfStep e p := by exact_mod_cast half_step_pos e p
   have hpack := packed_eq_exact_packed f e hnorm p hp
   -- The value's own bounds, at the half step the two grids are multiples of.
   obtain ⟨hgridlo, hgridhi⟩ := exact_bounds f e hnorm p hp
@@ -997,7 +997,7 @@ theorem rounded_correct (f : ℕ) (e : ℤ) (hnorm : Normalized f e) (p : ℕ)
   · obtain ⟨hd, hk⟩ := to_decimal_fine hover
     rw [hd, hk]
     refine ⟨?_, hover, ?_⟩
-    · exact_mod_cast le_of_dist_le (L := (10 : ℤ) ^ (p - 1)) hG hfhi
+    · exact_mod_cast le_of_dist_le (L := (10 : ℤ) ^ (p - 1)) hh hfhi
         (by linarith)
     · exact correctly_rounded_of_dist (step_pos e p) (value_scaled f e p hs.1)
         ⟨by rw [hstep]; linarith, by rw [hstep]; linarith⟩
@@ -1025,7 +1025,7 @@ theorem rounded_correct (f : ℕ) (e : ℤ) (hnorm : Normalized f e) (p : ℕ)
       mul_le_mul_of_nonneg_right (by exact_mod_cast Nat.le_of_not_lt hover)
         (by linarith)
     have hone : (halfStep e p : ℤ) ≤ 10 ^ p * halfStep e p :=
-      le_mul_of_one_le_left hG.le (one_le_pow₀ (by norm_num))
+      le_mul_of_one_le_left hh.le (one_le_pow₀ (by norm_num))
     refine ⟨?_, ?_, ?_⟩
     · exact_mod_cast le_of_dist_le (L := (10 : ℤ) ^ (p - 1)) (by linarith) hchi
         (by linarith)
