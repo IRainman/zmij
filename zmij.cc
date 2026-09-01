@@ -142,14 +142,28 @@ static_assert(!ZMIJ_USE_SSE4_1 || ZMIJ_USE_SSE);
 #  define ZMIJ_CONST_DECL static constexpr
 #endif
 
+// Detect C++14 relaxed constexpr.
+#ifdef ZMIJ_USE_CONSTEXPR
+// Use the provided definition.
+#elif defined(__cpp_constexpr) && __cpp_constexpr >= 201304L
+#  define ZMIJ_USE_CONSTEXPR 1
+#else
+#  define ZMIJ_USE_CONSTEXPR 0
+#endif
+#if ZMIJ_USE_CONSTEXPR
+#  define ZMIJ_CONSTEXPR constexpr
+#else
+#  define ZMIJ_CONSTEXPR
+#endif
+
 namespace {
 
 #ifdef __cpp_lib_is_constant_evaluated
 using std::is_constant_evaluated;
-#  define ZMIJ_CONSTEXPR constexpr
+#  define ZMIJ_CONSTEXPR20 constexpr
 #else
 constexpr auto is_constant_evaluated() -> bool { return false; }
-#  define ZMIJ_CONSTEXPR
+#  define ZMIJ_CONSTEXPR20
 #endif
 
 #if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
@@ -238,7 +252,7 @@ constexpr bool use_umul128_hi64 = false;
 #endif
 
 // Computes 128-bit result of multiplication of two 64-bit unsigned integers.
-constexpr auto umul128(uint64_t x, uint64_t y) noexcept -> uint128_t {
+ZMIJ_CONSTEXPR auto umul128(uint64_t x, uint64_t y) noexcept -> uint128_t {
 #if ZMIJ_USE_INT128
   return uint128_t(x) * y;
 #else
@@ -546,7 +560,7 @@ struct pow10_significand_table {
   uint64_t data[compress ? 1 : num_pow10s * 2] = {};
 
   // Computes the 128-bit significand of 10**i using method by Dougall Johnson.
-  static constexpr auto compute(unsigned i) noexcept -> uint128 {
+  static ZMIJ_CONSTEXPR auto compute(unsigned i) noexcept -> uint128 {
     constexpr int stride = sizeof(pow10_minor) / sizeof(*pow10_minor);
     auto m = pow10_minor[(i + 24) % stride];
     auto h = pow10_major[(i + 24) / stride];
@@ -564,7 +578,7 @@ struct pow10_significand_table {
     return result;
   }
 
-  constexpr pow10_significand_table() {
+  ZMIJ_CONSTEXPR pow10_significand_table() {
     for (int i = 0; i < num_pow10s && !compress; ++i) {
       uint128 result = compute(i);
       if (split_tables) {
@@ -577,7 +591,7 @@ struct pow10_significand_table {
     }
   }
 
-  ZMIJ_CONSTEXPR auto operator[](int dec_exp) const noexcept -> uint128 {
+  ZMIJ_CONSTEXPR20 auto operator[](int dec_exp) const noexcept -> uint128 {
     constexpr int dec_exp_min = -307;
     int i = dec_exp - dec_exp_min;
     if (compress) return compute(i);
@@ -603,7 +617,8 @@ struct pow10_significand_table {
 // 10^dec_exp puts the decimal point in different bit positions:
 //   3 * 2**59 / 100 = 1.72...e+16  (needs shift = 1 + 1)
 //   3 * 2**60 / 100 = 3.45...e+16  (needs shift = 2 + 1)
-constexpr ZMIJ_INLINE auto compute_exp_shift(int bin_exp, int dec_exp) noexcept
+ZMIJ_CONSTEXPR ZMIJ_INLINE auto compute_exp_shift(int bin_exp,
+                                                  int dec_exp) noexcept
     -> signed char {
   assert(dec_exp >= -350 && dec_exp <= 350);
   // log2_pow10_sig = round(log2(10) * 2**log2_pow10_exp) + 1
@@ -615,20 +630,22 @@ constexpr ZMIJ_INLINE auto compute_exp_shift(int bin_exp, int dec_exp) noexcept
 }
 
 struct exp_shift_table {
-  static constexpr bool enable = ZMIJ_OPTIMIZE_SIZE == 0;
+  static constexpr bool enable = ZMIJ_OPTIMIZE_SIZE == 0 && ZMIJ_USE_CONSTEXPR;
   // extra_shift in [3, 10]: >= 3 keeps shift non-negative, <= 10 keeps
   // bin_sig << shift in 64 bits (11 overflows the irregular 2**52 << 12).
   // 9 is fastest: extra_shift + 1 == 10 reuses the base-10 digit constant.
   static constexpr int extra_shift = 9;
   unsigned char data[enable ? float_traits<double>::exp_mask + 1 : 1] = {};
 
-  constexpr exp_shift_table() {
-    for (int raw_exp = 0; raw_exp < sizeof(data) && enable; ++raw_exp) {
+  static ZMIJ_CONSTEXPR auto make() -> exp_shift_table {
+    exp_shift_table t;
+    for (int raw_exp = 0; raw_exp < int(sizeof(t.data)) && enable; ++raw_exp) {
       int bin_exp = raw_exp - float_traits<double>::exp_offset;
       if (raw_exp == 0) ++bin_exp;
       int dec_exp = compute_dec_exp(bin_exp);
-      data[raw_exp] = compute_exp_shift(bin_exp, dec_exp + 1) + extra_shift;
+      t.data[raw_exp] = compute_exp_shift(bin_exp, dec_exp + 1) + extra_shift;
     }
+    return t;
   }
 };
 
@@ -642,7 +659,7 @@ struct exp_string_table {
   static constexpr int offset = -min_dec_exp;
   uint64_t data[enable ? traits::max_exponent10 - min_dec_exp + 1 : 1] = {};
 
-  constexpr exp_string_table() {
+  ZMIJ_CONSTEXPR exp_string_table() {
     for (int e = min_dec_exp; e <= traits::max_exponent10 && enable; ++e) {
       uint64_t abs_e = e >= 0 ? e : -e;
       uint64_t bc = abs_e % 100;
@@ -678,13 +695,13 @@ struct exp_float_shuffle_table {
     unsigned char length;
   };
 
-  constexpr auto get_entry(int num_digits, bool has_last_digit,
-                           bool has_extra_digit) const noexcept {
+  ZMIJ_CONSTEXPR auto get_entry(int num_digits, bool has_last_digit,
+                                bool has_extra_digit) const noexcept {
     int idx = (num_digits - 1) * 4 + has_last_digit * 2 + has_extra_digit;
     return entry{&data[idx * 16], data[idx * 16 + 15]};
   }
 
-  constexpr exp_float_shuffle_table() {
+  ZMIJ_CONSTEXPR exp_float_shuffle_table() {
     for (int idx = 0; idx < 32 && enable; ++idx) {
       int num_digits = (idx >> 2) + 1;
       bool has_last_digit = ((idx >> 1) & 1) != 0;
@@ -751,7 +768,7 @@ struct fixed_layout_table {
   };
   entry data[num_entries] = {};
 
-  constexpr fixed_layout_table() {
+  ZMIJ_CONSTEXPR fixed_layout_table() {
     for (int dec_exp = traits::min_fixed_dec_exp;
          dec_exp <= traits::max_fixed_dec_exp; ++dec_exp) {
       auto& e = data[dec_exp - traits::min_fixed_dec_exp];
@@ -786,7 +803,7 @@ struct fixed_layout_table {
     }
   }
 
-  constexpr auto get(int dec_exp) const noexcept -> const entry& {
+  ZMIJ_CONSTEXPR auto get(int dec_exp) const noexcept -> const entry& {
     constexpr auto min = traits::min_fixed_dec_exp;
     assert(dec_exp >= min && dec_exp <= traits::max_fixed_dec_exp);
     return data[unsigned(dec_exp - min)];
@@ -863,7 +880,8 @@ struct data {
   }
 
   // Keep first: arm64 folds a register index into ldrb only at offset zero.
-  exp_shift_table exp_shifts;
+  exp_shift_table exp_shifts =
+      exp_shift_table::enable ? exp_shift_table::make() : exp_shift_table();
 
   ZMIJ_CONST_DECL uint64_t threshold = 1e15;
   // +6 is needed for boundary cases found by verify.py.
