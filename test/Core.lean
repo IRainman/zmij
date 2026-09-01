@@ -38,9 +38,9 @@ cannot change the answer, which is `comparison_stable_of_far`; near one the
 observation is ambiguous, and the ambiguity is a Diophantine question about a
 modular progression, which `ModWindows` answers by kernel-checked certificate.
 
-The first and third parts know no implementation at all. The conversion results
-ask only for bounds on the decimal grid, never for a binary format or for the
-rule that chose the grid; the certificate machinery knows only modular
+The first and third parts are not specific to any implementation. The conversion
+results ask only for bounds on the decimal grid, never for a binary format or
+for the rule that chose the grid; the certificate machinery knows only modular
 arithmetic, and never what a residue means.
 
 Throughout this file:
@@ -454,11 +454,11 @@ theorem coarse_roundtrip_adjacent (f : ℕ) (e k : ℤ)
 
 /-! ## What the algorithms share
 
-Nothing above knows an implementation and nothing below knows decimals. Between
-them sits what the implementation proofs have in common: how a format spaces the
-values they convert, which decimal exponent they report, and the normalized
-power-of-ten table they multiply by. No one algorithm owns any of it, and
-neither part around it uses any of it.
+Nothing above this section knows an implementation, and nothing after it knows
+decimals. Between them sits what the implementation proofs have in common: how
+a format spaces the values they convert, which decimal exponent they report, and
+the normalized power-of-ten table they multiply by. No one algorithm owns
+any of it, and neither part around it uses any of it.
 
 All of it is stated over a `Format`, so that an implementation proof can be
 written once and instantiated per format, and an implementation file names what
@@ -470,12 +470,12 @@ it needs through its own format, as `binary64.decimalExponent`.
 /-- A binary format, as the layers below need it: precision, exponent range,
     the width of the base integer type an implementation computes in, and
     fixed-point approximations of `log₁₀2` and `log₂10` as a numerator over a
-    power of two. Those two approximations are the only part of a format that
-    has to be checked rather than derived, and how far they can be trusted is
-    what pins down the exponent range of the checks below. Only the `log₂10`
-    side is checked through `Power10Normalized`; what has to hold of `log₁₀2`
-    is a bound on the shift an implementation derives from it, which differs
-    between algorithms, so each checks its own. -/
+    power of two. Those two approximations are the only fields whose numerical
+    accuracy has to be checked rather than used definitionally, and how far they
+    can be trusted is what pins down the exponent range of the checks below.
+    Only the `log₂10` side is checked through `Power10Normalized`; what has to
+    hold of `log₁₀2` is a bound on the shift an implementation derives from it,
+    which differs between algorithms, so each checks its own. -/
 structure Format where
   prec : ℕ
   emin : ℤ
@@ -486,12 +486,12 @@ structure Format where
 
 abbrev Format.p10Width (fmt : Format) : ℕ := 2 * fmt.width
 
-/-! ### Regularly spaced values -/
+/-! ### Finite and regular values -/
 
-/-- Whether f·2^e is a positive finite value of the format, the powers of two
-    included. A selection rule has to know the spacing below a binade, so it
-    asks for `Regular`; a rounding to a precision the caller names does not, and
-    asks only for this. -/
+/-- Whether f·2^e is a positive finite value of the format, including
+    powers of two. A selection rule has to know the spacing below a binade, so
+    it asks for `Regular`; a rounding to a precision the caller names does not,
+    and asks only for this. -/
 structure Format.Finite (fmt : Format) (f : ℕ) (e : ℤ) : Prop where
   pos : 0 < f
   sig_lt : f < 2 ^ fmt.prec
