@@ -414,9 +414,9 @@ constexpr auto compute_dec_exp(int bin_exp, bool regular = true) noexcept
     -> int {
   assert(bin_exp >= -1334 && bin_exp <= 2620);
   // log10_3_over_4_sig = -log10(3/4) * 2**log10_2_exp rounded to a power of 2
-  constexpr int log10_3_over_4_sig = 131'072;
+  constexpr int log10_3_over_4_sig = 131072;
   // log10_2_sig = round(log10(2) * 2**log10_2_exp)
-  constexpr int log10_2_sig = 315'653, log10_2_exp = 20;
+  constexpr int log10_2_sig = 315653, log10_2_exp = 20;
   return (bin_exp * log10_2_sig - !regular * log10_3_over_4_sig) >> log10_2_exp;
 }
 
@@ -485,22 +485,22 @@ constexpr uint64_t pow10s[] = {
     1,
     10,
     100,
-    1'000,
-    10'000,
-    100'000,
-    1'000'000,
-    10'000'000,
-    100'000'000,
-    1'000'000'000,
-    10'000'000'000,
-    100'000'000'000,
-    1'000'000'000'000,
-    10'000'000'000'000,
-    100'000'000'000'000,
-    1'000'000'000'000'000,
-    10'000'000'000'000'000,
-    100'000'000'000'000'000,
-    1'000'000'000'000'000'000,
+    1000,
+    10000,
+    100000,
+    1000000,
+    10000000,
+    100000000,
+    1000000000,
+    10000000000,
+    100000000000,
+    1000000000000,
+    10000000000000,
+    100000000000000,
+    1000000000000000,
+    10000000000000000,
+    100000000000000000,
+    1000000000000000000,
 };
 
 constexpr uint64_t pow10_minor[] = {
@@ -621,7 +621,7 @@ ZMIJ_CONSTEXPR ZMIJ_INLINE auto compute_exp_shift(int bin_exp,
     -> signed char {
   assert(dec_exp >= -350 && dec_exp <= 350);
   // log2_pow10_sig = round(log2(10) * 2**log2_pow10_exp) + 1
-  constexpr int log2_pow10_sig = 217'707, log2_pow10_exp = 16;
+  constexpr int log2_pow10_sig = 217707, log2_pow10_exp = 16;
   // pow10_bin_exp = floor(log2(10**-dec_exp))
   int pow10_bin_exp = -dec_exp * log2_pow10_sig >> log2_pow10_exp;
   // pow10 = ((pow10_hi << 64) | pow10_lo) * 2**(pow10_bin_exp - 127)
@@ -1116,8 +1116,8 @@ template <int num_bits>
 ZMIJ_INLINE auto to_digits(uint64_t value, const data& d) noexcept
     -> dec_digits<num_bits> {
 #if !ZMIJ_USE_NEON && !ZMIJ_USE_SSE
-  uint32_t hi = uint32_t(value / 100'000'000);
-  uint32_t lo = uint32_t(value % 100'000'000);
+  uint32_t hi = uint32_t(value / 100000000);
+  uint32_t lo = uint32_t(value % 100000000);
   auto hi_bcd = to_bcd8(hi);
   if (lo == 0) return {{zeros, hi_bcd.bcd + zeros}, hi_bcd.len};
   auto lo_bcd = to_bcd8(lo);
@@ -1133,8 +1133,8 @@ ZMIJ_INLINE auto to_digits(uint64_t value, const data& d) noexcept
       vget_lane_u64(vreinterpret_u64_u8(vshrn_n_u16(is_not_zero, 4)), 0);
   return {str, 16 - (clz(nonzero_mask) >> 2)};
 #else  // ZMIJ_USE_SSE
-  uint32_t hi = uint32_t(value / 100'000'000);
-  uint32_t lo = uint32_t(value % 100'000'000);
+  uint32_t hi = uint32_t(value / 100000000);
+  uint32_t lo = uint32_t(value % 100000000);
 
   const __m128i div10k = _mm_load_si128(m128ptr(&d.div10k));
   const __m128i neg10k = _mm_load_si128(m128ptr(&d.neg10k));
@@ -1410,7 +1410,7 @@ ZMIJ_INLINE auto to_decimal(UInt bin_sig, int64_t raw_exp, bool regular,
     return {integral, dec_exp, digit, (round_up + round_down) == 0};
   }
 
-  constexpr uint64_t log10_2_sig = 78'913;
+  constexpr uint64_t log10_2_sig = 78913;
   constexpr int log10_2_exp = 18;
   int dec_exp = use_umul128_hi64
                     ? umul128_hi64(bin_exp, log10_2_sig << (64 - log10_2_exp))
@@ -1586,8 +1586,8 @@ struct bigint {
     uint64_t rem = 0;
     for (int i = num_limbs - 1; i >= 0; --i) {
       uint64_t div = rem << 32 | limbs[i];
-      limbs[i] = uint32_t(div / 1'000'000'000u);
-      rem = div % 1'000'000'000u;
+      limbs[i] = uint32_t(div / 1000000000u);
+      rem = div % 1000000000u;
     }
     trim();
     return uint32_t(rem);
@@ -1614,7 +1614,7 @@ struct bigint {
         1,     5,      25,      125,     625,      3125,     15625,
         78125, 390625, 1953125, 9765625, 48828125, 244140625};
     while (n >= 13) {  // 5**13 is the largest power of five below 2**32.
-      mul(1'220'703'125u);
+      mul(1220703125u);
       n -= 13;
     }
     if (n != 0) mul(pow5[n]);
@@ -1960,8 +1960,8 @@ auto to_decimal_big(Float value) noexcept -> dec_fp<uint128_t> {
   // dec_exp = floor(bin_exp * log10(2) [+ log10(3/4) at a power of two]);
   // scaling by 10**-dec_exp puts the ulp in [1, 10) so the shortest form is the
   // integral part or a neighbor.
-  constexpr int64_t log10_2_sig = 20'201'781;   // round(log10(2) * 2**26)
-  constexpr int64_t log10_3_4_sig = 8'384'497;  // round(-log10(3/4) * 2**26)
+  constexpr int64_t log10_2_sig = 20201781;   // round(log10(2) * 2**26)
+  constexpr int64_t log10_3_4_sig = 8384497;  // round(-log10(3/4) * 2**26)
   constexpr int64_t log10_2_exp = 26;
   int dec_exp = int((bin_exp * log10_2_sig - (regular ? 0 : log10_3_4_sig)) >>
                     log10_2_exp);
