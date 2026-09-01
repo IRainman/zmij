@@ -902,8 +902,8 @@ theorem ModWindows.not_hit_rep (w : ModWindows) (f : ℕ) (hm : 0 < w.m)
 
 /-- A certificate excludes every listed window from the canonical residue
     `n·f mod m`, for any significand in range. This is the form implementations
-    normally use; identifying their own quantity with that residue is all it
-    asks. Recentred signed representatives are handled by `not_hit_rep`. -/
+    normally use; recentred signed representatives are handled by
+    `not_hit_rep`. -/
 theorem ModWindows.not_hit (w : ModWindows) (f : ℕ) (hm : 0 < w.m)
     {q : ℤ} (hcert : w.refutedBy q = true) {rmin rmax : ℤ}
     (hmem : (rmin, rmax) ∈ w.windows) {r : ℕ}
@@ -951,9 +951,10 @@ private def modCertSearch (w : ModWindows) : (fuel : ℕ) → (u v qp qc : ℤ) 
 
 /-- A multiplier refuting every window, or the best attempt at one. Untrusted:
     what it returns is checked by `refutedBy`. The fuel bounds the Euclidean
-    search, whose length grows with the precision: binary64 finishes within 44
-    steps and binary128 within 74, so 160 leaves both room to spare. The loop
-    exits as soon as the problem is refuted, so unused fuel costs nothing. -/
+    search, whose length grows with the precision: the current binary64
+    searches finish within 44 steps and binary128 within 74, so 160 leaves both
+    room to spare. The loop exits as soon as the problem is refuted, so unused
+    fuel costs nothing. -/
 def ModWindows.search (w : ModWindows) : ℤ :=
   modCertSearch w 160 w.m ((w.n : ℤ) % (w.m : ℤ)) 0 1
 
@@ -982,14 +983,15 @@ def modCertTactic (search : ℤ → ℤ) : TacticM Unit := do
 
 /-! ### Windows over regular values
 
-Nothing above knows what the significands are. Every implementation asks its
-question over the same ones, `Regular` being all it knows about `f`, so the box
-and the two bounds a certificate needs of it belong here rather than in each
-implementation proof.
+Nothing above knows which significands a format admits. The implementation
+proofs ask their window questions over the same ones, and `Regular` is all any
+of them knows about `f`, so the box and the bounds a certificate needs belong
+here rather than in each implementation proof.
 -/
 
-/-- A window problem over the significands `Regular` admits at `e`. The box is
-    the tighter one above the minimum exponent, which the certificates need. -/
+/-- A window problem over the significands `Regular` admits at `e`. At the
+    minimum exponent every positive significand is possible; above it `Regular`
+    gives the tighter lower bound `2 ^ (prec - 1) + 1`. -/
 def Format.regularWindows (fmt : Format) (n m : ℕ) (e : ℤ)
     (windows : List (ℤ × ℤ)) : ModWindows where
   n := n
@@ -998,9 +1000,9 @@ def Format.regularWindows (fmt : Format) (n m : ℕ) (e : ℤ)
   fmax := 2 ^ fmt.prec - 1
   windows := windows
 
-/-- `not_hit` over that box: `Regular` discharges the significand bounds, so an
-    implementation supplies only positivity of the modulus and
-    an identification of its quantity with the residue. -/
+/-- `not_hit` over that box: `Regular` discharges the significand bounds, so a
+    caller never mentions `fmin` or `fmax`; it supplies positivity of the
+    modulus and identifies its quantity with the residue. -/
 theorem Format.regular_not_hit {fmt : Format} {n m : ℕ} {e : ℤ}
     {windows : List (ℤ × ℤ)} {q rmin rmax : ℤ} {r : ℕ} (f : ℕ)
     (hr : fmt.Regular f e) (hm : 0 < m)
