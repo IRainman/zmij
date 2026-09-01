@@ -14,7 +14,7 @@
 #include <string.h>  // memcpy
 
 #include <limits>       // std::numeric_limits
-#include <type_traits>  // std::conditional_t
+#include <type_traits>  // std::conditional
 
 #ifndef ZMIJ_USE_SIMD
 #  define ZMIJ_USE_SIMD 1
@@ -441,9 +441,10 @@ template <typename Float> struct float_traits : std::numeric_limits<Float> {
   static constexpr int max_fixed_dec_exp =
       compute_dec_exp(float_traits::digits + 1) - 1;
 
-  using sig_type = std::conditional_t<
+  using sig_type = typename std::conditional<
       num_bits <= 32, uint32_t,
-      std::conditional_t<num_bits <= 64, uint64_t, uint128_t>>;
+      typename std::conditional<num_bits <= 64, uint64_t,
+                                uint128_t>::type>::type;
   static constexpr sig_type implicit_bit = sig_type(1) << num_sig_bits;
 
   // Bounds for the exact big-integer path (write_big): the significand times
@@ -903,8 +904,10 @@ struct data {
 #if ZMIJ_USE_NEON
   static constexpr int32_t neg10k = 0x10000 - 10000;
 
-  using int32x4 = std::conditional_t<ZMIJ_MSC_VER != 0, int32_t[4], int32x4_t>;
-  using int16x8 = std::conditional_t<ZMIJ_MSC_VER != 0, int16_t[8], int16x8_t>;
+  using int32x4 =
+      typename std::conditional<ZMIJ_MSC_VER != 0, int32_t[4], int32x4_t>::type;
+  using int16x8 =
+      typename std::conditional<ZMIJ_MSC_VER != 0, int16_t[8], int16x8_t>::type;
 
   uint64_t mul_const = 0xabcc77118461cefd;
   uint64_t hundred_million = 100000000;
