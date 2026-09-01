@@ -998,20 +998,6 @@ def Format.regularWindows (fmt : Format) (n m : ℕ) (e : ℤ)
   fmax := 2 ^ fmt.prec - 1
   windows := windows
 
-/-- `Regular` puts the significand in the box `regularWindows` asks for. -/
-theorem Format.regular_box {fmt : Format} {n m : ℕ} {e : ℤ}
-    {windows : List (ℤ × ℤ)} {f : ℕ} (hr : fmt.Regular f e) :
-    (fmt.regularWindows n m e windows).fmin ≤ f
-      ∧ f ≤ (fmt.regularWindows n m e windows).fmax := by
-  constructor <;> simp only [Format.regularWindows]
-  · split_ifs with hmin
-    · exact hr.pos
-    · rcases hr.normal_or_min with h | h
-      · omega
-      · exact absurd h hmin
-  · have := hr.sig_lt
-    omega
-
 /-- `not_hit` over that box: `Regular` discharges the significand bounds, so an
     implementation supplies only positivity of the modulus and
     an identification of its quantity with the residue. -/
@@ -1022,6 +1008,13 @@ theorem Format.regular_not_hit {fmt : Format} {n m : ℕ} {e : ℤ}
     (hmem : (rmin, rmax) ∈ windows) (hres : r = n * f % m)
     (hrmin : rmin ≤ (r : ℤ)) (hrmax : (r : ℤ) ≤ rmax) :
     False :=
-  have hbox := Format.regular_box (n := n) (m := m) (windows := windows) hr
   (fmt.regularWindows n m e windows).not_hit f hm hcert hmem
-    hbox.1 hbox.2 hres hrmin hrmax
+    (hfmin := by
+      simp only [Format.regularWindows]
+      split_ifs with hmin
+      · exact hr.pos
+      · rcases hr.normal_or_min with h | h
+        · omega
+        · exact absurd h hmin)
+    (hfmax := by simp only [Format.regularWindows]; have := hr.sig_lt; omega)
+    hres hrmin hrmax
