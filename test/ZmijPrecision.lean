@@ -790,7 +790,7 @@ private theorem dev_eq_zero (f : ℕ) (e : ℤ) (hnorm : Normalized f e) (p : �
   have hs := point_shift_bounds p (by simpa using hp) e
     (by simpa using hnorm.exp)
   have hsig := hnorm.sig
-  have hnear := dev_near_of_sticky_eq_zero f e p hnorm.sig.2 hsticky
+  obtain ⟨hlo, hhi⟩ := dev_near_of_sticky_eq_zero f e p hnorm.sig.2 hsticky
   -- All this proof supplies is that `dev` is the residue: the integral part and
   -- the 1/2 bit count the multiples of the modulus, and `dev` is what is left.
   have hres : dev f e p = (tieWindows e p).n * f
@@ -800,12 +800,21 @@ private theorem dev_eq_zero (f : ℕ) (e : ℤ) (hnorm : Normalized f e) (p : �
     simp only [tieWindows]
     push_cast at hex ⊢
     linarith
-  exact (tieWindows e p).eq_zero_of_near f
-    (by simpa only [tieWindows] using half_step_pos e p)
-    (tie_windows_refuted hnorm.exp hp).choose_spec (s := (slack e p : ℤ))
-    (by simp [tieWindows]) (by simp [tieWindows])
-    (by simp only [tieWindows]; omega) (by simp only [tieWindows]; omega)
-    hres hnear.1 hnear.2
+  have hm : 0 < (tieWindows e p).m := by
+    simpa only [tieWindows] using half_step_pos e p
+  have hcert := (tie_windows_refuted hnorm.exp hp).choose_spec
+  have hfmin : (tieWindows e p).fmin ≤ f := by simp only [tieWindows]; omega
+  have hfmax : f ≤ (tieWindows e p).fmax := by simp only [tieWindows]; omega
+  -- The two windows stop one short of the boundary either way, so refuting both
+  -- leaves nothing within `slack` of it but zero.
+  rcases lt_trichotomy (dev f e p) 0 with hneg | hzero | hpos
+  · exact ((tieWindows e p).not_hit_rep f hm hcert
+      (rmin := 1 - (slack e p : ℤ)) (rmax := -1) (by simp [tieWindows])
+      hfmin hfmax hres (by omega) (by omega)).elim
+  · exact hzero
+  · exact ((tieWindows e p).not_hit_rep f hm hcert
+      (rmin := 1) (rmax := (slack e p : ℤ) - 1) (by simp [tieWindows])
+      hfmin hfmax hres (by omega) (by omega)).elim
 
 /-- The invariant the whole file turns on: `scale` does not merely land near the
     exact scaled value, it computes that value's canonical packing at the half

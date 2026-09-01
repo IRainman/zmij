@@ -915,25 +915,6 @@ theorem ModWindows.not_hit (w : ModWindows) (f : ℕ) (hm : 0 < w.m)
     ring
   exact w.not_hit_rep f hm hcert hmem hfmin hfmax hrz hrmin hrmax
 
-/-- A residue known only to be near a boundary is on it. The two windows flank
-    the boundary and stop one short of it either way, so refuting both leaves
-    nothing between `-s` and `s` but zero itself. An implementation that can
-    bound its own quantity without deciding it asks the question in this
-    shape. -/
-theorem ModWindows.eq_zero_of_near (w : ModWindows) (f : ℕ) (hm : 0 < w.m)
-    {q : ℤ} (hcert : w.refutedBy q = true) {s : ℤ}
-    (hbelow : (1 - s, (-1 : ℤ)) ∈ w.windows)
-    (habove : ((1 : ℤ), s - 1) ∈ w.windows) {r j : ℤ}
-    (hfmin : w.fmin ≤ f) (hfmax : f ≤ w.fmax)
-    (hres : r = w.n * f - w.m * j) (hlo : -s < r) (hhi : r < s) :
-    r = 0 := by
-  rcases lt_trichotomy r 0 with hneg | hzero | hpos
-  · exact absurd hres fun h =>
-      w.not_hit_rep f hm hcert hbelow hfmin hfmax h (by omega) (by omega)
-  · exact hzero
-  · exact absurd hres fun h =>
-      w.not_hit_rep f hm hcert habove hfmin hfmax h (by omega) (by omega)
-
 /-! ### Certificate search
 
 Nothing in this subsection is trusted. `ModWindows.search` runs during
