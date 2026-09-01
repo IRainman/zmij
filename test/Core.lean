@@ -431,13 +431,14 @@ theorem exact_candidate_correct (f : ℕ) (e k : ℤ) {d : ℕ} (hf0 : 0 < f)
 
 /-! ### Locating the coarse candidate -/
 
-/-- Where to look for it. Take a multiple of ten `c` bracketing the scaled value
-    from below, to within half a ULP and less than one coarse step. Then a
-    multiple of ten that round-trips is `c` or the next one up: the round-trip
-    reaches half a ULP either side of the value too, which confines it to
-    `(c - 10, c + 20)`, where the only multiples of ten are `c` and `c + 10`.
-    The tolerance is the round-trip's own radius, so an implementation has two
-    candidates to test from any bracket it locates the value to that well. -/
+/-- Where to look for it. Take a multiple of ten `c` that locates the scaled
+    value to within half a ULP of the interval `[c, c + 10)`, with a ULP less
+    than one coarse step. Then a multiple of ten that round-trips is `c` or the
+    next one up: the round-trip reaches half a ULP either side of the value too,
+    which confines it to `(c - 10, c + 20)`, where the only multiples of ten are
+    `c` and `c + 10`. The tolerance is the round-trip's own radius, so an
+    implementation has two candidates to test from any bracket it locates the
+    value to that well. -/
 theorem coarse_roundtrip_adjacent (f : ℕ) (e k : ℤ)
     (hcoarse : ulp e * 10 ^ (-k) < 10) {c d : ℕ}
     (hc : c % 10 = 0) (hd : d % 10 = 0)
@@ -827,13 +828,15 @@ private def modWindowRefuted (n m fmin fmax rmin rmax q : ℤ) : Bool :=
   let rmax' := q * rmax - min (fmin * ε) (fmax * ε)
   decide (0 < q ∧ m * (rmin' / m) < rmin' ∧ rmax' < m * (rmin' / m) + m)
 
-/-- Every window of the problem refuted by the one multiplier `q`: a handful of
-    big-integer operations per window, with the search for `q` left outside. -/
+/-- Whether the one multiplier `q` refutes every window of the problem: a
+    handful of big-integer operations per window, with the search for `q` left
+    outside. -/
 def ModWindows.refutedBy (w : ModWindows) (q : ℤ) : Bool :=
   w.windows.all fun window =>
     modWindowRefuted w.n w.m w.fmin w.fmax window.1 window.2 q
 
-/-- A value strictly between consecutive multiples of `m` is absurd. -/
+/-- An interval strictly between consecutive multiples of `m` cannot contain a
+    multiple of `m`. -/
 private theorem window_gap_absurd {m lo' hi' v : ℤ} (hm : 0 < m)
     (hlo : lo' ≤ m * v) (hhi : m * v ≤ hi')
     (hgap_lo : m * (lo' / m) < lo') (hgap_hi : hi' < m * (lo' / m) + m) :
@@ -995,9 +998,7 @@ def Format.regularWindows (fmt : Format) (n m : ℕ) (e : ℤ)
   fmax := 2 ^ fmt.prec - 1
   windows := windows
 
-/-- `Regular` puts the significand in the box. Separate from
-    `Format.regular_not_hit` because a problem recentred on one significand asks
-    the same of the rest. -/
+/-- `Regular` puts the significand in the box `regularWindows` asks for. -/
 theorem Format.regular_box {fmt : Format} {n m : ℕ} {e : ℤ}
     {windows : List (ℤ × ℤ)} {f : ℕ} (hr : fmt.Regular f e) :
     (fmt.regularWindows n m e windows).fmin ≤ f
@@ -1012,8 +1013,8 @@ theorem Format.regular_box {fmt : Format} {n m : ℕ} {e : ℤ}
     omega
 
 /-- `not_hit` over that box: `Regular` discharges the significand bounds, so an
-    implementation supplies only its modulus being positive and its quantity
-    being the residue. -/
+    implementation supplies only positivity of the modulus and
+    an identification of its quantity with the residue. -/
 theorem Format.regular_not_hit {fmt : Format} {n m : ℕ} {e : ℤ}
     {windows : List (ℤ × ℤ)} {q rmin rmax : ℤ} {r : ℕ} (f : ℕ)
     (hr : fmt.Regular f e) (hm : 0 < m)
