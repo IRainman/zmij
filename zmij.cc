@@ -699,7 +699,7 @@ struct exp_float_shuffle_table {
   };
 
   ZMIJ_CONSTEXPR auto get_entry(int num_digits, bool has_last_digit,
-                                bool has_extra_digit) const noexcept {
+                                bool has_extra_digit) const noexcept -> entry {
     int idx = (num_digits - 1) * 4 + has_last_digit * 2 + has_extra_digit;
     return entry{&data[idx * 16], data[idx * 16 + 15]};
   }
