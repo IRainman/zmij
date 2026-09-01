@@ -30,26 +30,26 @@ template <> struct buffer_sizes<double> {
 };
 
 auto write(char* out, size_t n, double value) noexcept -> char* {
-  return zmij_write_double(out, n, value);
+  return zmij_write(out, n, value);
 }
 auto write(char* out, size_t n, float value) noexcept -> char* {
-  return zmij_write_float(out, n, value);
+  return zmij_write_f(out, n, value);
 }
 auto write_scientific(char* out, size_t n, double value, int precision) noexcept
     -> char* {
-  return zmij_write_scientific_double(out, n, value, precision);
+  return zmij_write_scientific(out, n, value, precision);
 }
 auto write_scientific(char* out, size_t n, float value, int precision) noexcept
     -> char* {
-  return zmij_write_scientific_float(out, n, value, precision);
+  return zmij_write_scientific_f(out, n, value, precision);
 }
 auto write_general(char* out, size_t n, double value, int precision) noexcept
     -> char* {
-  return zmij_write_general_double(out, n, value, precision);
+  return zmij_write_general(out, n, value, precision);
 }
 auto write_general(char* out, size_t n, float value, int precision) noexcept
     -> char* {
-  return zmij_write_general_float(out, n, value, precision);
+  return zmij_write_general_f(out, n, value, precision);
 }
 }  // namespace zmij
 #endif

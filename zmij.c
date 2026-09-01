@@ -2828,7 +2828,7 @@ static ZMIJ_INLINE char* do_write(uint64_t bin_sig, int64_t bin_exp,
 #endif  // ZMIJ_USE_EXP_STRING_TABLE
 }
 
-char* zmij_detail_write_float(float value, char* buffer) {
+char* zmij_detail_write_f(float value, char* buffer) {
   uint32_t bits = float_to_bits(value);
   int64_t bin_exp = float_get_exp(bits);   // binary exponent
   uint32_t bin_sig = float_get_sig(bits);  // binary significand
@@ -2836,15 +2836,15 @@ char* zmij_detail_write_float(float value, char* buffer) {
 }
 
 // It is slightly faster to return a pointer to the end than the size.
-char* zmij_detail_write_double(double value, char* buffer) {
+char* zmij_detail_write(double value, char* buffer) {
   uint64_t bits = double_to_bits(value);
   int64_t bin_exp = double_get_exp(bits);   // binary exponent
   uint64_t bin_sig = double_get_sig(bits);  // binary significand
   return do_write(bin_sig, bin_exp, double_is_negative(bits), buffer, 64);
 }
 
-char* zmij_detail_write_scientific_float(float value, char* buffer,
-                                         int num_digits) {
+char* zmij_detail_write_scientific_f(float value, char* buffer,
+                                     int num_digits) {
   uint32_t bits = float_to_bits(value);
   int64_t bin_exp = float_get_exp(bits);   // binary exponent
   uint32_t bin_sig = float_get_sig(bits);  // binary significand
@@ -2852,8 +2852,7 @@ char* zmij_detail_write_scientific_float(float value, char* buffer,
                              num_digits, 32);
 }
 
-char* zmij_detail_write_scientific_double(double value, char* buffer,
-                                          int num_digits) {
+char* zmij_detail_write_scientific(double value, char* buffer, int num_digits) {
   uint64_t bits = double_to_bits(value);
   int64_t bin_exp = double_get_exp(bits);   // binary exponent
   uint64_t bin_sig = double_get_sig(bits);  // binary significand
@@ -2866,8 +2865,7 @@ size_t zmij_detail_write_scientific_big(char* out, size_t n, double value,
   return do_write_big(out, n, value, precision, zmij_format_scientific);
 }
 
-char* zmij_detail_write_general_float(float value, char* buffer,
-                                      int precision) {
+char* zmij_detail_write_general_f(float value, char* buffer, int precision) {
   uint32_t bits = float_to_bits(value);
   int64_t bin_exp = float_get_exp(bits);   // binary exponent
   uint32_t bin_sig = float_get_sig(bits);  // binary significand
@@ -2875,8 +2873,7 @@ char* zmij_detail_write_general_float(float value, char* buffer,
                           precision, 32);
 }
 
-char* zmij_detail_write_general_double(double value, char* buffer,
-                                       int precision) {
+char* zmij_detail_write_general(double value, char* buffer, int precision) {
   uint64_t bits = double_to_bits(value);
   int64_t bin_exp = double_get_exp(bits);   // binary exponent
   uint64_t bin_sig = double_get_sig(bits);  // binary significand
