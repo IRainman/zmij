@@ -1266,113 +1266,103 @@ theorem round_u0_iff_roundtrips (hl : Layout fmt) (f : ℕ) (e : FPExp fmt)
   rcases ha.exp_refuted f hr with havoid | hagree
   swap
   · exact hagree.2
+  set s := trimResidue f e / trimUnitU e
+    + trimSig e / trimUnitU e with hs
+  set t := 10 * 2 ^ (fmt.width - 4) with ht
   have hflag : (toDecimalCandidates f e).roundU0
-      = (if trimResidue f e / trimUnitU e
-              + trimSig e / trimUnitU e + 1
-            = 10 * 2 ^ (fmt.width - 4) then decide (f % 2 = 0)
-        else if fmt.decimalExponent e = 0
-            ∧ trimResidue f e / trimUnitU e
-              + trimSig e / trimUnitU e
-              = 10 * 2 ^ (fmt.width - 4) then decide (f % 2 = 0)
-        else decide (10 * 2 ^ (fmt.width - 4)
-          ≤ trimResidue f e / trimUnitU e
-            + trimSig e / trimUnitU e)) := by
-    rw [← trim_c_eq hl f e hsh, ← trim_half_ulp_eq e hsh]
+      = if s + 1 = t then decide (f % 2 = 0)
+        else if fmt.decimalExponent e = 0 ∧ s = t then decide (f % 2 = 0)
+        else decide (t ≤ s) := by
+    rw [hs, ht, ← trim_c_eq hl f e hsh, ← trim_half_ulp_eq e hsh]
     rfl
   have hid := trim_packed_sum f e
   have hD := trim_err_drop_u_lt f e hr ha.trim
   have hscale := trim_scale_eq_edge hl e hsh
+  rw [← hs] at hid
+  rw [← ht] at hscale
   have hE : 0 < trimEdgeU e :=
     Nat.mul_pos (trim_unit_u_pos e) (trim_den_pos e)
   have hedge := trim_two_edge_lt_num hl e ha.table
-  rw [hflag]
-  set s := trimResidue f e / trimUnitU e
-    + trimSig e / trimUnitU e with hs
-  set t := 10 * 2 ^ (fmt.width - 4)
-  by_cases hone : s + 1 = t
-  · rw [ite_eq_left hone]
-    have hstep : trimEdgeU e * t
-        = trimEdgeU e * s + trimEdgeU e := by rw [← hone]; ring
-    by_cases hpar : f % 2 = 0
-    · simp [hpar]
+  have hnormalized : (toDecimalCandidates f e).roundU0 = true
+      ↔ if f % 2 = 0 then t ≤ s + 1
+        else if fmt.decimalExponent e = 0 then t < s else t ≤ s := by
+    rw [hflag]
+    split_ifs <;> simp only [decide_eq_true_eq] <;> omega
+  rw [hnormalized]
+  split_ifs with hpar hk
+  · constructor
+    · intro hst
       by_contra hexact
       push Not at hexact
+      have hmul := Nat.mul_le_mul_left (trimEdgeU e) hst
+      have hexp : trimEdgeU e * (s + 1)
+          = trimEdgeU e * s + trimEdgeU e := by ring
       have hwrap : trimGap f e < trimScale e := by omega
       have hmem : ((trimScale e : ℤ) - trimNum e - trimEdgeU e,
           (trimScale e : ℤ) - trimNum e - 1)
           ∈ (expWindows e).windows := by
         simp [expWindows, Format.regularWindows]
       rcases havoid hwrap _ _ hmem with hbelow | habove <;> omega
-    · simp [hpar]
-      by_contra hexact
-      push Not at hexact
+    · intro hexact
+      by_contra hst
+      push Not at hst
+      have hmul : trimEdgeU e * (s + 2) ≤ trimEdgeU e * t :=
+        Nat.mul_le_mul_left _ (by omega)
+      have hexp : trimEdgeU e * (s + 2)
+          = trimEdgeU e * s + 2 * trimEdgeU e := by ring
+      omega
+  · have herr0 := u0_err_drop_u_k_zero hl f e hsh hk
+    rw [herr0] at hid
+    constructor
+    · intro hst
+      have hmul := (Nat.mul_lt_mul_left hE).mpr hst
+      omega
+    · intro hexact
+      by_contra hst
+      push Not at hst
+      have hmul := Nat.mul_le_mul_left (trimEdgeU e) hst
+      omega
+  · constructor
+    · intro hst
+      rcases eq_or_lt_of_le hst with hst | hst
+      · have hst' : s = t := hst.symm
+        by_contra hexact
+        push Not at hexact
+        rw [hst'] at hid
+        have herr0 : trimErr f e + trimDropU f e = 0 := by omega
+        have hτ : trimNum e % trimDen e = 0 := by
+          have hz : 2 * f * (trimNum e % trimDen e) = 0 := by
+            rw [← trimErr]
+            omega
+          rcases Nat.mul_eq_zero.mp hz with hz | hz
+          · omega
+          · exact hz
+        have hwrap : trimGap f e < trimScale e := by omega
+        have hmem : ((trimScale e : ℤ) - trimNum e,
+            (trimScale e : ℤ) - trimNum e)
+            ∈ (expWindows e).windows := by
+          refine List.mem_append_right _ ?_
+          rw [ite_eq_left ⟨hτ, hk⟩]
+          exact List.mem_singleton_self _
+        rcases havoid hwrap _ _ hmem with hbelow | habove <;> omega
+      · have hmul : trimEdgeU e * t < trimEdgeU e * s :=
+          (Nat.mul_lt_mul_left hE).mpr hst
+        omega
+    · intro hexact
+      by_contra hst
+      push Not at hst
+      have hmul : trimEdgeU e * (s + 2) ≤ trimEdgeU e * (t + 1) :=
+        Nat.mul_le_mul_left _ (by omega)
+      have hexp : trimEdgeU e * (s + 2)
+          = trimEdgeU e * s + 2 * trimEdgeU e := by ring
+      have hexp' : trimEdgeU e * (t + 1)
+          = trimEdgeU e * t + trimEdgeU e := by ring
       have hwrap : trimGap f e < trimScale e := by omega
       have hmem : ((trimScale e : ℤ) - trimNum e + 1,
           (trimScale e : ℤ) - trimNum e + trimEdgeU e - 1)
           ∈ (expWindows e).windows := by
         simp [expWindows, Format.regularWindows]
       rcases havoid hwrap _ _ hmem with hbelow | habove <;> omega
-  · rw [ite_eq_right hone]
-    by_cases hzero : fmt.decimalExponent e = 0 ∧ s = t
-    · rw [ite_eq_left hzero]
-      have herr0 := u0_err_drop_u_k_zero hl f e hsh hzero.1
-      rw [hzero.2] at hid
-      simp only [decide_eq_true_eq]
-      split_ifs <;> omega
-    · rw [ite_eq_right hzero]
-      simp only [decide_eq_true_eq]
-      by_cases hpar : f % 2 = 0
-      · simp [hpar]
-        constructor
-        · intro hst
-          have hmul := Nat.mul_le_mul_left (trimEdgeU e) hst
-          omega
-        · intro hexact
-          by_contra hst
-          push Not at hst
-          have hmul : trimEdgeU e * (s + 2) ≤ trimEdgeU e * t :=
-            Nat.mul_le_mul_left _ (by omega)
-          have hexp : trimEdgeU e * (s + 2)
-              = trimEdgeU e * s + 2 * trimEdgeU e := by ring
-          omega
-      · simp [hpar]
-        constructor
-        · intro hst
-          rcases eq_or_lt_of_le hst with hst | hst
-          · have hst' : s = t := hst.symm
-            by_contra hexact
-            push Not at hexact
-            rw [hst'] at hid
-            have herr0 : trimErr f e + trimDropU f e = 0 := by omega
-            have hτ : trimNum e % trimDen e = 0 := by
-              have hz : 2 * f * (trimNum e % trimDen e) = 0 := by
-                rw [← trimErr]
-                omega
-              rcases Nat.mul_eq_zero.mp hz with hz | hz
-              · omega
-              · exact hz
-            have hk : fmt.decimalExponent e ≠ 0 := by
-              intro hk
-              exact hzero ⟨hk, hst'⟩
-            have hwrap : trimGap f e < trimScale e := by omega
-            have hmem : ((trimScale e : ℤ) - trimNum e,
-                (trimScale e : ℤ) - trimNum e)
-                ∈ (expWindows e).windows := by
-              refine List.mem_append_right _ ?_
-              rw [ite_eq_left ⟨hτ, hk⟩]
-              exact List.mem_singleton_self _
-            rcases havoid hwrap _ _ hmem with hbelow | habove <;> omega
-          · have hmul : trimEdgeU e * t < trimEdgeU e * s :=
-              (Nat.mul_lt_mul_left hE).mpr hst
-            omega
-        · intro hexact
-          by_contra hst
-          push Not at hst
-          have hmul : trimEdgeU e * (s + 2) ≤ trimEdgeU e * t :=
-            Nat.mul_le_mul_left _ (by omega)
-          have hexp : trimEdgeU e * (s + 2)
-              = trimEdgeU e * s + 2 * trimEdgeU e := by ring
-          omega
 
 /-! ## The unit-step decision
 
