@@ -148,8 +148,11 @@ static_assert(!ZMIJ_USE_SSE4_1 || ZMIJ_USE_SSE);
 #endif
 #if ZMIJ_USE_CONSTEXPR
 #  define ZMIJ_CONSTEXPR constexpr
+#  define ZMIJ_DEFAULT(...) = __VA_ARGS__
 #else
 #  define ZMIJ_CONSTEXPR
+// A default member initializer makes its class a non-aggregate in C++11.
+#  define ZMIJ_DEFAULT(...)
 #endif
 
 namespace {
@@ -1375,8 +1378,8 @@ ZMIJ_INLINE auto write_scientific_digits(char* buffer,
 struct shortest_decimal {
   uint64_t sig;
   int exp;
-  int last_digit = 0;
-  bool has_last_digit = false;
+  int last_digit ZMIJ_DEFAULT(0);
+  bool has_last_digit ZMIJ_DEFAULT(false);
 };
 
 // Here be 🐉s.
