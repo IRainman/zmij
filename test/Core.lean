@@ -29,13 +29,9 @@ power-of-ten table they multiply by. It is the only part that knows formats
 exist, but it is not specific to an algorithm, which is the line that decides
 what belongs here.
 
-The third part relates an implementation's arithmetic to the rule. It works in
-integers, so `scaled_cmp_of_int_eq` turns an integer identity into a comparison
-against the exact value; and it observes those quantities through comparisons it
-can only afford to make approximately. Away from a decision boundary the loss
-cannot change the answer, which is `comparison_stable_of_far`; near one the
-observation is ambiguous, and the ambiguity is a Diophantine question about a
-modular progression, which `ModWindows` answers by kernel-checked certificate.
+The third part relates an implementation's integer arithmetic to exact rational
+comparisons and supplies modular certificates for the narrow decision windows
+where finite-precision observations can be ambiguous.
 
 The first and third parts are not specific to any implementation. The conversion
 results ask only for bounds on the decimal grid, never for a binary format or
@@ -694,12 +690,6 @@ identity such as
 then expresses the exact distance from `c` to `x` through the integer `dist`.
 `scaled_cmp_of_int_eq` turns identities of this form into exact comparisons.
 
-The implementation's actual comparisons are lossy, so each decision has two
-regimes. Away from a decision boundary, the approximation error cannot change
-the result; `comparison_stable_of_far` handles all such cases at once. Near a
-boundary the result is genuinely ambiguous, and `ModWindows` rules out the
-remaining cases with kernel-checked certificates.
-
 None of this knows a particular implementation. An implementation supplies the
 integer identities connecting its quantities to the exact ones, bounds the
 errors in its approximations, and provides certificates for the boundary cases.
@@ -765,18 +755,6 @@ theorem ulp_steps_of_int_eq {scale u' : ℕ} {u : ℚ} (hscale : 0 < scale)
     (mul_lt_mul_iff_of_pos_right hscaleq).mp ?_⟩
   · rw [one_mul, hu]; exact_mod_cast hlo
   · rw [hu]; exact_mod_cast hhi
-
-/-! ### Stability away from a boundary -/
-
-/-- Far from the boundary a bounded approximation error cannot change a
-    comparison. `x` is the exact value and `b` the exact boundary; a lossy test
-    compares `x + dx` with `b + db`, the two offsets differing by at most `w`.
-    Once `x` is more than `w` from `b`, the lossy test agrees with both exact
-    tests, which there agree with each other. -/
-theorem comparison_stable_of_far {x b dx db w : ℕ} (hdx : dx ≤ db + w)
-    (hdb : db ≤ dx + w) (hfar : b + w < x ∨ x + w < b) :
-    ((x + dx < b + db) ↔ x ≤ b) ∧ ((x + dx < b + db) ↔ x < b) := by
-  omega
 
 /-! ### Modular window certificates
 
