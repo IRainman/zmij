@@ -295,9 +295,9 @@ theorem exp_avoids_of_blocks {b : ℕ} (f : ℕ) (e : FPExp fmt)
     `scale - num`. -/
 def occupant : ℕ := 6098265699439592702088126713856255
 
-/-- Both trim comparisons at the occupant decide what the exact ones do. At a
-    fixed exponent and significand that is a closed computation, which is the
-    whole reason this exponent can be finished at all. -/
+/-- The coarse classifier at the occupant agrees with the exact one. At a fixed
+    exponent and significand that is a closed computation, which is the whole
+    reason this exponent can be finished at all. -/
 private theorem occupant_trims_agree :
     TrimsAgree occupant (⟨-2266⟩ : FPExp binary128) := by
   unfold TrimsAgree
