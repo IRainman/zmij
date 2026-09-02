@@ -415,12 +415,10 @@ ZMIJ_INLINE auto div10(uint64_t x) noexcept -> uint64_t {
 // floor(log10(3/4 * 2**bin_exp)) otherwise, without branching.
 constexpr auto compute_dec_exp(int bin_exp, bool regular = true) noexcept
     -> int {
-  assert(bin_exp >= -1334 && bin_exp <= 2620);
-  // log10_3_over_4_sig = -log10(3/4) * 2**log10_2_exp rounded to a power of 2
-  constexpr int log10_3_over_4_sig = 131072;
-  // log10_2_sig = round(log10(2) * 2**log10_2_exp)
-  constexpr int log10_2_sig = 315653, log10_2_exp = 20;
-  return (bin_exp * log10_2_sig - !regular * log10_3_over_4_sig) >> log10_2_exp;
+  // 315653 is round(log10(2) * 2**20) and 131072 is -log10(3/4) * 2**20
+  // rounded to a power of two.
+  return assert(bin_exp >= -1334 && bin_exp <= 2620),
+         (bin_exp * 315653 - !regular * 131072) >> 20;
 }
 
 constexpr auto ilog2(int n) noexcept -> int {
@@ -741,9 +739,9 @@ struct exp_float_shuffle_table {
 };
 
 constexpr auto fixed_entry_align() noexcept -> int {
-  if (ZMIJ_USE_SSE4_1) return 64;  // Align to a cache line.
-  // Align entry to 32 bytes so indexing uses `lsl #5` not `umaddl`.
-  return ZMIJ_AARCH64 && !ZMIJ_OPTIMIZE_SIZE ? 32 : 1;
+  // 64 aligns entry to a cache line; 32 makes indexing use `lsl #5` rather
+  // than `umaddl`.
+  return ZMIJ_USE_SSE4_1 ? 64 : ZMIJ_AARCH64 && !ZMIJ_OPTIMIZE_SIZE ? 32 : 1;
 }
 
 // Per-decimal-exponent buffer layout for branchless fixed-notation output.

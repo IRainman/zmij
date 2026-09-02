@@ -56,16 +56,14 @@ struct uint128 {
   explicit constexpr operator uint64_t() const noexcept { return lo; }
 
   constexpr auto operator+(uint128 rhs) const noexcept -> uint128 {
-    uint64_t s = lo + rhs.lo;
-    return {hi + rhs.hi + (s < lo), s};
+    return {hi + rhs.hi + (lo + rhs.lo < lo), lo + rhs.lo};
   }
   constexpr auto operator-(uint128 rhs) const noexcept -> uint128 {
-    uint64_t d = lo - rhs.lo;
-    return {hi - rhs.hi - (d > lo), d};
+    return {hi - rhs.hi - (lo - rhs.lo > lo), lo - rhs.lo};
   }
   constexpr auto operator%(uint32_t d) const noexcept -> uint64_t {
-    uint64_t m = (UINT64_MAX % d + 1) % d;  // 2**64 mod d, fits in 32 bits
-    return ((hi % d) * m + lo % d) % d;
+    // (UINT64_MAX % d + 1) % d is 2**64 mod d, which fits in 32 bits.
+    return ((hi % d) * ((UINT64_MAX % d + 1) % d) + lo % d) % d;
   }
   constexpr auto operator&(uint128 rhs) const noexcept -> uint128 {
     return {hi & rhs.hi, lo & rhs.lo};
@@ -77,16 +75,16 @@ struct uint128 {
     return {hi ^ rhs.hi, lo ^ rhs.lo};
   }
   constexpr auto operator<<(int s) const noexcept -> uint128 {
-    if (s == 0) return *this;
-    if (s < 64) return {hi << s | lo >> (64 - s), lo << s};
-    if (s < 128) return {lo << (s - 64), 0};
-    return {0, 0};
+    return s == 0    ? *this
+           : s < 64  ? uint128(hi << s | lo >> (64 - s), lo << s)
+           : s < 128 ? uint128(lo << (s - 64), 0)
+                     : uint128(0, 0);
   }
   constexpr auto operator>>(int s) const noexcept -> uint128 {
-    if (s == 0) return *this;
-    if (s < 64) return {hi >> s, lo >> s | hi << (64 - s)};
-    if (s < 128) return {0, hi >> (s - 64)};
-    return {0, 0};
+    return s == 0    ? *this
+           : s < 64  ? uint128(hi >> s, lo >> s | hi << (64 - s))
+           : s < 128 ? uint128(0, hi >> (s - 64))
+                     : uint128(0, 0);
   }
 
   constexpr auto operator==(uint128 rhs) const noexcept -> bool {
