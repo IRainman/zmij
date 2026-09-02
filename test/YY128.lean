@@ -39,7 +39,7 @@ explicit request to verify binary128.
 | `shift_nonneg_sweep` | 32,766 exponents | 11s |
 | `Power10Normalized` | 9,865 indices | 5s |
 | `trim_sweep` | 32,766 exponents | 28s |
-| `exp_refuted`, `one_refuted` | 32,766 certificates each | ~3 min |
+| coarse and unit-step certificates | 32,766 each | ~3 min |
 
 Three quarters of the four minutes is the kernel reducing closed terms, and what
 that costs is the number of arithmetic operations rather than their width: it
@@ -67,20 +67,21 @@ sixteen times as many of them.
 ## The one exponent that needs more than a certificate
 
 At `e = -2266` a significand's gap lands inside a coarse window, so no
-multiplier refutes the box there and `exp_refuted` cannot be a certificate. The
-margin is thin by construction: dropping `width + 4 = 132` of the table's 256
-bits leaves a window of relative width `2^-127.3` against a significand box of
-`2^113`, so the expected number of occupants is `2^-15` per window per exponent.
+multiplier refutes the significand range there and `coarse_resolved` cannot be
+supplied by one certificate. The margin is thin by construction: dropping
+`width + 4 = 132` of the table's 256 bits leaves a window of relative width
+`2^-127.3` against a significand box of `2^113`, so the expected number of
+occupants is `2^-15` per window per exponent.
 Over 32,766 exponents that is a handful, and one of them is real. binary64 has
 the same structure with a `2^-11.3` margin over 2,046 exponents and no such
 case, which is why it needs none of what follows.
 
 yy is right at the `occupant` — the window records that the coarse comparison's
 error bound does not *establish* as much. So the exponent is split: the occupant
-supplies `TrimsAgree` by evaluation, and `exp_avoids_of_blocks` covers the rest
-of the box with 113 certificates per side, over the distances from it rather
-than the significands themselves. Both are confined to this one exponent, and
-the rest of the range is unaffected.
+supplies `CoarseChoiceAgrees` by evaluation, and `exp_avoids_of_blocks` covers
+the rest of the box with 113 certificates per side, over the distances from it
+rather than the significands themselves. Both are confined to this one
+exponent, and the rest of the range is unaffected.
 -/
 
 namespace YY128
@@ -298,9 +299,9 @@ def occupant : ℕ := 6098265699439592702088126713856255
 /-- The coarse classifier at the occupant agrees with the exact one. At a fixed
     exponent and significand that is a closed computation, which is the whole
     reason this exponent can be finished at all. -/
-private theorem occupant_trims_agree :
-    TrimsAgree occupant (⟨-2266⟩ : FPExp binary128) := by
-  unfold TrimsAgree
+private theorem occupant_coarse_choice_agrees :
+    CoarseChoiceAgrees occupant (⟨-2266⟩ : FPExp binary128) := by
+  unfold CoarseChoiceAgrees
   decide +kernel
 
 /-- Close `∃ q, (expWindowsAbove occupant _ i).refutedBy q = true` for a literal
@@ -327,16 +328,16 @@ private theorem below_refuted (i : ℕ) (hi : i < binary128.prec) :
   change i < 113 at hi
   interval_cases i <;> block_below_cert
 
-private theorem exp_refuted (e : ℤ) (hlo : -16494 ≤ e) (hhi : e ≤ 16271)
+private theorem coarse_resolved (e : ℤ) (hlo : -16494 ≤ e) (hhi : e ≤ 16271)
     (f : ℕ) (hr : binary128.Regular f e) :
     ExpAvoids f (⟨e⟩ : FPExp binary128)
-      ∨ TrimsAgree f (⟨e⟩ : FPExp binary128) := by
+      ∨ CoarseChoiceAgrees f (⟨e⟩ : FPExp binary128) := by
   rcases lt_trichotomy e (-2266) with h | h | h
   · exact Or.inl (exp_avoids_of_cert f _ hr
       (exp_refuted_below e hlo (by omega)).choose_spec)
   · subst h
     rcases eq_or_ne f occupant with rfl | hne
-    · exact Or.inr occupant_trims_agree
+    · exact Or.inr occupant_coarse_choice_agrees
     · exact Or.inl (exp_avoids_of_blocks f _ hr hne (by decide +kernel)
         above_refuted below_refuted)
   · exact Or.inl (exp_avoids_of_cert f _ hr
@@ -356,7 +357,7 @@ theorem checks : Checks binary128 := by
         binary128.power10_ratio_normalized hlo hhi
           (-binary128.decimalExponent e) (by omega)
       trim := trim_checks_of_hold _ (trim_sweep e he)
-      exp_refuted := exp_refuted e hlo hhi
+      coarse_resolved := coarse_resolved e hlo hhi
       one_refuted := one_refuted e hlo hhi }
 
 /-! ## Correctness -/

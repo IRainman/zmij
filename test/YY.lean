@@ -874,8 +874,8 @@ theorem exp_no_window_hit {rmin rmax q : ℤ} (f : ℕ) (e : FPExp fmt)
 
 /-- What a refuting multiplier buys at one significand: its gap misses every
     exceptional window. Stated per significand rather than as the certificate
-    itself, so that an exponent whose box no single multiplier covers can reach
-    the same conclusion another way. -/
+    itself, so that an exponent whose significand range no single multiplier
+    covers can reach the same conclusion another way. -/
 def ExpAvoids (f : ℕ) (e : FPExp fmt) : Prop :=
   trimGap f e < trimScale e →
     ∀ rmin rmax : ℤ, (rmin, rmax) ∈ (expWindows e).windows →
@@ -944,7 +944,7 @@ def yyCoarseChoice (f : ℕ) (e : FPExp fmt) : CoarseChoice :=
     coarse-lattice classifier agree. A significand no certificate excludes has
     to supply this directly, which at a concrete exponent and significand is a
     closed computation. -/
-def TrimsAgree (f : ℕ) (e : FPExp fmt) : Prop :=
+def CoarseChoiceAgrees (f : ℕ) (e : FPExp fmt) : Prop :=
   yyCoarseChoice f e = exactCoarseChoice f e
 
 /-- Everything that has to hold of a format at one exponent for yy to be
@@ -952,8 +952,8 @@ def TrimsAgree (f : ℕ) (e : FPExp fmt) : Prop :=
     at that exponent, so a format discharges them by sweeping its range; none of
     them is algebra, and none can be derived from the layout.
 
-    The two `_refuted` fields are the expensive ones: one modular certificate
-    each, and there is one of these records per exponent. -/
+    The two window obligations are the expensive ones: normally one modular
+    certificate each, and there is one of these records per exponent. -/
 structure ChecksAt (e : FPExp fmt) : Prop where
   /-- `Int.toNat` does not clamp the shift. -/
   shift_nonneg : 0 ≤ shiftRaw e
@@ -967,7 +967,8 @@ structure ChecksAt (e : FPExp fmt) : Prop where
   /-- Every significand either misses the coarse windows either side of both
       boundaries, or is one no certificate excludes and decides correctly
       anyway. -/
-  exp_refuted : ∀ f, fmt.Regular f e → ExpAvoids f e ∨ TrimsAgree f e
+  coarse_resolved :
+    ∀ f, fmt.Regular f e → ExpAvoids f e ∨ CoarseChoiceAgrees f e
   /-- The unit-step bands around the midpoint are empty. -/
   one_refuted : ∃ q, (oneWindows e).refutedBy q = true
 
@@ -1205,7 +1206,7 @@ coarse decimal lattice. A disagreement with the exact classification puts
 theorem coarse_choice_eq_exact (hl : Layout fmt) (f : ℕ) (e : FPExp fmt)
     (hr : fmt.Regular f e) (ha : ChecksAt e) :
     yyCoarseChoice f e = exactCoarseChoice f e := by
-  rcases ha.exp_refuted f hr with havoid | hagree
+  rcases ha.coarse_resolved f hr with havoid | hagree
   · have hsh := ha.shift_lt_four
     have hnarrow := trim_two_num_lt_scale e ha.trim
     -- yy's down test is `c ≤ p` for even `f` and `c < p` for odd `f`.
@@ -1881,7 +1882,7 @@ theorem binary64_checks : Checks binary64 := by
       table := b64_table e hlo' hhi'
       trim := trim_checks_of_hold _
         (b64_trim_checks e (by simp only [Finset.mem_Icc]; omega))
-      exp_refuted := fun f hr =>
+      coarse_resolved := fun f hr =>
         Or.inl (exp_avoids_of_cert f _ hr
           (b64_exp_refuted e hlo' hhi').choose_spec)
       one_refuted := b64_one_refuted e hlo' hhi' }

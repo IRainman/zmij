@@ -156,7 +156,7 @@ theorem checks : Checks binary80 := by
       shift_lt_four := shift_lt_four e hlo' hhi'
       table := table e hlo' hhi'
       trim := trim_checks_of_hold _ (trim_sweep e he)
-      exp_refuted := fun f hr =>
+      coarse_resolved := fun f hr =>
         Or.inl (exp_avoids_of_cert f _ hr (exp_refuted e hlo' hhi').choose_spec)
       one_refuted := one_refuted e hlo' hhi' }
 
