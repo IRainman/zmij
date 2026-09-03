@@ -126,6 +126,60 @@ using uint128_t = unsigned __int128;
 using uint128_t = uint128;
 #endif  // ZMIJ_USE_INT128
 
+// Compressed 128-bit significands of powers of 10.
+template <typename = void> struct pow10_data {
+  static constexpr uint64_t minor[] = {
+      0x8000000000000000, 0xa000000000000000, 0xc800000000000000,
+      0xfa00000000000000, 0x9c40000000000000, 0xc350000000000000,
+      0xf424000000000000, 0x9896800000000000, 0xbebc200000000000,
+      0xee6b280000000000, 0x9502f90000000000, 0xba43b74000000000,
+      0xe8d4a51000000000, 0x9184e72a00000000, 0xb5e620f480000000,
+      0xe35fa931a0000000, 0x8e1bc9bf04000000, 0xb1a2bc2ec5000000,
+      0xde0b6b3a76400000, 0x8ac7230489e80000, 0xad78ebc5ac620000,
+      0xd8d726b7177a8000, 0x878678326eac9000, 0xa968163f0a57b400,
+      0xd3c21bcecceda100, 0x84595161401484a0, 0xa56fa5b99019a5c8,
+      0xcecb8f27f4200f3a,
+  };
+  static constexpr uint128 major[] = {
+      {0xaddcb9e83c6b1793, 0xdf4abe242a1bbf3e},  // -331 (+1 ULP: see fixups)
+      {0xaf8e5410288e1b6f, 0x07ecf0ae5ee44dda},  // -303
+      {0xb1442798f49ffb4a, 0x99cd11cfdf41779d},  // -275
+      {0xb2fe3f0b8599ef07, 0x861fa7e6dcb4aa15},  // -247
+      {0xb4bca50b065abe63, 0x0fed077a756b53aa},  // -219
+      {0xb67f6455292cbf08, 0x1a3bc84c17b1d543},  // -191
+      {0xb84687c269ef3bfb, 0x3d5d514f40eea742},  // -163
+      {0xba121a4650e4ddeb, 0x92f34d62616ce413},  // -135
+      {0xbbe226efb628afea, 0x890489f70a55368c},  // -107
+      {0xbdb6b8e905cb600f, 0x5400e987bbc1c921},  //  -79
+      {0xbf8fdb78849a5f96, 0xde98520472bdd034},  //  -51
+      {0xc16d9a0095928a27, 0x75b7053c0f178294},  //  -23
+      {0xc350000000000000, 0x0000000000000000},  //    5
+      {0xc5371912364ce305, 0x6c28000000000000},  //   33
+      {0xc722f0ef9d80aad6, 0x424d3ad2b7b97ef6},  //   61
+      {0xc913936dd571c84c, 0x03bc3a19cd1e38ea},  //   89
+      {0xcb090c8001ab551c, 0x5cadf5bfd3072cc6},  //  117
+      {0xcd036837130890a1, 0x36dba887c37a8c10},  //  145
+      {0xcf02b2c21207ef2e, 0x94f967e45e03f4bc},  //  173
+      {0xd106f86e69d785c7, 0xe13336d701beba52},  //  201
+      {0xd31045a8341ca07c, 0x1ede48111209a051},  //  229
+      {0xd51ea6fa85785631, 0x552a74227f3ea566},  //  257
+      {0xd732290fbacaf133, 0xa97c177947ad4096},  //  285
+      {0xd94ad8b1c7380874, 0x18375281ae7822bd},  //  313 (+1 ULP: see fixups)
+      {0xdb68c2ca82ed2a05, 0xa67398db9f6820e1},  //  341
+  };
+  static constexpr uint32_t fixups[] = {
+      0x8d8fc810, 0x06100293, 0x19000000, 0x00100000, 0x00000908, 0x00000000,
+      0x04e00300, 0x3807e0b2, 0x3d83d793, 0x0006f5cc, 0x00000000, 0xffff0000,
+      0x8076337d, 0x4ff45ba0, 0x09405033, 0x034376d9, 0x09000000, 0x4e100501,
+      0x076d14dc, 0xf964f45e, 0x0000003d};
+};
+
+#ifndef __cpp_inline_variables
+template <typename T> constexpr uint64_t pow10_data<T>::minor[];
+template <typename T> constexpr uint128 pow10_data<T>::major[];
+template <typename T> constexpr uint32_t pow10_data<T>::fixups[];
+#endif
+
 // Divides x by 10 in place and returns the remainder.
 inline auto divmod10(uint128_t& x) noexcept -> uint64_t {
 #if ZMIJ_USE_INT128
