@@ -241,6 +241,8 @@ ZMIJ_INLINE auto select(uint64_t condition, int64_t true_value,
   return false_value;
 }
 
+using zmij::detail::compute_dec_exp;
+using zmij::detail::float_traits;
 using zmij::detail::uint128;
 using zmij::detail::uint128_t;
 
@@ -410,78 +412,6 @@ ZMIJ_INLINE auto div10(uint64_t x) noexcept -> uint64_t {
   constexpr uint64_t div10_sig64 = (1ull << 63) / 5 + 1;
   return ZMIJ_USE_INT128 ? umul128_hi64(x, div10_sig64) : x / 10;
 }
-
-// Computes the decimal exponent as floor(log10(2**bin_exp)) if regular or
-// floor(log10(3/4 * 2**bin_exp)) otherwise, without branching.
-constexpr auto compute_dec_exp(int bin_exp, bool regular = true) noexcept
-    -> int {
-  // 315653 is round(log10(2) * 2**20) and 131072 is -log10(3/4) * 2**20
-  // rounded to a power of two.
-  return assert(bin_exp >= -1334 && bin_exp <= 2620),
-         (bin_exp * 315653 - !regular * 131072) >> 20;
-}
-
-constexpr auto ilog2(int n) noexcept -> int {
-  return n > 1 ? 1 + ilog2(n >> 1) : 0;
-}
-
-template <typename Float> struct float_traits : std::numeric_limits<Float> {
-  static_assert(float_traits::is_iec559, "IEEE 754 required");
-
-  // x87 80-bit stores the integer bit explicitly (digits == 64), so its
-  // exponent sits one bit higher than the implicit-bit binary32/64/128 layouts.
-  static constexpr int num_sig_bits = float_traits::digits - 1;
-  static constexpr int num_exp_bits = ilog2(float_traits::max_exponent) + 1;
-  static constexpr int exp_shift =
-      num_sig_bits + (float_traits::digits == 64 ? 1 : 0);
-  static constexpr int num_bits = exp_shift + num_exp_bits + 1;
-  static constexpr int exp_mask = (1 << num_exp_bits) - 1;
-  static constexpr int exp_bias = (1 << (num_exp_bits - 1)) - 1;
-  static constexpr int exp_offset = exp_bias + num_sig_bits;
-  static constexpr int min_fixed_dec_exp = -4;
-  static constexpr int max_fixed_dec_exp =
-      compute_dec_exp(float_traits::digits + 1) - 1;
-
-  using sig_type = typename std::conditional<
-      num_bits <= 32, uint32_t,
-      typename std::conditional<num_bits <= 64, uint64_t,
-                                uint128_t>::type>::type;
-  static constexpr sig_type implicit_bit = sig_type(1) << num_sig_bits;
-
-  // Bounds for the exact big-integer path (write_big): the significand times
-  // 5**k (k up to exp_offset + num_sig_bits - 1) fits in big_bits bits, hence
-  // big_limbs base-2**32 limbs and big_digits decimal digits. 2322/1000 and
-  // 30103/100000 over-approximate log2(5) and log10(2); the +2 rounds the digit
-  // count up and reserves one carry digit.
-  static constexpr int big_bits =
-      num_sig_bits + 2 + (exp_offset + num_sig_bits - 1) * 2322 / 1000;
-  static constexpr int big_limbs = (big_bits + 31) / 32;
-  static constexpr int big_digits = big_bits * 30103 / 100000 + 2;
-
-  static auto to_bits(Float value) noexcept -> sig_type {
-    sig_type bits = sig_type();
-    memcpy(&bits, &value, sizeof(value));
-    return bits;
-  }
-
-  static auto is_negative(sig_type bits) noexcept -> bool {
-    return ((bits >> (num_bits - 1)) & 1) != 0;
-  }
-  static auto get_sig(sig_type bits) noexcept -> sig_type {
-    return bits & (implicit_bit - 1);
-  }
-  static auto get_exp(sig_type bits) noexcept -> int64_t {
-    return int64_t(uint64_t(bits >> exp_shift) & unsigned(exp_mask));
-  }
-  static auto is_normal(int64_t bin_exp) noexcept -> bool {
-    // Fold subnormal/zero (exp 0) and inf/nan (exp exp_mask) into one check.
-    return unsigned(bin_exp - 1) < unsigned(exp_mask - 1);
-  }
-};
-
-template <typename Float>
-constexpr
-    typename float_traits<Float>::sig_type float_traits<Float>::implicit_bit;
 
 constexpr uint64_t pow10s[] = {
     1,
