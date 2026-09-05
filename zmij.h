@@ -16,6 +16,22 @@
 #include <limits>       // std::numeric_limits
 #include <type_traits>  // std::conditional
 
+#ifdef _MSVC_LANG
+#  define ZMIJ_CPLUSPLUS _MSVC_LANG
+#else
+#  define ZMIJ_CPLUSPLUS __cplusplus
+#endif
+
+#if ZMIJ_CPLUSPLUS >= 202002L
+#  include <bit>  // std::bit_cast
+#endif
+
+#ifdef __cpp_lib_is_constant_evaluated
+#  define ZMIJ_CONSTEXPR20 constexpr
+#else
+#  define ZMIJ_CONSTEXPR20
+#endif
+
 namespace zmij {
 
 enum {
@@ -177,7 +193,13 @@ template <typename Float> struct float_traits : std::numeric_limits<Float> {
   static constexpr int big_limbs = (big_bits + 31) / 32;
   static constexpr int big_digits = big_bits * 30103 / 100000 + 2;
 
-  static auto to_bits(Float value) noexcept -> sig_type {
+  static ZMIJ_CONSTEXPR20 auto to_bits(Float value) noexcept -> sig_type {
+#if defined(__cpp_lib_bit_cast) && __cpp_lib_bit_cast >= 201806L
+    if (std::is_constant_evaluated()) {
+      if constexpr (sizeof(sig_type) == sizeof(Float))
+        return std::bit_cast<sig_type>(value);
+    }
+#endif
     sig_type bits = sig_type();
     memcpy(&bits, &value, sizeof(value));
     return bits;

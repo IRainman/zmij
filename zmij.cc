@@ -159,10 +159,8 @@ namespace {
 
 #ifdef __cpp_lib_is_constant_evaluated
 using std::is_constant_evaluated;
-#  define ZMIJ_CONSTEXPR20 constexpr
 #else
 constexpr auto is_constant_evaluated() -> bool { return false; }
-#  define ZMIJ_CONSTEXPR20
 #endif
 
 #if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
