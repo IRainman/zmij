@@ -36,12 +36,6 @@
 #  define ZMIJ_CONSTEXPR20
 #endif
 
-#ifdef __cpp_consteval
-#  define ZMIJ_CONSTEVAL consteval
-#else
-#  define ZMIJ_CONSTEVAL
-#endif
-
 // Disabling C++14 relaxed constexpr costs ~2x, so it is opt-in, not detected.
 #ifndef ZMIJ_USE_CONSTEXPR
 #  define ZMIJ_USE_CONSTEXPR 1
@@ -384,11 +378,11 @@ inline ZMIJ_CONSTEXPR auto compute_exp_shift(int bin_exp,
   // pow10_bin_exp = floor(log2(10**-dec_exp))
   int pow10_bin_exp = -dec_exp * log2_pow10_sig >> log2_pow10_exp;
   // pow10 = ((pow10_hi << 64) | pow10_lo) * 2**(pow10_bin_exp - 127)
-  return bin_exp + pow10_bin_exp + 1;
+  return static_cast<signed char>(bin_exp + pow10_bin_exp + 1);
 }
 
 // Converts the nonzero finite binary value bin_sig * 2**bin_exp using yy.
-inline ZMIJ_CONSTEVAL auto to_decimal(uint64_t bin_sig, int bin_exp) noexcept
+inline ZMIJ_CONSTEXPR20 auto to_decimal(uint64_t bin_sig, int bin_exp) noexcept
     -> dec_fp<> {
   assert(bin_sig != 0);
   constexpr uint64_t implicit_bit = float_traits<double>::implicit_bit;
@@ -425,6 +419,76 @@ inline ZMIJ_CONSTEVAL auto to_decimal(uint64_t bin_sig, int bin_exp) noexcept
   uint64_t dec_one = p.hi + round_u1;
   uint64_t dec_ten = ten + (round_u0 ? 10 : 0);
   return {round_d0 || round_u0 ? dec_ten : dec_one, dec_exp, false};
+}
+
+inline ZMIJ_CONSTEXPR20 auto write_constexpr(char* out, double value) noexcept
+    -> char* {
+  using traits = float_traits<double>;
+  uint64_t bits = traits::to_bits(value);
+  int raw_exp = int(traits::get_exp(bits));
+  uint64_t bin_sig = traits::get_sig(bits);
+
+  if (traits::is_negative(bits)) *out++ = '-';
+  if (raw_exp == traits::exp_mask) {
+    const char* text = bin_sig != 0 ? "nan" : "inf";
+    *out++ = text[0];
+    *out++ = text[1];
+    *out++ = text[2];
+    return out;
+  }
+  if (raw_exp == 0 && bin_sig == 0) {
+    *out++ = '0';
+    return out;
+  }
+
+  int bin_exp = (raw_exp == 0 ? 1 : raw_exp) - traits::exp_offset;
+  if (raw_exp != 0) bin_sig |= traits::implicit_bit;
+  dec_fp<> dec = to_decimal(bin_sig, bin_exp);
+  while (dec.sig % 10 == 0) {
+    dec.sig /= 10;
+    ++dec.exp;
+  }
+
+  char digits[traits::max_digits10] = {};
+  char* first = digits + sizeof(digits);
+  do {
+    *--first = char('0' + dec.sig % 10);
+    dec.sig /= 10;
+  } while (dec.sig != 0);
+  int num_digits = int(digits + sizeof(digits) - first);
+  int lead_exp = dec.exp + num_digits - 1;
+
+  if (lead_exp >= traits::min_fixed_dec_exp &&
+      lead_exp <= traits::max_fixed_dec_exp) {
+    int point_pos = lead_exp + 1;
+    if (point_pos <= 0) {
+      *out++ = '0';
+      *out++ = '.';
+      for (int i = point_pos; i < 0; ++i) *out++ = '0';
+    }
+    for (int i = 0; i < num_digits; ++i) {
+      if (point_pos > 0 && i == point_pos) *out++ = '.';
+      *out++ = first[i];
+    }
+    for (int i = num_digits; i < point_pos; ++i) *out++ = '0';
+    return out;
+  }
+
+  *out++ = first[0];
+  if (num_digits > 1) {
+    *out++ = '.';
+    for (int i = 1; i < num_digits; ++i) *out++ = first[i];
+  }
+  *out++ = 'e';
+  *out++ = lead_exp >= 0 ? '+' : '-';
+  unsigned abs_exp = unsigned(lead_exp >= 0 ? lead_exp : -lead_exp);
+  if (abs_exp >= 100) {
+    *out++ = char('0' + abs_exp / 100);
+    abs_exp %= 100;
+  }
+  *out++ = char('0' + abs_exp / 10);
+  *out++ = char('0' + abs_exp % 10);
+  return out;
 }
 
 // Divides x by 10 in place and returns the remainder.
@@ -603,7 +667,17 @@ template <> struct buffer_sizes<long double> {
 ///
 /// Returns a pointer past the last character written; if the representation
 /// exceeds `n` characters, only the first `n` are written.
-inline auto write(char* out, size_t n, double value) noexcept -> char* {
+inline ZMIJ_CONSTEXPR20 auto write(char* out, size_t n, double value) noexcept
+    -> char* {
+#ifdef __cpp_lib_is_constant_evaluated
+  if (std::is_constant_evaluated()) {
+    char buffer[double_buffer_size] = {};
+    size_t size = size_t(detail::write_constexpr(buffer, value) - buffer);
+    size_t count = size < n ? size : n;
+    for (size_t i = 0; i < count; ++i) out[i] = buffer[i];
+    return out + count;
+  }
+#endif
   char buffer[double_buffer_size];
   if (n >= sizeof(buffer)) return detail::write(out, value);
   return detail::copy_clamped(out, n, buffer, detail::write(buffer, value));
