@@ -25,6 +25,7 @@ char* zmij_detail_write_fixed_f(float value, char* buffer, int precision);
 char* zmij_detail_write_fixed(double value, char* buffer, int precision);
 size_t zmij_detail_write_fixed_big(char* out, size_t n, double value,
                                    int precision);
+char* zmij_detail_write_hex(double value, char* buffer);
 
 enum {
   // Minimum buffer sizes for zmij_write and zmij_write_f.
@@ -39,6 +40,9 @@ enum {
   // precision up to 18.
   zmij_float_fixed_buffer_size = 59,
   zmij_double_fixed_buffer_size = 329,
+  // Buffer sizes that always suffice for the zmij_write_hex functions.
+  zmij_float_hex_buffer_size = 16,
+  zmij_double_hex_buffer_size = 24,
 };
 
 /// Writes the shortest correctly rounded decimal representation of `value` to
@@ -182,6 +186,31 @@ static inline char* zmij_write_fixed_f(char* out, size_t n, float value,
     return zmij_detail_write_fixed_f(value, out, precision);
   char buffer[zmij_float_fixed_buffer_size];
   size_t size = zmij_detail_write_fixed_f(value, buffer, precision) - buffer;
+  if (size > n) size = n;
+  memcpy(out, buffer, size);
+  return out + size;
+}
+
+/// Writes `value` in hexadecimal floating-point notation (like printf's %a) in
+/// its shortest form (e.g. -0x1.8p+1) to `out`, without a null terminator.
+///
+/// Returns a pointer past the last character written; if the representation
+/// exceeds `n` characters, only the first `n` are written.
+static inline char* zmij_write_hex(char* out, size_t n, double value) {
+  if (n >= zmij_double_hex_buffer_size)
+    return zmij_detail_write_hex(value, out);
+  char buffer[zmij_double_hex_buffer_size];
+  size_t size = zmij_detail_write_hex(value, buffer) - buffer;
+  if (size > n) size = n;
+  memcpy(out, buffer, size);
+  return out + size;
+}
+
+static inline char* zmij_write_hex_f(char* out, size_t n, float value) {
+  if (n >= zmij_float_hex_buffer_size)
+    return zmij_detail_write_hex((double)value, out);
+  char buffer[zmij_float_hex_buffer_size];
+  size_t size = zmij_detail_write_hex((double)value, buffer) - buffer;
   if (size > n) size = n;
   memcpy(out, buffer, size);
   return out + size;

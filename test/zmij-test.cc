@@ -25,10 +25,12 @@ template <typename Float> struct buffer_sizes;
 template <> struct buffer_sizes<float> {
   static const size_t scientific = zmij_float_scientific_buffer_size;
   static const size_t fixed = zmij_float_fixed_buffer_size;
+  static const size_t hex = zmij_float_hex_buffer_size;
 };
 template <> struct buffer_sizes<double> {
   static const size_t scientific = zmij_double_scientific_buffer_size;
   static const size_t fixed = zmij_double_fixed_buffer_size;
+  static const size_t hex = zmij_double_hex_buffer_size;
 };
 
 auto write(char* out, size_t n, double value) noexcept -> char* {
@@ -60,6 +62,12 @@ auto write_fixed(char* out, size_t n, double value, int precision) noexcept
 auto write_fixed(char* out, size_t n, float value, int precision) noexcept
     -> char* {
   return zmij_write_fixed_f(out, n, value, precision);
+}
+auto write_hex(char* out, size_t n, double value) noexcept -> char* {
+  return zmij_write_hex(out, n, value);
+}
+auto write_hex(char* out, size_t n, float value) noexcept -> char* {
+  return zmij_write_hex_f(out, n, value);
 }
 }  // namespace zmij
 #endif
@@ -1151,7 +1159,6 @@ TEST(double_test, write_general_irregular) {
   }
 }
 
-#if !ZMIJ_C
 template <typename Float> static auto to_hex(Float value) -> std::string {
   char buffer[zmij::buffer_sizes<Float>::hex];
   return {buffer, zmij::write_hex(buffer, sizeof(buffer), value)};
@@ -1192,6 +1199,7 @@ TEST(double_test, write_hex_no_buffer) {
   EXPECT_EQ(std::string(buf, end), "-0x1");
 }
 
+#if !ZMIJ_C
 // Double-exact values so the expected output is the same whether long double
 // is x87 80-bit, IEEE binary128, or plain double. This is not compared against
 // snprintf's %La: glibc's 80-bit %La uses a non-leading-1 form (e.g. "0xcp-3"

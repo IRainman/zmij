@@ -2059,6 +2059,21 @@ static char* write_big_exp(char* buffer, int dec_exp) {
   return buffer + 2;
 }
 
+// Writes the binary exponent as 'p', a sign and at least one digit (e.g. p+3).
+static char* write_hex_exp(char* buffer, int bin_exp) {
+  buffer = write2(buffer, 'p', bin_exp < 0 ? '-' : '+');
+  unsigned abs_exp = (unsigned)(bin_exp < 0 ? -bin_exp : bin_exp);
+  char digits[8];
+  char* p = digits + sizeof(digits);
+  do {
+    *--p = (char)('0' + abs_exp % 10);
+    abs_exp /= 10;
+  } while (abs_exp != 0);
+  size_t n = (size_t)(digits + sizeof(digits) - p);
+  memcpy(buffer, p, n);
+  return buffer + n;
+}
+
 // Scales a subnormal significand up so that its leading bit lands at the
 // implicit-bit position, adjusting the raw exponent to keep the value the same.
 static ZMIJ_INLINE void normalize(uint64_t* bin_sig, int64_t* bin_exp,
@@ -2785,6 +2800,41 @@ static ZMIJ_INLINE char* do_write_fixed(double value, char* buffer,
   return buffer + total + 1;
 }
 
+static ZMIJ_INLINE char* do_write_hex(double value, char* buffer) {
+  uint64_t bits = double_to_bits(value);
+  int64_t bin_exp = double_get_exp(bits);
+  uint64_t bin_sig = double_get_sig(bits);
+
+  *buffer = '-';
+  buffer += double_is_negative(bits);
+
+  bool zero = false;
+  bool is_normal = (unsigned)(bin_exp - 1) < (unsigned)(double_exp_mask - 1);
+  if (ZMIJ_UNLIKELY(!is_normal)) {
+    if (bin_exp != 0) return write_inf_nan(buffer, bin_sig != 0);
+    zero = bin_sig == 0;
+    if (zero)
+      bin_exp = double_exp_bias;  // This cancels to 0 below.
+    else
+      normalize(&bin_sig, &bin_exp, double_num_sig_bits);
+  }
+  bin_exp -= double_exp_bias;
+
+  buffer = write2(buffer, '0', 'x');
+  *buffer++ = (char)('0' + !zero);
+
+  bin_sig <<= 64 - double_num_sig_bits;
+  if (bin_sig != 0) {
+    *buffer++ = '.';
+    do {
+      *buffer++ = "0123456789abcdef"[bin_sig >> 60];
+      bin_sig <<= 4;
+    } while (bin_sig != 0);
+  }
+
+  return write_hex_exp(buffer, (int)bin_exp);
+}
+
 // Shared implementation of the public write entry points. `num_bits` is a
 // compile-time constant after ZMIJ_INLINE; the few branches on it fold away.
 static ZMIJ_INLINE char* do_write(uint64_t bin_sig, int64_t bin_exp,
@@ -3008,4 +3058,8 @@ char* zmij_detail_write_fixed(double value, char* buffer, int precision) {
 size_t zmij_detail_write_fixed_big(char* out, size_t n, double value,
                                    int precision) {
   return do_write_big(out, n, value, precision, zmij_format_fixed);
+}
+
+char* zmij_detail_write_hex(double value, char* buffer) {
+  return do_write_hex(value, buffer);
 }
