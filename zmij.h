@@ -26,10 +26,27 @@
 #  include <bit>  // std::bit_cast
 #endif
 
+#ifdef _MSC_VER
+#  include <intrin.h>  // __lzcnt64/_umul128/__umulh
+#endif
+
 #ifdef __cpp_lib_is_constant_evaluated
 #  define ZMIJ_CONSTEXPR20 constexpr
 #else
 #  define ZMIJ_CONSTEXPR20
+#endif
+
+// Disabling C++14 relaxed constexpr costs ~2x, so it is opt-in, not detected.
+#ifndef ZMIJ_USE_CONSTEXPR
+#  define ZMIJ_USE_CONSTEXPR 1
+#endif
+#if ZMIJ_USE_CONSTEXPR
+#  define ZMIJ_CONSTEXPR constexpr
+#  define ZMIJ_DEFAULT(...) = __VA_ARGS__
+#else
+#  define ZMIJ_CONSTEXPR
+// A default member initializer makes its class a non-aggregate in C++11.
+#  define ZMIJ_DEFAULT(...)
 #endif
 
 namespace zmij {
@@ -145,6 +162,45 @@ using uint128_t = unsigned __int128;
 #else
 using uint128_t = uint128;
 #endif  // ZMIJ_USE_INT128
+
+// Computes 128-bit result of multiplication of two 64-bit unsigned integers.
+inline ZMIJ_CONSTEXPR auto umul128(uint64_t x, uint64_t y) noexcept
+    -> uint128_t {
+#if ZMIJ_USE_INT128
+  return uint128_t(x) * y;
+#else
+#  ifdef __cpp_lib_is_constant_evaluated
+  if (!std::is_constant_evaluated()) {
+#    if defined(_M_AMD64)
+    uint64_t hi = 0;
+    uint64_t lo = _umul128(x, y, &hi);
+    return {hi, lo};
+#    elif defined(_M_ARM64)
+    return {__umulh(x, y), x * y};
+#    endif
+  }
+#  endif
+  uint64_t a = x >> 32;
+  uint64_t b = uint32_t(x);
+  uint64_t c = y >> 32;
+  uint64_t d = uint32_t(y);
+
+  uint64_t ac = a * c;
+  uint64_t bc = b * c;
+  uint64_t ad = a * d;
+  uint64_t bd = b * d;
+
+  uint64_t cs = (bd >> 32) + uint32_t(ad) + uint32_t(bc);  // cross sum
+  return {ac + (ad >> 32) + (bc >> 32) + (cs >> 32), (cs << 32) + uint32_t(bd)};
+#endif  // ZMIJ_USE_INT128
+}
+
+inline ZMIJ_CONSTEXPR auto umul192_hi128(uint64_t x_hi, uint64_t x_lo,
+                                         uint64_t y) noexcept -> uint128 {
+  uint128_t p = umul128(x_hi, y);
+  uint64_t lo = uint64_t(p) + uint64_t(umul128(x_lo, y) >> 64);
+  return {uint64_t(p >> 64) + (lo < uint64_t(p)), lo};
+}
 
 // Computes the decimal exponent as floor(log10(2**bin_exp)) if regular or
 // floor(log10(3/4 * 2**bin_exp)) otherwise, without branching.
@@ -279,6 +335,70 @@ template <typename T> constexpr uint64_t pow10_data<T>::minor[];
 template <typename T> constexpr uint128 pow10_data<T>::major[];
 template <typename T> constexpr uint32_t pow10_data<T>::fixups[];
 #endif
+
+// Computes the 128-bit significand of 10**exp rounded down using method by
+// Dougall Johnson.
+inline ZMIJ_CONSTEXPR auto compute_pow10(int exp) noexcept -> uint128 {
+  using data = pow10_data<>;
+  constexpr int min_exp = -307;
+  constexpr int stride = sizeof(data::minor) / sizeof(*data::minor);
+  assert(exp >= min_exp && exp <= 341);
+  unsigned i = unsigned(exp - min_exp);
+  uint64_t m = data::minor[(i + 24) % stride];
+  uint128 h = data::major[(i + 24) / stride];
+
+  uint64_t h1 = uint64_t(umul128(h.lo, m) >> 64);
+  uint64_t c0 = h.lo * m;
+  uint64_t c1 = h1 + h.hi * m;
+  uint64_t c2 = (c1 < h1) + uint64_t(umul128(h.hi, m) >> 64);
+
+  uint128 result = (c2 >> 63) != 0
+                       ? uint128{c2, c1}
+                       : uint128{c2 << 1 | c1 >> 63, c1 << 1 | c0 >> 63};
+  result.lo -= (data::fixups[i >> 5] >> (i & 31)) & 1;
+  return result;
+}
+
+// Converts the nonzero finite binary value bin_sig * 2**bin_exp using yy.
+inline ZMIJ_CONSTEXPR20 auto to_decimal(uint64_t bin_sig, int bin_exp) noexcept
+    -> dec_fp<> {
+  constexpr uint64_t implicit_bit = float_traits<double>::implicit_bit;
+  assert(bin_sig != 0 && bin_exp >= -1074 && bin_exp <= 971);
+  bool irregular = bin_sig == implicit_bit;
+  // 131237 is round(-log10(3/4) * 2**20).
+  int dec_exp = (bin_exp * 315653 - (irregular ? 131237 : 0)) >> 20;
+  int shift = bin_exp + ((-dec_exp * 217707) >> 16);
+  uint128 pow10 = compute_pow10(-dec_exp);
+  uint128 p = umul192_hi128(pow10.hi, pow10.lo, bin_sig << (shift + 1));
+
+  uint64_t one = p.hi % 10;
+  uint64_t ten = p.hi - one;
+  uint64_t c = one << 60 | p.lo >> 4;
+  uint64_t half_ulp = pow10.hi >> (4 - shift);
+
+  bool round_u1 = false;
+  bool round_d0 = false;
+  if (irregular) {
+    bool round_d1 = (half_ulp >> 1) >= (p.lo >> 4);
+    round_u1 = p.lo > (uint64_t(1) << 63) || !round_d1;
+    round_d0 = (half_ulp >> 1) >= c;
+  } else {
+    uint64_t half = uint64_t(1) << 63;
+    round_u1 = p.lo == half ? (p.hi & 1) != 0 : p.lo > half;
+    round_d0 = half_ulp == c ? (bin_sig & 1) == 0 : c < half_ulp;
+  }
+
+  uint64_t t0 = uint64_t(10) << 60;
+  uint64_t t1 = c + half_ulp;
+  bool even = (bin_sig & 1) == 0;
+  bool round_u0 = t0 <= t1;
+  // Exact trim-up boundaries round toward the even binary significand.
+  if (t1 + 1 == t0 || (dec_exp == 0 && t1 == t0)) round_u0 = even;
+
+  uint64_t dec_one = p.hi + round_u1;
+  uint64_t dec_ten = ten + (round_u0 ? 10 : 0);
+  return {round_d0 || round_u0 ? dec_ten : dec_one, dec_exp, false};
+}
 
 // Divides x by 10 in place and returns the remainder.
 inline auto divmod10(uint128_t& x) noexcept -> uint64_t {

@@ -74,7 +74,6 @@ static_assert(!ZMIJ_USE_SSE4_1 || ZMIJ_USE_SSE);
 
 #ifdef _MSC_VER
 #  define ZMIJ_MSC_VER _MSC_VER
-#  include <intrin.h>  // __lzcnt64/_umul128/__umulh
 #else
 #  define ZMIJ_MSC_VER 0
 #endif
@@ -140,19 +139,6 @@ static_assert(!ZMIJ_USE_SSE4_1 || ZMIJ_USE_SSE);
 #  define ZMIJ_CONST_DECL
 #else
 #  define ZMIJ_CONST_DECL static constexpr
-#endif
-
-// Disabling C++14 relaxed constexpr costs ~2x, so it is opt-in, not detected.
-#ifndef ZMIJ_USE_CONSTEXPR
-#  define ZMIJ_USE_CONSTEXPR 1
-#endif
-#if ZMIJ_USE_CONSTEXPR
-#  define ZMIJ_CONSTEXPR constexpr
-#  define ZMIJ_DEFAULT(...) = __VA_ARGS__
-#else
-#  define ZMIJ_CONSTEXPR
-// A default member initializer makes its class a non-aggregate in C++11.
-#  define ZMIJ_DEFAULT(...)
 #endif
 
 namespace {
@@ -241,6 +227,8 @@ ZMIJ_INLINE auto select(uint64_t condition, int64_t true_value,
 
 using zmij::detail::compute_dec_exp;
 using zmij::detail::float_traits;
+using zmij::detail::umul128;
+using zmij::detail::umul192_hi128;
 using zmij::detail::uint128;
 using zmij::detail::uint128_t;
 
@@ -249,35 +237,6 @@ constexpr bool use_umul128_hi64 = true;  // Use umul128_hi64 for division.
 #else
 constexpr bool use_umul128_hi64 = false;
 #endif
-
-// Computes 128-bit result of multiplication of two 64-bit unsigned integers.
-ZMIJ_CONSTEXPR auto umul128(uint64_t x, uint64_t y) noexcept -> uint128_t {
-#if ZMIJ_USE_INT128
-  return uint128_t(x) * y;
-#else
-  if (!is_constant_evaluated()) {
-#  if defined(_M_AMD64) && defined(__cpp_lib_is_constant_evaluated)
-    uint64_t hi = 0;
-    uint64_t lo = _umul128(x, y, &hi);
-    return {hi, lo};
-#  elif defined(_M_ARM64) && defined(__cpp_lib_is_constant_evaluated)
-    return {__umulh(x, y), x * y};
-#  endif
-  }
-  uint64_t a = x >> 32;
-  uint64_t b = uint32_t(x);
-  uint64_t c = y >> 32;
-  uint64_t d = uint32_t(y);
-
-  uint64_t ac = a * c;
-  uint64_t bc = b * c;
-  uint64_t ad = a * d;
-  uint64_t bd = b * d;
-
-  uint64_t cs = (bd >> 32) + uint32_t(ad) + uint32_t(bc);  // cross sum
-  return {ac + (ad >> 32) + (bc >> 32) + (cs >> 32), (cs << 32) + uint32_t(bd)};
-#endif  // ZMIJ_USE_INT128
-}
 
 constexpr auto umul128_hi64(uint64_t x, uint64_t y) noexcept -> uint64_t {
   return uint64_t(umul128(x, y) >> 64);
@@ -292,13 +251,6 @@ inline auto umul128_add_hi64(uint64_t x, uint64_t y, uint64_t c) noexcept
   auto p = umul128(x, y);
   return p.hi + (p.lo + c < p.lo);
 #endif
-}
-
-inline auto umul192_hi128(uint64_t x_hi, uint64_t x_lo, uint64_t y) noexcept
-    -> uint128 {
-  uint128_t p = umul128(x_hi, y);
-  uint64_t lo = uint64_t(p) + uint64_t(umul128(x_lo, y) >> 64);
-  return {uint64_t(p >> 64) + (lo < uint64_t(p)), lo};
 }
 
 // Computes a power of ten on the fly (no tables): 10**k = 5**k * 2**k. We raise
@@ -441,31 +393,10 @@ struct pow10_significand_table {
   static constexpr int num_pow10s = 649;
   uint64_t data[compress ? 1 : num_pow10s * 2] = {};
 
-  // Computes the 128-bit significand of 10**i using method by Dougall Johnson.
-  static ZMIJ_CONSTEXPR auto compute(unsigned i) noexcept -> uint128 {
-    using pow10_data = zmij::detail::pow10_data<>;
-    constexpr int stride =
-        sizeof(pow10_data::minor) / sizeof(*pow10_data::minor);
-    auto m = pow10_data::minor[(i + 24) % stride];
-    auto h = pow10_data::major[(i + 24) / stride];
-
-    uint64_t h1 = umul128_hi64(h.lo, m);
-
-    uint64_t c0 = h.lo * m;
-    uint64_t c1 = h1 + h.hi * m;
-    uint64_t c2 = (c1 < h1) + umul128_hi64(h.hi, m);
-
-    uint128 result = (c2 >> 63) != 0
-                         ? uint128{c2, c1}
-                         : uint128{c2 << 1 | c1 >> 63, c1 << 1 | c0 >> 63};
-    result.lo -= (pow10_data::fixups[i >> 5] >> (i & 31)) & 1;
-    return result;
-  }
-
   static ZMIJ_CONSTEXPR auto make() -> pow10_significand_table {
     pow10_significand_table t;
     for (int i = 0; i < num_pow10s && !compress; ++i) {
-      uint128 result = compute(i);
+      uint128 result = zmij::detail::compute_pow10(i - 307);
       if (split_tables) {
         t.data[num_pow10s - i - 1] = result.hi;
         t.data[num_pow10s * 2 - i - 1] = result.lo;
@@ -480,7 +411,7 @@ struct pow10_significand_table {
   ZMIJ_CONSTEXPR20 auto operator[](int dec_exp) const noexcept -> uint128 {
     constexpr int dec_exp_min = -307;
     int i = dec_exp - dec_exp_min;
-    if (compress) return compute(i);
+    if (compress) return zmij::detail::compute_pow10(dec_exp);
     if (!split_tables) {
       const uint64_t* p = data + i * 2;
       return {p[0], p[1]};
