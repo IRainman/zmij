@@ -24,33 +24,19 @@ is correctly rounded on the grid reported with it, which is `correct`.
 callers run it, for a subnormal only; folding it in here is what lets `correct`
 speak of a binary64 value rather than of an already-shifted significand.
 
-`scale` packs the scaled value above two guard bits, bit 1 the 1/2 place and bit
-0 a sticky bit, and `round_even` reads its decision off those two. That rounding
-can carry the significand to `10^p`, a digit too many; `to_decimal` then
-rerounds `demote` of the same packed value and steps the exponent. The
-packed value is inexact twice over, and the two errors are placed so that
-neither can turn a decision:
+The conversion keeps every product bit returned by `umul192_hi128`: an integral
+part and a retained fractional remainder, with only the low 64 product bits
+discarded. `roundFine` compares that remainder directly with one half. If the
+result has one digit too many, `roundCoarse` compares the integral part's last
+decimal digit with five and rounds directly on the grid ten times coarser.
 
-* the table entry is the truncated 128-bit significand of `10^k` with one
-  added, so the computed value never falls below the exact one and a value at or
-  above a midpoint cannot present itself below one;
-* the sticky bit is taken from the product's bits `[64, n-1)`, discarding the
-  low word, so the bump's excess — under `2^64` denominators, `gap_lt` — cannot
-  appear as a set sticky bit and push a value exactly on a midpoint above it.
-
-One ambiguity survives: a value *near* a half-step boundary presents the same
-guard bits as one exactly on it. `tie_windows_refuted` rules that out over every
-significand of every (exponent, precision) pair, and it covers the reported grid
-and the reround's at once: a grid point is an even multiple of half a step and a
-midpoint an odd one, so both are boundaries of the same spacing.
-
-With that ruled out the packed value is not an approximation of the scaled value
-at all. It is that value's canonical guard/sticky encoding at the half step,
-`packed_eq_exact_packed`, which is the invariant the rest of the file turns on:
-correctness of `round_even`, and of `round_even` after `demote`, are then generic
-facts about the encoding. They are the same fact twice, because a demoted
-encoding is the encoding at ten times the half step, `demote_exact_packed`, so
-the reround's grid is the reported grid with a coarser step and nothing else.
+The table entry is the truncated 128-bit significand of `10^k` with one added,
+so the computed value never falls below the exact one. The bump and the
+discarded low product word together are worth less than one retained fraction
+unit. A strict retained comparison therefore cannot be reversed. At apparent
+ties, `tie_windows_refuted` rules out every nonzero displacement over every
+significand of every (exponent, precision) pair, so the apparent boundary is an
+exact one.
 
 Throughout this file:
 * `f`, `e`: binary significand and exponent, denoting `f·2^e`; only `toDecimal`
@@ -61,8 +47,9 @@ Throughout this file:
 
 The scaled value is `exact f e p / step e p`, and everything between the
 arithmetic and the specification is a comparison of integers in that scale.
-`exact_eq` is the one identity it all rests on: the integral part and the 1/2
-bit at their weights, plus a remainder `dev` that the guard bits do not report.
+`exact_split` is the identity it all rests on: the integral part at one whole
+step, plus the retained fraction and the exact displacement left by the table
+bump and discarded low word.
 
 ## Dependencies
 
@@ -71,11 +58,10 @@ bit at their weights, plus a remainder `dev` that the guard bits do not report.
       ← correctly_rounded_of_normalized
           ← value_normalized
       ← rounded_correct
-          ← packed_eq_exact_packed
-              ← exact_eq
-              ← the certificates, through `dev`
-          ← round_even_exact_packed     (the bound, at either grid)
-          ← demote_exact_packed         (the reround's grid only)
+          ← round_fine_nearest
+          ← round_coarse_nearest
+              ← exact_split
+              ← the certificates, through `deviation`
           ← exact_bounds                (the digit count)
           ← value_scaled                (the crossing into ℚ)
 
@@ -112,9 +98,9 @@ set_option maxRecDepth 100000
 /-! ## Żmij's fixed-precision conversion
 
 One 192-bit multiply of the shifted significand by the 128-bit power of ten,
-with the integral part and the two guard bits read out of the product at a fixed
-bit position. The definitions below name each of those pieces, and the shift
-that fills the significand's box before any of them.
+with the integral and retained fractional parts read out of the product. The
+definitions below name those pieces and the shift that fills the significand's
+box before either is read.
 -/
 
 /-- The decimal exponent of the grid the digits are asked for: the exponent of
@@ -159,44 +145,41 @@ def product (f : ℕ) (e : ℤ) (p : ℕ) : ℕ := f * 2 ^ 11 * tableEntry (idx 
 /-- The integral part of the scaled value, `p.hi >> point_shift`. -/
 def integral (f : ℕ) (e : ℤ) (p : ℕ) : ℕ := product f e p / 2 ^ shiftBits e p
 
-/-- The 1/2 bit, the product bit just below the integral part. -/
-def half (f : ℕ) (e : ℤ) (p : ℕ) : ℕ :=
-  product f e p / 2 ^ (shiftBits e p - 1) % 2
+/-- Number of retained fraction values in one integral step. -/
+def fractionUnit (e : ℤ) (p : ℕ) : ℕ := 2 ^ (shiftBits e p - 64)
 
-/-- The product bits below the 1/2 place. zmij sees all but their low 64. -/
-def tail (f : ℕ) (e : ℤ) (p : ℕ) : ℕ := product f e p % 2 ^ (shiftBits e p - 1)
+/-- The retained fraction at one half. -/
+def fractionHalf (e : ℤ) (p : ℕ) : ℕ := 2 ^ (shiftBits e p - 65)
 
-/-- The sticky bit: whether anything zmij can see below the 1/2 place is set.
-    The low 64 product bits are not among them, `umul192_hi128` having dropped
-    them, so this is `tail` from bit 64 up. -/
-def sticky (f : ℕ) (e : ℤ) (p : ℕ) : ℕ :=
-  if tail f e p / 2 ^ 64 = 0 then 0 else 1
+/-- Product bits below the integral part and above the discarded low word. -/
+def fraction (f : ℕ) (e : ℤ) (p : ℕ) : ℕ :=
+  product f e p / 2 ^ 64 % fractionUnit e p
 
-/-- `scale`: the scaled value packed above its two guard bits. zmij writes the
-    three pieces into disjoint bits with `integral << 2 | half << 1 |
-    sticky`. -/
-def packed (f : ℕ) (e : ℤ) (p : ℕ) : ℕ :=
-  4 * integral f e p + 2 * half f e p + sticky f e p
+/-- The discarded low product word. -/
+def low (f : ℕ) (e : ℤ) (p : ℕ) : ℕ := product f e p % 2 ^ 64
 
-/-- `round_even`: a packed value to the nearest integer, ties to even, decided
-    by its two guard bits. -/
-def roundEven (packed : ℕ) : ℕ := (packed + 1 + packed / 4 % 2) / 4
+/-- Round the retained fixed-point value to the nearest integer, ties to even. -/
+def roundFine (f : ℕ) (e : ℤ) (p : ℕ) : ℕ :=
+  let i := integral f e p
+  let r := fraction f e p
+  i + if fractionHalf e p < r ∨
+      (r = fractionHalf e p ∧ i % 2 = 1) then 1 else 0
 
-/-- Repack a packed value one decimal place coarser, folding the digit that
-    leaves into the sticky bit. Unlike the packing above this is written as zmij
-    writes it, because the bit it sets may already be set: what the reround must
-    not do is present the coarser value as exact when a digit was dropped. -/
-def demote (packed : ℕ) : ℕ :=
-  packed / 10 ||| (if packed % 10 = 0 then 0 else 1)
+/-- Round the same retained value directly on the grid ten times coarser. -/
+def roundCoarse (f : ℕ) (e : ℤ) (p : ℕ) : ℕ :=
+  let i := integral f e p
+  let q := i / 10
+  let a := i % 10
+  q + if 5 < a ∨
+      (a = 5 ∧ (fraction f e p ≠ 0 ∨ q % 2 = 1)) then 1 else 0
 
-/-- The rounding itself, on a normalized significand: `round_even` of the
-    packed value, rerounded one place coarser when it comes out a digit too
-    long. -/
+/-- The rounding itself on a normalized significand. The fine candidate is
+    computed first; if it has one digit too many, the retained value is rounded
+    directly on the grid ten times coarser. -/
 def rounded (f : ℕ) (e : ℤ) (p : ℕ) : ℕ × ℤ :=
-  let packed := packed f e p
-  let d := roundEven packed
+  let d := roundFine f e p
   if d < 10 ^ p then (d, decExp e p)
-  else (roundEven (demote packed), decExp e p + 1)
+  else (roundCoarse f e p, decExp e p + 1)
 
 /-- `normalize`'s shift, `clz(bin_sig) - 11` written as a logarithm: what it
     takes to bring the significand's leading bit up to bit 52. It is zero once
@@ -249,10 +232,13 @@ def slack (e : ℤ) (p : ℕ) : ℕ := 2 ^ 64 * den e p
     difference between the product zmij formed and the exact one. -/
 def gap (f : ℕ) (e : ℤ) (p : ℕ) : ℕ := den e p * product f e p - exact f e p
 
-/-- What the guard bits do not report: the product bits below the 1/2 place,
-    in integers, less what the bump added. It is `dev` being zero that makes an
-    apparent tie a real one. -/
-def dev (f : ℕ) (e : ℤ) (p : ℕ) : ℤ := den e p * tail f e p - gap f e p
+/-- Exact displacement from the boundary represented by the retained product. -/
+def deviation (f : ℕ) (e : ℤ) (p : ℕ) : ℤ :=
+  den e p * low f e p - gap f e p
+
+/-- Exact fractional part below `integral`, in the integer scale. -/
+def residual (f : ℕ) (e : ℤ) (p : ℕ) : ℤ :=
+  slack e p * fraction f e p + deviation f e p
 
 /-! ## Finite checks
 
@@ -281,8 +267,8 @@ theorem grid_bounds : ∀ p ∈ Finset.Icc 1 18, ∀ e ∈ Finset.Icc (-1126 : �
 
 /-- The window problem at an (exponent, precision) pair: the residues of `exact`
     that sit within `slack` of a half-step boundary without sitting on one. A
-    significand there would present the guard bits of a tie without being one,
-    and that is the only way the packed value can mislead.
+    significand there would make a retained boundary look exact when it is not,
+    and that is the only way a direct tie decision can be wrong.
 
     The modulus is half a step rather than a step, which is what lets `0` stand
     for either kind of boundary: the reported grid's midpoints are the odd
@@ -319,9 +305,9 @@ def pairWindows (c : ℤ) : ModWindows :=
 /-- Close `∃ q, (pairWindows c).refutedBy q = true` for a literal `c`. -/
 elab "tie_cert" : tactic => modCertTactic fun c => (pairWindows c).search
 
-/-- No significand puts the guard bits at a tie that is not one. The multiplier
-    is searched for during elaboration and checked by the kernel, so a bad one
-    would be a failed proof rather than an unsound one. -/
+/-- No significand puts the exact value in a nonzero ambiguous boundary window.
+    The multiplier is searched for during elaboration and checked by the kernel,
+    so a bad one would be a failed proof rather than an unsound one. -/
 private theorem pair_refuted (c : ℤ) (hlo : 0 ≤ c) (hhi : c ≤ 37763) :
     ∃ q, (pairWindows c).refutedBy q = true := by
   interval_cases c <;> tie_cert
@@ -344,8 +330,9 @@ theorem tie_windows_refuted {e : ℤ} {p : ℕ} (he : -1126 ≤ e ∧ e ≤ 971)
 
 /-! ## The arithmetic model
 
-The product, split at the two bit positions zmij reads it at, and the exact
-value, recovered from that split. `exact_eq` is where the two meet.
+The product, split into the integral part, retained fraction, and discarded low
+word, and the exact value recovered from that split. `exact_split` is where the
+two meet.
 -/
 
 theorem den_pos (e : ℤ) (p : ℕ) : 0 < den e p :=
@@ -384,55 +371,61 @@ theorem step_eq {e : ℤ} {p : ℕ} (hn : 1 ≤ shiftBits e p) :
   rw [step, halfStep, h]
   ring
 
-/-- The product, split where zmij reads it: the integral part, the 1/2 bit, and
-    the bits below it. -/
-theorem product_split (f : ℕ) (e : ℤ) (p : ℕ) (hn : 1 ≤ shiftBits e p) :
-    product f e p = 2 ^ shiftBits e p * integral f e p
-      + 2 ^ (shiftBits e p - 1) * half f e p + tail f e p := by
-  have hpow : 2 ^ shiftBits e p = 2 ^ (shiftBits e p - 1) * 2 := by
-    rw [← pow_succ]
-    congr 1
-    omega
-  have hq : product f e p / 2 ^ (shiftBits e p - 1)
-      = 2 * integral f e p + half f e p := by
-    rw [integral, half, hpow, ← Nat.div_div_eq_div_mul]
-    omega
-  calc product f e p
-      = 2 ^ (shiftBits e p - 1) * (product f e p / 2 ^ (shiftBits e p - 1))
-          + product f e p % 2 ^ (shiftBits e p - 1) :=
-        (Nat.div_add_mod _ _).symm
-    _ = 2 ^ (shiftBits e p - 1) * (2 * integral f e p + half f e p)
-          + tail f e p := by rw [hq, tail]
-    _ = _ := by rw [hpow]; ring
+private theorem pow64_mul_fraction_unit {e : ℤ} {p : ℕ}
+    (hn : 64 ≤ shiftBits e p) :
+    2 ^ 64 * fractionUnit e p = 2 ^ shiftBits e p := by
+  rw [fractionUnit, ← pow_add]
+  congr 1
+  omega
 
-/-- The guard bits are bits. -/
-theorem guard_le_one (f : ℕ) (e : ℤ) (p : ℕ) :
-    half f e p ≤ 1 ∧ sticky f e p ≤ 1 := by
-  refine ⟨?_, ?_⟩
-  · rw [half]
-    omega
-  · rw [sticky]
-    split_ifs <;> omega
+private theorem fraction_unit_eq_two_mul_half {e : ℤ} {p : ℕ}
+    (hn : 65 ≤ shiftBits e p) :
+    fractionUnit e p = 2 * fractionHalf e p := by
+  rw [fractionUnit, fractionHalf,
+    show shiftBits e p - 64 = (shiftBits e p - 65) + 1 by omega, pow_succ]
+  ring
 
-/-- The bits below the 1/2 place are worth less than the 1/2 place. -/
-theorem tail_lt (f : ℕ) (e : ℤ) (p : ℕ) :
-    tail f e p < 2 ^ (shiftBits e p - 1) :=
-  Nat.mod_lt _ (Nat.two_pow_pos _)
+private theorem fraction_unit_pos (e : ℤ) (p : ℕ) :
+    0 < fractionUnit e p := by
+  rw [fractionUnit]
+  positivity
 
-/-- A clear sticky bit is everything zmij can see below the 1/2 place being
-    zero, which leaves the discarded low word unaccounted for. -/
-theorem sticky_eq_zero_iff (f : ℕ) (e : ℤ) (p : ℕ) :
-    sticky f e p = 0 ↔ tail f e p < 2 ^ 64 := by
-  have hdiv : tail f e p / 2 ^ 64 = 0 ↔ tail f e p < 2 ^ 64 :=
-    ⟨fun h0 => by
-      by_contra hle
-      have := Nat.div_pos (Nat.le_of_not_lt hle) (Nat.two_pow_pos 64)
-      omega,
-     Nat.div_eq_of_lt⟩
-  rw [sticky]
-  split_ifs with h
-  · exact iff_of_true rfl (hdiv.mp h)
-  · exact iff_of_false (by simp) fun hlt => h (hdiv.mpr hlt)
+private theorem fraction_half_pos (e : ℤ) (p : ℕ) :
+    0 < fractionHalf e p := by
+  rw [fractionHalf]
+  positivity
+
+private theorem fraction_lt_unit (f : ℕ) (e : ℤ) (p : ℕ) :
+    fraction f e p < fractionUnit e p := by
+  rw [fraction]
+  exact Nat.mod_lt _ (fraction_unit_pos e p)
+
+private theorem retained_quotient (f : ℕ) (e : ℤ) (p : ℕ)
+    (hn : 64 ≤ shiftBits e p) :
+    product f e p / 2 ^ 64 / fractionUnit e p = integral f e p := by
+  rw [Nat.div_div_eq_div_mul, pow64_mul_fraction_unit hn, integral]
+
+/-- Split the product into its integral part, retained fraction, and low word. -/
+theorem product_split (f : ℕ) (e : ℤ) (p : ℕ)
+    (hn : 64 ≤ shiftBits e p) :
+    product f e p =
+      2 ^ shiftBits e p * integral f e p
+        + 2 ^ 64 * fraction f e p + low f e p := by
+  calc
+    product f e p =
+        2 ^ 64 * (product f e p / 2 ^ 64) + low f e p := by
+      rw [low]
+      exact (Nat.div_add_mod _ _).symm
+    _ = 2 ^ 64 *
+          (fractionUnit e p * integral f e p + fraction f e p)
+          + low f e p := by
+      rw [← (Nat.div_add_mod
+        (product f e p / 2 ^ 64) (fractionUnit e p)),
+        retained_quotient f e p hn, fraction]
+    _ = 2 ^ shiftBits e p * integral f e p
+          + 2 ^ 64 * fraction f e p + low f e p := by
+      rw [← pow64_mul_fraction_unit hn]
+      ring
 
 /-- The table entry is never below the exact ratio, and above it by one
     denominator's worth at most: the bump gives the first, and the truncation
@@ -478,57 +471,63 @@ theorem gap_lt (f : ℕ) (e : ℤ) (p : ℕ) (hf : f < 2 ^ 53) :
   rw [gap]
   omega
 
-/-- The exact value in the integer scale, from the product: the integral part
-    and the 1/2 bit at their weights, plus what the guard bits leave unreported.
-    This is the identity every comparison below is made against. -/
-theorem exact_eq (f : ℕ) (e : ℤ) (p : ℕ) (hn : 1 ≤ shiftBits e p) :
-    (exact f e p : ℤ) = 2 * halfStep e p * integral f e p
-      + halfStep e p * half f e p + dev f e p := by
-  have hsplit := product_split f e p hn
-  have hgap : (den e p : ℤ) * product f e p = exact f e p + gap f e p := by
+/-- The exact value split at the same two positions as the retained product. -/
+theorem exact_split (f : ℕ) (e : ℤ) (p : ℕ)
+    (hn : 64 ≤ shiftBits e p) :
+    (exact f e p : ℤ) =
+      step e p * integral f e p + residual f e p := by
+  have hp := product_split f e p hn
+  have hg : (den e p : ℤ) * product f e p = exact f e p + gap f e p := by
     exact_mod_cast gap_eq f e p
-  have hstep : (den e p : ℤ) * 2 ^ shiftBits e p = 2 * halfStep e p := by
-    have h := step_eq hn
-    rw [step] at h
-    exact_mod_cast h.symm
-  have hhalf : (den e p : ℤ) * 2 ^ (shiftBits e p - 1) = halfStep e p := by
-    rw [halfStep]
-    push_cast
-    ring
-  have hprod : (den e p : ℤ) * product f e p
-      = 2 * halfStep e p * integral f e p + halfStep e p * half f e p
-        + den e p * tail f e p := by
-    rw [show ((product f e p : ℤ)) = 2 ^ shiftBits e p * integral f e p
-          + 2 ^ (shiftBits e p - 1) * half f e p + tail f e p from by
-        exact_mod_cast congrArg (Nat.cast : ℕ → ℤ) hsplit]
-    linear_combination (integral f e p : ℤ) * hstep + (half f e p : ℤ) * hhalf
-  rw [dev]
-  linarith [hgap, hprod]
+  have hs : (step e p : ℤ) = den e p * 2 ^ shiftBits e p := by
+    exact_mod_cast step_eq (by omega : 1 ≤ shiftBits e p)
+  calc
+    (exact f e p : ℤ) = den e p * product f e p - gap f e p := by
+      linarith
+    _ = den e p *
+          (2 ^ shiftBits e p * integral f e p
+            + 2 ^ 64 * fraction f e p + low f e p) - gap f e p := by
+      rw [hp]
+      push_cast
+      rfl
+    _ = step e p * integral f e p + residual f e p := by
+      rw [residual, deviation, slack]
+      push_cast
+      rw [hs]
+      ring
 
-/-- What the guard bits leave unreported, bounded: less than half a step, and
-    more than `-slack`, the bump being all that can put it negative. -/
-private theorem dev_bounds (f : ℕ) (e : ℤ) (p : ℕ) (hf : f < 2 ^ 53) :
-    -(slack e p : ℤ) < dev f e p ∧ dev f e p < halfStep e p := by
-  have hgap := gap_lt f e p hf
-  have hup : den e p * tail f e p < halfStep e p := by
-    rw [halfStep]
-    exact Nat.mul_lt_mul_of_le_of_lt le_rfl (tail_lt f e p) (den_pos e p)
-  rw [dev]
-  omega
+private theorem slack_mul_fraction_unit {e : ℤ} {p : ℕ}
+    (hn : 64 ≤ shiftBits e p) :
+    slack e p * fractionUnit e p = step e p := by
+  rw [slack, step_eq (by omega : 1 ≤ shiftBits e p), ← pow64_mul_fraction_unit hn]
+  ring
 
-/-- A set sticky bit puts the exact value strictly above the midpoint the 1/2
-    bit reports: the bits it saw are worth more than the bump could add. -/
-private theorem dev_pos_of_sticky (f : ℕ) (e : ℤ) (p : ℕ) (hf : f < 2 ^ 53)
-    (h : sticky f e p = 1) : 0 < dev f e p := by
-  have hgap := gap_lt f e p hf
-  have htail : 2 ^ 64 ≤ tail f e p := by
-    by_contra hlt
-    exact absurd ((sticky_eq_zero_iff f e p).mpr (by omega)) (by omega)
-  have hlo : slack e p ≤ den e p * tail f e p := by
-    rw [slack]
-    calc 2 ^ 64 * den e p = den e p * 2 ^ 64 := by ring
-      _ ≤ den e p * tail f e p := Nat.mul_le_mul_left _ htail
-  rw [dev]
+private theorem slack_mul_fraction_half {e : ℤ} {p : ℕ}
+    (hn : 65 ≤ shiftBits e p) :
+    slack e p * fractionHalf e p = halfStep e p := by
+  have hpow : 2 ^ 64 * 2 ^ (shiftBits e p - 65)
+      = 2 ^ (shiftBits e p - 1) := by
+    rw [← pow_add]
+    congr 1
+    omega
+  rw [slack, fractionHalf, halfStep, ← hpow]
+  ring
+
+private theorem deviation_bounds (f : ℕ) (e : ℤ) (p : ℕ)
+    (hf : f < 2 ^ 53) :
+    -(slack e p : ℤ) < deviation f e p
+      ∧ deviation f e p < slack e p := by
+  have hg := gap_lt f e p hf
+  have hl : low f e p < 2 ^ 64 := by
+    rw [low]
+    exact Nat.mod_lt _ (by positivity)
+  have hd := den_pos e p
+  have hup : den e p * low f e p < slack e p := by
+    calc
+      den e p * low f e p < den e p * 2 ^ 64 :=
+        (Nat.mul_lt_mul_left hd).mpr hl
+      _ = slack e p := by rw [slack]; ring
+  rw [deviation]
   omega
 
 /-! ## Crossing into ℚ
@@ -605,248 +604,317 @@ theorem correctly_rounded_of_dist {f : ℕ} {e : ℤ} {p : ℕ} {d scale : ℕ} 
   exact correctly_rounded_of_le_half f e d k (hcmp.mpr hle)
     fun h => heven (heq.mp h)
 
-/-! ## The canonical packing
+/-! ## Apparent retained boundaries are exact -/
 
-The two guard bits are not an approximation of the scaled value: they are its
-canonical packing at the half step, and `packed_eq_exact_packed` below proves
-that zmij computes exactly that. Everything the rounding needs follows from that
-one identity, and follows generically — no exponent, precision or table enters
-this section.
-
-`demote_exact_packed` is why there is one rounding argument here rather than two.
-A demoted packing is the packing at ten times the half step, so the reround's
-grid is the reported grid with a coarser step and nothing else, and
-`round_even_exact_packed` serves both.
--/
-
-/-- The canonical packing of `x` at half step `h`: the half steps it covers,
-    which the 1/2 bit's weight makes twice the count, and whether anything is
-    left over. -/
-def exactPacked (x h : ℕ) : ℕ := 2 * (x / h) + if x % h = 0 then 0 else 1
-
-/-- `round_even` in terms of its two guard bits: it rounds up when they say the
-    value is past the midpoint, and at the midpoint when what remains is odd. -/
-theorem round_even_eq (i b : ℕ) (hb : b ≤ 3) :
-    roundEven (4 * i + b)
-      = i + if 2 ≤ b ∧ (b = 3 ∨ i % 2 = 1) then 1 else 0 := by
-  rw [roundEven]
-  split_ifs <;> omega
-
-/-- `demote` sets the sticky bit unless what it drops is zero. -/
-theorem demote_eq (packed : ℕ) :
-    demote packed
-      = if packed % 10 = 0 then packed / 10 else 2 * (packed / 20) + 1 := by
-  have hor (y : ℕ) : y ||| 1 = 2 * (y / 2) + 1 := by
-    refine Nat.eq_of_testBit_eq fun i => ?_
-    cases i with
-    | zero => simp [Nat.testBit_zero]
-    | succ j =>
-      have hdiv : (y ||| 1) / 2 = y / 2 := by
-        simpa [Nat.shiftRight_eq_div_pow] using
-          (Nat.shiftRight_or_distrib (i := 1) (a := y) (b := 1))
-      rw [Nat.testBit_succ, Nat.testBit_succ, hdiv,
-        show (2 * (y / 2) + 1) / 2 = y / 2 from by omega]
-  rw [demote]
-  split_ifs
-  · rw [Nat.or_zero]
-  -- One division by a literal, which is what `omega` reads below.
-  · rw [hor, Nat.div_div_eq_div_mul]
-
-/-- A sticky bit as arithmetic, which is what `omega` reads. -/
-private theorem stick_eq (r : ℕ) : (if r = 0 then 0 else 1) = min r 1 := by
-  split_ifs <;> omega
-
-/-- The packing from a split of the value at the half step: `q` half steps and
-    a remainder inside one, which is the shape `exact_eq` leaves. The
-    remainder arrives as an integer because that is what `dev` is. -/
-private theorem exact_packed_of_split {x h q : ℕ} {r : ℤ} (hh : 0 < h)
-    (hx : (x : ℤ) = h * q + r) (hlo : 0 ≤ r) (hhi : r < h) :
-    exactPacked x h = 2 * q + if r = 0 then 0 else 1 := by
-  have hx' : x = r.toNat + h * q := by omega
-  have hrlt : r.toNat < h := by omega
-  rw [exactPacked, hx', Nat.add_mul_div_left _ _ hh, Nat.add_mul_mod_self_left,
-    Nat.div_eq_of_lt hrlt, Nat.mod_eq_of_lt hrlt, Nat.zero_add]
-  split_ifs <;> omega
-
-/-- `demote` on a canonical packing, in terms of the half steps counted and the
-    decimal digit that leaves: the digit joins the sticky bit. -/
-private theorem demote_pack (Q d s : ℕ) (hd : d < 10) (hs : s ≤ 1) :
-    demote (2 * (10 * Q + d) + s) = 2 * Q + min (2 * d + s) 1 := by
-  rw [demote_eq]
-  interval_cases d <;> interval_cases s <;> split_ifs <;> omega
-
-/-- Demoting a canonical packing is the canonical packing at ten times the half
-    step. The reported grid and the reround's are therefore the same packing,
-    which is what collapses the two rounding arguments into one. -/
-theorem demote_exact_packed (x h : ℕ) (hh : 0 < h) :
-    demote (exactPacked x h) = exactPacked x (10 * h) := by
-  have hdlt : x / h % 10 < 10 := Nat.mod_lt _ (by omega)
-  -- The coarser quotient and remainder, from the finer ones: the digit that
-  -- leaves, at its weight, joins the finer remainder.
-  have hdiv : x / (10 * h) = x / h / 10 := by
-    rw [Nat.div_div_eq_div_mul, Nat.mul_comm h 10]
-  have hmod : x % (10 * h) = h * (x / h % 10) + x % h := by
-    rw [← Nat.mod_mul_left_div_self x h 10,
-      ← Nat.mod_mod_of_dvd x (dvd_mul_left h 10)]
-    exact (Nat.div_add_mod _ h).symm
-  -- So the coarse sticky bit is the digit that leaves, or else the fine one.
-  have hstick : min (h * (x / h % 10) + x % h) 1
-      = min (2 * (x / h % 10) + min (x % h) 1) 1 := by
-    rcases Nat.eq_zero_or_pos (x / h % 10) with h1 | h1
-    · rw [h1, Nat.mul_zero]
-      omega
-    · have : 0 < h * (x / h % 10) := Nat.mul_pos hh h1
-      omega
-  rw [exactPacked, stick_eq,
-    show x / h = 10 * (x / h / 10) + x / h % 10 from (Nat.div_add_mod _ 10).symm,
-    demote_pack _ _ _ hdlt (by omega), exactPacked, hdiv, hmod, stick_eq, hstick]
-
-/-- Rounding a canonical packing is round-to-nearest-even on the value packed:
-    the candidate is at most half a step away, and exactly half a step away only
-    when it is even. Nothing about Żmij enters, and both grids below read their
-    bound off this one statement. -/
-theorem round_even_exact_packed (x h : ℕ) (hh : 0 < h) :
-    -(h : ℤ) ≤ (x : ℤ) - roundEven (exactPacked x h) * (2 * h)
-      ∧ (x : ℤ) - roundEven (exactPacked x h) * (2 * h) ≤ h
-      ∧ ((x : ℤ) - roundEven (exactPacked x h) * (2 * h) = h
-          ∨ (x : ℤ) - roundEven (exactPacked x h) * (2 * h) = -(h : ℤ)
-        → roundEven (exactPacked x h) % 2 = 0) := by
-  have hrlt : x % h < h := Nat.mod_lt _ hh
-  set s : ℕ := if x % h = 0 then 0 else 1 with hs
-  have hsle : s ≤ 1 := by rw [hs]; split_ifs <;> omega
-  -- The sticky bit together with what it reports, which is the pair the cases
-  -- below need.
-  have hsr : s = 0 ∧ x % h = 0 ∨ s = 1 ∧ 0 < x % h := by
-    rw [hs]; split_ifs <;> omega
-  -- The increment the guard bits call for, as a variable and not a definition,
-  -- so that the cases below can put a literal in its place.
-  obtain ⟨c, hc⟩ : ∃ c : ℕ, c =
-      if x / h % 2 = 1 ∧ (s = 1 ∨ x / h / 2 % 2 = 1) then 1 else 0 := ⟨_, rfl⟩
-  -- The candidate, from `round_even_eq` in the `4 * i + b` form it reads.
-  have hround : roundEven (exactPacked x h) = x / h / 2 + c := by
-    rw [show exactPacked x h = 4 * (x / h / 2) + (2 * (x / h % 2) + s) from by
-        rw [exactPacked, ← hs]; omega,
-      round_even_eq _ _ (by omega), hc]
-    congr 1
-    split_ifs <;> omega
-  -- The distance, with the whole steps cancelled: the value split at the half
-  -- step, and that quotient split again at the whole one.
-  have hdist : (x : ℤ) - (x / h / 2 + c : ℕ) * (2 * h)
-      = h * (x / h % 2 : ℕ) + (x % h : ℕ) - 2 * h * c := by
-    have h1 : (x : ℤ) = h * (x / h : ℕ) + (x % h : ℕ) := by
-      exact_mod_cast (Nat.div_add_mod x h).symm
-    have h2 : ((x / h : ℕ) : ℤ) = 2 * (x / h / 2 : ℕ) + (x / h % 2 : ℕ) := by
-      exact_mod_cast (Nat.div_add_mod (x / h) 2).symm
-    push_cast at h1 h2 ⊢
-    linear_combination h1 + h * h2
-  rw [hround, hdist]
-  -- Eight cases, each linear once the 1/2 bit is a literal, which leaves `h`
-  -- multiplied by a constant rather than by an unknown.
-  rcases show x / h % 2 = 0 ∨ x / h % 2 = 1 from by omega with hb | hb <;>
-    rw [hb] at hc ⊢ <;>
-      rcases hsr with ⟨hsv, hr⟩ | ⟨hsv, hr⟩ <;>
-        rcases show x / h / 2 % 2 = 0 ∨ x / h / 2 % 2 = 1 from by omega with
-          hi | hi <;>
-          rw [hsv, hi] at hc <;> norm_num at hc <;> subst hc <;> omega
-
-/-! ## An apparent tie is a real one
-
-Everything the guard bits hide is under `slack`: the product bits they do not
-see and the bump's excess both are. So the packed value can only mislead by
-presenting a value near a half-step boundary as one exactly on it, and the
-certificate says no significand does that.
-
-With that settled the two directions meet — a clear sticky bit means `dev = 0`
-and a set one means `dev > 0` — and `packed_eq_exact_packed` reads the invariant
-off them. It is the last statement in this file about zmij's arithmetic, and the
-only one about `dev` that anything below it reads: what remains is to carry the
-generic bound into the specification.
--/
-
-/-- A clear sticky bit leaves the exact value within `slack` of the boundary the
-    guard bits report: the bits it hides are worth less than that, and so is the
-    bump's excess. -/
-private theorem dev_near_of_sticky_eq_zero (f : ℕ) (e : ℤ) (p : ℕ)
-    (hf : f < 2 ^ 53) (hsticky : sticky f e p = 0) :
-    -(slack e p : ℤ) < dev f e p ∧ dev f e p < slack e p := by
-  have hgap := gap_lt f e p hf
-  have hup : den e p * tail f e p < slack e p := by
-    rw [slack]
-    calc den e p * tail f e p < den e p * 2 ^ 64 :=
-          Nat.mul_lt_mul_of_le_of_lt le_rfl
-            ((sticky_eq_zero_iff f e p).mp hsticky) (den_pos e p)
-      _ = 2 ^ 64 * den e p := by ring
-  rw [dev]
-  omega
-
-/-- What the certificate says: when the sticky bit is clear the exact value sits
-    exactly on the half-step boundary the guard bits report. This is the one
-    statement that makes an apparent tie a real one, at the reported grid and at
-    the reround's alike, because `exact_eq` writes the exact value as a multiple
-    of `halfStep` plus `dev` whatever the guard bits happen to say: the integral
-    part counts the steps and the 1/2 bit the odd half-step. -/
-private theorem dev_eq_zero (f : ℕ) (e : ℤ) (hnorm : Normalized f e) (p : ℕ)
-    (hp : 1 ≤ p ∧ p ≤ 18) (hsticky : sticky f e p = 0) : dev f e p = 0 := by
+private theorem deviation_eq_zero_of_boundary
+    (f : ℕ) (e : ℤ) (hnorm : Normalized f e) (p : ℕ)
+    (hp : 1 ≤ p ∧ p ≤ 18)
+    (hboundary :
+      fraction f e p = 0 ∨ fraction f e p = fractionHalf e p) :
+    deviation f e p = 0 := by
   have hs := point_shift_bounds p (by simpa using hp) e
     (by simpa using hnorm.exp)
+  have hn : 65 ≤ shiftBits e p := by
+    have := shift_bits_ge hs.1
+    omega
   have hsig := hnorm.sig
-  obtain ⟨hlo, hhi⟩ := dev_near_of_sticky_eq_zero f e p hnorm.sig.2 hsticky
-  -- All this proof supplies is that `dev` is the residue: the integral part and
-  -- the 1/2 bit count the multiples of the modulus, and `dev` is what is left.
-  have hres : dev f e p = (tieWindows e p).n * f
-      - (tieWindows e p).m * (2 * integral f e p + half f e p) := by
-    have hex := exact_eq f e p (by have := shift_bits_ge hs.1; omega)
-    rw [exact] at hex
+  obtain ⟨hlo, hhi⟩ := deviation_bounds f e p hnorm.sig.2
+  have hex := exact_split f e p (by omega)
+  have hh := slack_mul_fraction_half (e := e) (p := p) hn
+  have hh' : (slack e p : ℤ) * fractionHalf e p = halfStep e p := by
+    exact_mod_cast hh
+  have hstep : (step e p : ℤ) = 2 * halfStep e p := by
+    rw [step]
+    push_cast
+    ring
+  have hnexact : ((tieWindows e p).n : ℤ) * f = exact f e p := by
+    simp only [tieWindows, exact]
+    push_cast
+    ring
+  have hmhalf : ((tieWindows e p).m : ℤ) = halfStep e p := by
     simp only [tieWindows]
-    push_cast at hex ⊢
-    linarith
-  have hm : 0 < (tieWindows e p).m := by
-    simpa only [tieWindows] using half_step_pos e p
-  have hcert := (tie_windows_refuted hnorm.exp hp).choose_spec
-  have hfmin : (tieWindows e p).fmin ≤ f := by simp only [tieWindows]; omega
-  have hfmax : f ≤ (tieWindows e p).fmax := by simp only [tieWindows]; omega
-  -- The two windows stop one short of the boundary either way, so refuting both
-  -- leaves nothing within `slack` of it but zero.
-  rcases lt_trichotomy (dev f e p) 0 with hneg | hzero | hpos
-  · exact ((tieWindows e p).not_hit_rep f hm hcert
-      (rmin := 1 - (slack e p : ℤ)) (rmax := -1) (by simp [tieWindows])
-      hfmin hfmax hres (by omega) (by omega)).elim
-  · exact hzero
-  · exact ((tieWindows e p).not_hit_rep f hm hcert
-      (rmin := 1) (rmax := (slack e p : ℤ) - 1) (by simp [tieWindows])
-      hfmin hfmax hres (by omega) (by omega)).elim
+  obtain hzero | hhalf := hboundary
+  · rw [residual, hzero, Nat.cast_zero, mul_zero, zero_add] at hex
+    have hres : deviation f e p = (tieWindows e p).n * f
+        - (tieWindows e p).m * (2 * integral f e p) := by
+      calc
+        deviation f e p =
+            exact f e p - step e p * integral f e p := by linarith
+        _ = exact f e p - halfStep e p * (2 * integral f e p) := by
+          rw [hstep]
+          ring
+        _ = (tieWindows e p).n * f
+              - (tieWindows e p).m * (2 * integral f e p) := by
+          rw [hnexact, hmhalf]
+    have hm : 0 < (tieWindows e p).m := by
+      simpa only [tieWindows] using half_step_pos e p
+    have hcert := (tie_windows_refuted hnorm.exp hp).choose_spec
+    have hfmin : (tieWindows e p).fmin ≤ f := by
+      simp only [tieWindows]
+      omega
+    have hfmax : f ≤ (tieWindows e p).fmax := by
+      simp only [tieWindows]
+      omega
+    rcases lt_trichotomy (deviation f e p) 0 with hneg | hzero' | hpos
+    · exact ((tieWindows e p).not_hit_rep f hm hcert
+        (rmin := 1 - (slack e p : ℤ)) (rmax := -1) (by simp [tieWindows])
+        hfmin hfmax hres (by omega) (by omega)).elim
+    · exact hzero'
+    · exact ((tieWindows e p).not_hit_rep f hm hcert
+        (rmin := 1) (rmax := (slack e p : ℤ) - 1) (by simp [tieWindows])
+        hfmin hfmax hres (by omega) (by omega)).elim
+  · rw [residual, hhalf] at hex
+    rw [hh'] at hex
+    have hres : deviation f e p = (tieWindows e p).n * f
+        - (tieWindows e p).m * (2 * integral f e p + 1) := by
+      calc
+        deviation f e p =
+            exact f e p - step e p * integral f e p - halfStep e p := by
+          linarith
+        _ = exact f e p
+              - halfStep e p * (2 * integral f e p + 1) := by
+          rw [hstep]
+          ring
+        _ = (tieWindows e p).n * f
+              - (tieWindows e p).m * (2 * integral f e p + 1) := by
+          rw [hnexact, hmhalf]
+    have hm : 0 < (tieWindows e p).m := by
+      simpa only [tieWindows] using half_step_pos e p
+    have hcert := (tie_windows_refuted hnorm.exp hp).choose_spec
+    have hfmin : (tieWindows e p).fmin ≤ f := by
+      simp only [tieWindows]
+      omega
+    have hfmax : f ≤ (tieWindows e p).fmax := by
+      simp only [tieWindows]
+      omega
+    rcases lt_trichotomy (deviation f e p) 0 with hneg | hzero | hpos
+    · exact ((tieWindows e p).not_hit_rep f hm hcert
+        (rmin := 1 - (slack e p : ℤ)) (rmax := -1) (by simp [tieWindows])
+        hfmin hfmax hres (by omega) (by omega)).elim
+    · exact hzero
+    · exact ((tieWindows e p).not_hit_rep f hm hcert
+        (rmin := 1) (rmax := (slack e p : ℤ) - 1) (by simp [tieWindows])
+        hfmin hfmax hres (by omega) (by omega)).elim
 
-/-- The invariant the whole file turns on: `scale` does not merely land near the
-    exact scaled value, it computes that value's canonical packing at the half
-    step. The two guard bits are the packing's, digit for digit — `exact_eq`
-    places the integral part and the 1/2 bit, and `dev`, which the two lemmas
-    above pin to zero exactly when the sticky bit is clear, is the remainder.
+/-! ## The exact fractional remainder -/
 
-    Correctness of the rounding, and of the rounding after `demote`, are generic
-    facts about that packing from here on. -/
-theorem packed_eq_exact_packed (f : ℕ) (e : ℤ) (hnorm : Normalized f e) (p : ℕ)
+private theorem residual_bounds
+    (f : ℕ) (e : ℤ) (hnorm : Normalized f e) (p : ℕ)
     (hp : 1 ≤ p ∧ p ≤ 18) :
-    packed f e p = exactPacked (exact f e p) (halfStep e p) := by
-  obtain ⟨hh, hst⟩ := guard_le_one f e p
+    0 ≤ residual f e p ∧ residual f e p < step e p
+      ∧ (residual f e p = 0 ↔ fraction f e p = 0) := by
   have hs := point_shift_bounds p (by simpa using hp) e
     (by simpa using hnorm.exp)
-  have hex := exact_eq f e p (by have := shift_bits_ge hs.1; omega)
-  have hdev := dev_bounds f e p hnorm.sig.2
-  -- The remainder vanishes exactly with the sticky bit, which is the certificate
-  -- one way round and the discarded low word's small size the other.
-  have hiff : dev f e p = 0 ↔ sticky f e p = 0 :=
-    ⟨fun h => by
-       by_contra hne
-       exact absurd (dev_pos_of_sticky f e p hnorm.sig.2 (by omega)) (by omega),
-     dev_eq_zero f e hnorm p hp⟩
-  have hnn : 0 ≤ dev f e p := by
-    by_cases h0 : sticky f e p = 0
-    · exact le_of_eq (hiff.mpr h0).symm
-    · exact le_of_lt (dev_pos_of_sticky f e p hnorm.sig.2 (by omega))
-  rw [packed, exact_packed_of_split (q := 2 * integral f e p + half f e p)
-    (r := dev f e p) (half_step_pos e p) (by rw [hex]; push_cast; ring) hnn
-    hdev.2]
-  split_ifs <;> omega
+  have hn : 64 ≤ shiftBits e p := by
+    have := shift_bits_ge hs.1
+    omega
+  have hdev := deviation_bounds f e p hnorm.sig.2
+  have hrlt := fraction_lt_unit f e p
+  have hC : 0 < slack e p := by
+    rw [slack]
+    exact Nat.mul_pos (by positivity) (den_pos e p)
+  have hCU := slack_mul_fraction_unit (e := e) (p := p) hn
+  by_cases hr0 : fraction f e p = 0
+  · have hd0 := deviation_eq_zero_of_boundary f e hnorm p hp (Or.inl hr0)
+    have hstep := step_pos e p
+    simp [residual, hr0, hd0, hstep]
+  · have hrpos : 1 ≤ fraction f e p := by omega
+    have hlo : slack e p ≤ slack e p * fraction f e p :=
+      by simpa using Nat.mul_le_mul_left (slack e p) hrpos
+    have hnext : fraction f e p + 1 ≤ fractionUnit e p := by omega
+    have hhi : slack e p * (fraction f e p + 1)
+        ≤ slack e p * fractionUnit e p :=
+      Nat.mul_le_mul_left (slack e p) hnext
+    rw [residual]
+    constructor
+    · linarith
+    constructor
+    · linarith
+    · constructor
+      · intro hzero
+        linarith
+      · exact fun h => (hr0 h).elim
+
+private theorem residual_lt_half_of_fraction_lt
+    (f : ℕ) (e : ℤ) (hnorm : Normalized f e) (p : ℕ)
+    (hp : 1 ≤ p ∧ p ≤ 18)
+    (hr : fraction f e p < fractionHalf e p) :
+    residual f e p < halfStep e p := by
+  have hs := point_shift_bounds p (by simpa using hp) e
+    (by simpa using hnorm.exp)
+  have hn : 65 ≤ shiftBits e p := by
+    have := shift_bits_ge hs.1
+    omega
+  have hdev := deviation_bounds f e p hnorm.sig.2
+  have hnext : fraction f e p + 1 ≤ fractionHalf e p := by omega
+  have hmul : slack e p * (fraction f e p + 1)
+      ≤ slack e p * fractionHalf e p :=
+    Nat.mul_le_mul_left (slack e p) hnext
+  have hh := slack_mul_fraction_half (e := e) (p := p) hn
+  have hmul' : (slack e p : ℤ) * (fraction f e p + 1)
+      ≤ slack e p * fractionHalf e p := by
+    exact_mod_cast hmul
+  have hh' : (slack e p : ℤ) * fractionHalf e p = halfStep e p := by
+    exact_mod_cast hh
+  rw [residual]
+  linarith
+
+private theorem residual_eq_half_of_fraction_eq
+    (f : ℕ) (e : ℤ) (hnorm : Normalized f e) (p : ℕ)
+    (hp : 1 ≤ p ∧ p ≤ 18)
+    (hr : fraction f e p = fractionHalf e p) :
+    residual f e p = halfStep e p := by
+  have hs := point_shift_bounds p (by simpa using hp) e
+    (by simpa using hnorm.exp)
+  have hn : 65 ≤ shiftBits e p := by
+    have := shift_bits_ge hs.1
+    omega
+  have hd0 :=
+    deviation_eq_zero_of_boundary f e hnorm p hp (Or.inr hr)
+  have hh := slack_mul_fraction_half (e := e) (p := p) hn
+  rw [residual, hr, hd0, add_zero]
+  exact_mod_cast hh
+
+private theorem half_lt_residual_of_half_lt_fraction
+    (f : ℕ) (e : ℤ) (hnorm : Normalized f e) (p : ℕ)
+    (hp : 1 ≤ p ∧ p ≤ 18)
+    (hr : fractionHalf e p < fraction f e p) :
+    halfStep e p < residual f e p := by
+  have hs := point_shift_bounds p (by simpa using hp) e
+    (by simpa using hnorm.exp)
+  have hn : 65 ≤ shiftBits e p := by
+    have := shift_bits_ge hs.1
+    omega
+  have hdev := deviation_bounds f e p hnorm.sig.2
+  have hnext : fractionHalf e p + 1 ≤ fraction f e p := by omega
+  have hmul : slack e p * (fractionHalf e p + 1)
+      ≤ slack e p * fraction f e p :=
+    Nat.mul_le_mul_left (slack e p) hnext
+  have hh := slack_mul_fraction_half (e := e) (p := p) hn
+  have hmul' : (slack e p : ℤ) * (fractionHalf e p + 1)
+      ≤ slack e p * fraction f e p := by
+    exact_mod_cast hmul
+  have hh' : (slack e p : ℤ) * fractionHalf e p = halfStep e p := by
+    exact_mod_cast hh
+  rw [residual]
+  linarith
+
+/-! ## Direct rounding -/
+
+/-- The fine candidate is nearest on the requested grid, ties to even. -/
+theorem round_fine_nearest
+    (f : ℕ) (e : ℤ) (hnorm : Normalized f e) (p : ℕ)
+    (hp : 1 ≤ p ∧ p ≤ 18) :
+    -(halfStep e p : ℤ)
+        ≤ (exact f e p : ℤ) - roundFine f e p * step e p
+      ∧ (exact f e p : ℤ) - roundFine f e p * step e p
+        ≤ halfStep e p
+      ∧ ((exact f e p : ℤ) - roundFine f e p * step e p = halfStep e p
+          ∨ (exact f e p : ℤ) - roundFine f e p * step e p
+              = -(halfStep e p : ℤ)
+        → roundFine f e p % 2 = 0) := by
+  have hs := point_shift_bounds p (by simpa using hp) e
+    (by simpa using hnorm.exp)
+  have hn : 64 ≤ shiftBits e p := by
+    have := shift_bits_ge hs.1
+    omega
+  have hex := exact_split f e p hn
+  obtain ⟨hv0, hvstep, -⟩ := residual_bounds f e hnorm p hp
+  have hstep : (step e p : ℤ) = 2 * halfStep e p := by
+    rw [step]
+    push_cast
+    ring
+  rcases lt_trichotomy (fraction f e p) (fractionHalf e p) with
+      hr | hr | hr
+  · have hvh := residual_lt_half_of_fraction_lt f e hnorm p hp hr
+    have hd : roundFine f e p = integral f e p := by
+      simp [roundFine, show ¬(fractionHalf e p < fraction f e p ∨
+        fraction f e p = fractionHalf e p ∧ integral f e p % 2 = 1) by omega]
+    rw [hd]
+    have hdist : (exact f e p : ℤ) - integral f e p * step e p
+        = residual f e p := by rw [hex]; ring
+    rw [hdist]
+    refine ⟨by linarith, by linarith, ?_⟩
+    intro htie
+    rcases htie with htie | htie <;> linarith
+  · have hvh := residual_eq_half_of_fraction_eq f e hnorm p hp hr
+    rcases Nat.mod_two_eq_zero_or_one (integral f e p) with hpar | hpar
+    · have hd : roundFine f e p = integral f e p := by
+        simp [roundFine, hr, hpar]
+      rw [hd]
+      have hdist : (exact f e p : ℤ) - integral f e p * step e p
+          = residual f e p := by rw [hex]; ring
+      rw [hdist, hvh]
+      exact ⟨by linarith, le_rfl, fun _ => hpar⟩
+    · have hd : roundFine f e p = integral f e p + 1 := by
+        simp [roundFine, hr, hpar]
+      rw [hd]
+      have hdist : (exact f e p : ℤ)
+          - (integral f e p + 1 : ℕ) * step e p
+          = residual f e p - step e p := by rw [hex]; push_cast; ring
+      rw [hdist, hvh, hstep]
+      refine ⟨by linarith, by linarith, fun _ => ?_⟩
+      omega
+  · have hvh := half_lt_residual_of_half_lt_fraction f e hnorm p hp hr
+    have hd : roundFine f e p = integral f e p + 1 := by
+      simp [roundFine, hr]
+    rw [hd]
+    have hdist : (exact f e p : ℤ)
+        - (integral f e p + 1 : ℕ) * step e p
+        = residual f e p - step e p := by rw [hex]; push_cast; ring
+    rw [hdist]
+    refine ⟨by linarith, by linarith, ?_⟩
+    intro htie
+    rcases htie with htie | htie <;> linarith
+
+/-- The coarse candidate is nearest on the grid ten times coarser, ties to
+    even. -/
+theorem round_coarse_nearest
+    (f : ℕ) (e : ℤ) (hnorm : Normalized f e) (p : ℕ)
+    (hp : 1 ≤ p ∧ p ≤ 18) :
+    -(5 * step e p : ℤ)
+        ≤ (exact f e p : ℤ) - roundCoarse f e p * (10 * step e p)
+      ∧ (exact f e p : ℤ) - roundCoarse f e p * (10 * step e p)
+        ≤ 5 * step e p
+      ∧ ((exact f e p : ℤ)
+            - roundCoarse f e p * (10 * step e p) = 5 * step e p
+          ∨ (exact f e p : ℤ)
+              - roundCoarse f e p * (10 * step e p) = -(5 * step e p : ℤ)
+        → roundCoarse f e p % 2 = 0) := by
+  have hs := point_shift_bounds p (by simpa using hp) e
+    (by simpa using hnorm.exp)
+  have hn : 64 ≤ shiftBits e p := by
+    have := shift_bits_ge hs.1
+    omega
+  have hex := exact_split f e p hn
+  obtain ⟨hv0, hvstep, hvzero⟩ := residual_bounds f e hnorm p hp
+  have hstep : 0 < step e p := step_pos e p
+  set q := integral f e p / 10 with hq
+  set a := integral f e p % 10 with ha_def
+  set v := residual f e p with hv
+  set c : ℕ := if 5 < a ∨
+      (a = 5 ∧ (fraction f e p ≠ 0 ∨ q % 2 = 1)) then 1 else 0 with hc
+  have ha : a < 10 := by
+    rw [ha_def]
+    exact Nat.mod_lt _ (by omega)
+  have hi : integral f e p = 10 * q + a := by
+    rw [hq, ha_def]
+    exact (Nat.div_add_mod _ 10).symm
+  have hd : roundCoarse f e p = q + c := by
+    simp only [roundCoarse, ← hq, ← ha_def, ← hc]
+  have hdist : (exact f e p : ℤ)
+      - (q + c : ℕ) * (10 * step e p)
+      = step e p * a + v - c * (10 * step e p) := by
+    rw [hex]
+    push_cast
+    rw [hi]
+    push_cast
+    ring
+  rw [hd, hdist]
+  interval_cases a <;>
+    by_cases hr0 : fraction f e p = 0 <;>
+      rcases Nat.mod_two_eq_zero_or_one q with hpar | hpar <;>
+        simp [hc, hr0, hpar] at hvzero ⊢ <;> omega
 
 /-! ## Normalization
 
@@ -905,10 +973,10 @@ theorem correctly_rounded_of_normalized {f : ℕ} {e : ℤ} {d : ℕ} {k : ℤ}
 
 One bound settles both halves of the specification: the candidate is within half
 a step of the exact value, with a step of whichever grid it is reported on. That
-is `round_even_exact_packed` read through the packing identity. Being correctly
-rounded is that bound carried into ℚ, and having the digits asked for is that
-bound against `exact_bounds`. Both are stated of the normalized pair, and
-`correct` carries them back to the input.
+is `round_fine_nearest` or `round_coarse_nearest`, according to the branch.
+Being correctly rounded is that bound carried into ℚ, and having the digits
+asked for is that bound against `exact_bounds`. Both are stated of the
+normalized pair, and `correct` carries them back to the input.
 -/
 
 /-- Half a step and one step, as integers. -/
@@ -920,7 +988,7 @@ private theorem step_cast (e : ℤ) (p : ℕ) :
 
 /-- A candidate within half a step of the value reaches every grid point the
     value is above: half a step is not enough to fall back over one. `h` is half
-    the step, which is the form the packing's bound comes in. -/
+    the step, which is the form the direct rounding bounds come in. -/
 private theorem le_of_dist_le {x d h lo : ℤ} (hh : 0 < h)
     (hd : x - d * (2 * h) ≤ h) (hx : (2 * lo - 1) * h < x) : lo ≤ d := by
   by_contra hlt
@@ -949,27 +1017,20 @@ theorem exact_bounds (f : ℕ) (e : ℤ) (hnorm : Normalized f e) (p : ℕ)
   · rw [exact]
     exact Nat.mul_le_mul_right _ (Nat.mul_le_mul_right _ (by omega))
 
-/-- What `to_decimal` reports when the first rounding has the digits asked for,
-    as the two components: a projection of the pair is opaque to the tactics
-    below, so the branches are taken apart here and the components rewritten
-    once. -/
-private theorem to_decimal_fine {f : ℕ} {e : ℤ} {p : ℕ}
-    (hover : roundEven (packed f e p) < 10 ^ p) :
-    (rounded f e p).1 = roundEven (packed f e p)
+private theorem rounded_fine {f : ℕ} {e : ℤ} {p : ℕ}
+    (hover : roundFine f e p < 10 ^ p) :
+    (rounded f e p).1 = roundFine f e p
       ∧ (rounded f e p).2 = decExp e p := by
   constructor <;> simp [rounded, hover]
 
-/-- And when it comes out one digit too long. -/
-private theorem to_decimal_coarse {f : ℕ} {e : ℤ} {p : ℕ}
-    (hover : ¬roundEven (packed f e p) < 10 ^ p) :
-    (rounded f e p).1 = roundEven (demote (packed f e p))
+private theorem rounded_coarse {f : ℕ} {e : ℤ} {p : ℕ}
+    (hover : ¬roundFine f e p < 10 ^ p) :
+    (rounded f e p).1 = roundCoarse f e p
       ∧ (rounded f e p).2 = decExp e p + 1 := by
   constructor <;> simp [rounded, hover]
 
-/-- The reported significand has the digits asked for and is correctly rounded on
-    the grid reported with it. One split on the reround settles both: the
-    distance bound gives the rounding, and the same bound read against
-    `exact_bounds` gives the digit count. -/
+/-- The fractional method reports `p` digits and rounds correctly on its
+    reported grid. -/
 theorem rounded_correct (f : ℕ) (e : ℤ) (hnorm : Normalized f e) (p : ℕ)
     (hp : 1 ≤ p ∧ p ≤ 18) :
     10 ^ (p - 1) ≤ (rounded f e p).1 ∧ (rounded f e p).1 < 10 ^ p
@@ -977,68 +1038,124 @@ theorem rounded_correct (f : ℕ) (e : ℤ) (hnorm : Normalized f e) (p : ℕ)
   have hs := point_shift_bounds p (by simpa using hp) e
     (by simpa using hnorm.exp)
   have hstep := step_cast e p
-  have hh : (0 : ℤ) < halfStep e p := by exact_mod_cast half_step_pos e p
-  have hpack := packed_eq_exact_packed f e hnorm p hp
-  -- The value's own bounds, at the half step the two grids are multiples of.
+  have hh : (0 : ℤ) < halfStep e p := by
+    exact_mod_cast half_step_pos e p
   obtain ⟨hgridlo, hgridhi⟩ := exact_bounds f e hnorm p hp
   have hlo : (10 : ℤ) ^ (p - 1) * (2 * halfStep e p) ≤ exact f e p := by
     rw [← hstep]
     exact_mod_cast hgridlo
-  have hhi : (exact f e p : ℤ) < 2 * (10 : ℤ) ^ p * (2 * halfStep e p) := by
+  have hhi : (exact f e p : ℤ)
+      < 2 * (10 : ℤ) ^ p * (2 * halfStep e p) := by
     rw [← hstep]
     exact_mod_cast hgridhi
-  -- The reported grid's bound. It serves the reround's branch too, where the
-  -- candidate rerounded having had a digit too many is what puts the value high
-  -- enough for the coarser grid's lower bound.
-  obtain ⟨hflo, hfhi, hfeven⟩ :=
-    round_even_exact_packed (exact f e p) (halfStep e p) (half_step_pos e p)
-  rw [← hpack] at hflo hfhi hfeven
-  by_cases hover : roundEven (packed f e p) < 10 ^ p
-  · obtain ⟨hd, hk⟩ := to_decimal_fine hover
+  obtain ⟨hflo, hfhi, hfeven⟩ := round_fine_nearest f e hnorm p hp
+  have hflo' : -(halfStep e p : ℤ) ≤ (exact f e p : ℤ)
+      - roundFine f e p * (2 * halfStep e p) := by
+    rw [← hstep]
+    exact hflo
+  have hfhi' : (exact f e p : ℤ)
+      - roundFine f e p * (2 * halfStep e p) ≤ halfStep e p := by
+    rw [← hstep]
+    exact hfhi
+  have hfscale :
+      -(step e p : ℤ)
+          ≤ 2 * ((exact f e p : ℤ) - roundFine f e p * step e p)
+        ∧ 2 * ((exact f e p : ℤ) - roundFine f e p * step e p)
+          ≤ step e p := by
+    constructor
+    · calc
+        -(step e p : ℤ) = 2 * (-(halfStep e p : ℤ)) := by rw [hstep]; ring
+        _ ≤ 2 * ((exact f e p : ℤ) - roundFine f e p * step e p) :=
+          mul_le_mul_of_nonneg_left hflo (by norm_num)
+    · calc
+        2 * ((exact f e p : ℤ) - roundFine f e p * step e p)
+            ≤ 2 * halfStep e p :=
+          mul_le_mul_of_nonneg_left hfhi (by norm_num)
+        _ = step e p := by rw [hstep]
+  by_cases hover : roundFine f e p < 10 ^ p
+  · obtain ⟨hd, hk⟩ := rounded_fine hover
     rw [hd, hk]
     refine ⟨?_, hover, ?_⟩
-    · exact_mod_cast le_of_dist_le (lo := (10 : ℤ) ^ (p - 1)) hh hfhi
+    · exact_mod_cast le_of_dist_le (lo := (10 : ℤ) ^ (p - 1)) hh hfhi'
         (by linarith)
-    · exact correctly_rounded_of_dist (step_pos e p) (value_scaled f e p hs.1)
-        ⟨by rw [hstep]; linarith, by rw [hstep]; linarith⟩
-        fun htie => hfeven (htie.imp (fun h => by rw [hstep] at h; linarith)
-          fun h => by rw [hstep] at h; linarith)
-  · obtain ⟨hd, hk⟩ := to_decimal_coarse hover
+    · exact correctly_rounded_of_dist (step_pos e p)
+        (value_scaled f e p hs.1)
+        hfscale
+        fun htie => hfeven (htie.imp
+          (fun h => by linarith)
+          fun h => by linarith)
+  · obtain ⟨hd, hk⟩ := rounded_coarse hover
     rw [hd, hk]
-    -- The reround's grid: the same theorem at ten times the half step, the
-    -- demoted packing being the packing there.
     obtain ⟨hclo, hchi, hceven⟩ :=
-      round_even_exact_packed (exact f e p) (10 * halfStep e p) (by omega)
-    rw [← demote_exact_packed _ _ (half_step_pos e p), ← hpack]
-      at hclo hchi hceven
-    push_cast at hclo hchi hceven
-    -- What the coarser digit count is read against: a decade of the half step,
-    -- the value put high by the candidate that ran a digit too long, and the
-    -- room a decade leaves at the top.
+      round_coarse_nearest f e hnorm p hp
+    have hhalf : (5 * step e p : ℤ) = 10 * halfStep e p := by
+      rw [hstep]
+      ring
+    have hclo' : -(10 * halfStep e p : ℤ)
+        ≤ (exact f e p : ℤ)
+          - roundCoarse f e p * (2 * (10 * halfStep e p)) := by
+      calc
+        -(10 * halfStep e p : ℤ) = -(5 * step e p : ℤ) := by rw [hhalf]
+        _ ≤ (exact f e p : ℤ)
+              - roundCoarse f e p * (10 * step e p) := hclo
+        _ = (exact f e p : ℤ)
+              - roundCoarse f e p * (2 * (10 * halfStep e p)) := by
+          rw [hstep]
+          ring
+    have hchi' : (exact f e p : ℤ)
+          - roundCoarse f e p * (2 * (10 * halfStep e p))
+        ≤ 10 * halfStep e p := by
+      calc
+        (exact f e p : ℤ)
+              - roundCoarse f e p * (2 * (10 * halfStep e p))
+            = (exact f e p : ℤ)
+              - roundCoarse f e p * (10 * step e p) := by
+                rw [hstep]
+                ring
+        _ ≤ 5 * step e p := hchi
+        _ = 10 * halfStep e p := hhalf
     have h10 : (10 : ℤ) ^ (p - 1) * (10 * halfStep e p)
         = 10 ^ p * halfStep e p := by
       rw [show (10 : ℤ) ^ p = 10 ^ (p - 1) * 10 from by
-        rw [← pow_succ]; congr 1; omega]
+        rw [← pow_succ]
+        congr 1
+        omega]
       ring
     have hbig : (10 : ℤ) ^ p * (2 * halfStep e p)
-        ≤ (roundEven (packed f e p) : ℤ) * (2 * halfStep e p) :=
+        ≤ (roundFine f e p : ℤ) * (2 * halfStep e p) :=
       mul_le_mul_of_nonneg_right (by exact_mod_cast Nat.le_of_not_lt hover)
         (by linarith)
     have hone : (halfStep e p : ℤ) ≤ 10 ^ p * halfStep e p :=
       le_mul_of_one_le_left hh.le (one_le_pow₀ (by norm_num))
     refine ⟨?_, ?_, ?_⟩
-    · exact_mod_cast le_of_dist_le (lo := (10 : ℤ) ^ (p - 1)) (by linarith) hchi
-        (by linarith)
-    · exact_mod_cast lt_of_le_dist (hi := (10 : ℤ) ^ p) (by linarith) hclo
-        (by linarith)
+    · have hdlo : (10 : ℤ) ^ (p - 1) ≤ roundCoarse f e p :=
+        le_of_dist_le (lo := (10 : ℤ) ^ (p - 1))
+          (by linarith) hchi' (by linarith)
+      exact_mod_cast hdlo
+    · have hdhi : (roundCoarse f e p : ℤ) < (10 : ℤ) ^ p :=
+        lt_of_le_dist (hi := (10 : ℤ) ^ p)
+          (by linarith) hclo' (by linarith)
+      exact_mod_cast hdhi
     · exact correctly_rounded_of_dist (scale := 10 * step e p)
         (by have := step_pos e p; omega) (value_scaled_coarse f e p hs.1)
-        ⟨by push_cast; rw [hstep]; linarith, by push_cast; rw [hstep]; linarith⟩
+        ⟨
+          calc
+            -(10 * step e p : ℤ) = 2 * (-(5 * step e p : ℤ)) := by ring
+            _ ≤ 2 * ((exact f e p : ℤ)
+                - roundCoarse f e p * (10 * step e p)) :=
+              mul_le_mul_of_nonneg_left hclo (by norm_num),
+          calc
+            2 * ((exact f e p : ℤ)
+                - roundCoarse f e p * (10 * step e p))
+                ≤ 2 * (5 * step e p) :=
+              mul_le_mul_of_nonneg_left hchi (by norm_num)
+            _ = (10 * step e p : ℤ) := by ring
+        ⟩
         fun htie => hceven (htie.imp
-          (fun h => by push_cast at h; rw [hstep] at h; linarith)
-          fun h => by push_cast at h; rw [hstep] at h; linarith)
+          (fun h => by push_cast at h; linarith)
+          fun h => by push_cast at h; linarith)
 
-/-- zmij converts a positive finite binary64 to a chosen precision correctly:
+/-- Żmij converts a positive finite binary64 to a chosen precision correctly:
     the significand it reports has the digits asked for and is correctly rounded
     on the grid reported with it. -/
 theorem correct (f : ℕ) (e : ℤ) (hfin : binary64.Finite f e) (p : ℕ)
