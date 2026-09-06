@@ -368,11 +368,10 @@ inline ZMIJ_CONSTEXPR auto compute_pow10(int exp) noexcept -> uint128 {
 // Converts the nonzero finite binary value bin_sig * 2**bin_exp using yy.
 inline ZMIJ_CONSTEVAL auto to_decimal(uint64_t bin_sig, int bin_exp) noexcept
     -> dec_fp<> {
+  assert(bin_sig != 0);
   constexpr uint64_t implicit_bit = float_traits<double>::implicit_bit;
-  assert(bin_sig != 0 && bin_exp >= -1074 && bin_exp <= 971);
   bool irregular = bin_sig == implicit_bit;
-  // 131237 is round(-log10(3/4) * 2**20).
-  int dec_exp = (bin_exp * 315653 - (irregular ? 131237 : 0)) >> 20;
+  int dec_exp = compute_dec_exp(bin_exp, !irregular);
   int shift = bin_exp + ((-dec_exp * 217707) >> 16);
   uint128 pow10 = compute_pow10(-dec_exp);
   uint128 p = umul192_hi128(pow10.hi, pow10.lo, bin_sig << (shift + 1));
