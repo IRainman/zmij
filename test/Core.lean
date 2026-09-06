@@ -468,10 +468,10 @@ it needs through its own format, as `binary64.decimalExponent`.
     fixed-point approximations of `log₁₀2` and `log₂10` as a numerator over a
     power of two. Those two approximations are the only fields whose numerical
     accuracy has to be checked rather than used definitionally, and how far they
-    can be trusted is what pins down the exponent range of the checks below.
-    Only the `log₂10` side is checked through `Power10Normalized`; what has to
-    hold of `log₁₀2` is a bound on the shift an implementation derives from it,
-    which differs between algorithms, so each checks its own. -/
+    can be trusted is what pins down the exponent range of the checks below. The
+    shared semantic requirements are checked through `DecimalExponentTight` on
+    the `log₁₀2` side and `Power10Normalized` on the `log₂10` side; bounds on
+    implementation-specific shifts remain with each algorithm. -/
 structure Format where
   prec : ℕ
   emin : ℤ
@@ -533,6 +533,78 @@ theorem Format.decimal_exponent_range (fmt : Format) {e : ℤ}
     (hlo : fmt.emin ≤ e) (hhi : e ≤ fmt.emax) :
     fmt.kmin ≤ fmt.decimalExponent e ∧ fmt.decimalExponent e ≤ fmt.kmax :=
   ⟨fmt.decimal_exponent_mono hlo, fmt.decimal_exponent_mono hhi⟩
+
+/-! ### One ULP in grid steps
+
+`exact_candidate_correct` requires the decimal grid spacing to lie in
+`(ulp / 10, ulp]`. For `k = decimalExponent e`, this is exactly
+`10^k ≤ ulp e < 10^(k+1)`, a statement about `decimalExponent` alone: whichever
+candidates an algorithm goes on to test, it inherits the two bounds from the
+exponent it reports. So the accuracy of `log10Two` is checked here, once per
+format, in the same ratio form as `log2Ten` is checked below.
+-/
+
+/-- Numerator of one ULP measured in grid steps, `ulp e · 10^(-k)` at the
+    reported decimal exponent, with negative exponents moved to the
+    denominator. -/
+def Format.ulpStepsNum (fmt : Format) (e : ℤ) : ℕ :=
+  2 ^ e.toNat * 10 ^ (-fmt.decimalExponent e).toNat
+
+/-- Denominator of that same quantity, carrying the negative exponents.
+    Multiplying by it clears the denominator and gives an integer comparison
+    suitable for `scaled_cmp_of_int_eq`. -/
+def Format.ulpStepsDen (fmt : Format) (e : ℤ) : ℕ :=
+  2 ^ (-e).toNat * 10 ^ (fmt.decimalExponent e).toNat
+
+theorem Format.ulp_steps_den_pos (fmt : Format) (e : ℤ) :
+    0 < fmt.ulpStepsDen e := by
+  rw [Format.ulpStepsDen]; positivity
+
+/-- One ULP in grid steps is exactly the rational `num / den`. Only exponent
+    bookkeeping, so it holds whatever the format's constants are. -/
+theorem Format.ulp_steps_exact_ratio (fmt : Format) (e : ℤ) :
+    ulp e * 10 ^ (-fmt.decimalExponent e)
+      = (fmt.ulpStepsNum e : ℚ) / (fmt.ulpStepsDen e : ℚ) := by
+  set k := fmt.decimalExponent e
+  have hden : (fmt.ulpStepsDen e : ℚ) ≠ 0 :=
+    Nat.cast_ne_zero.mpr (fmt.ulp_steps_den_pos e).ne'
+  -- Each pair of exponents in the ratio adds up to the original one.
+  have he : e + ((-e).toNat : ℤ) = (e.toNat : ℤ) := by omega
+  have hk : -k + (k.toNat : ℤ) = ((-k).toNat : ℤ) := by omega
+  rw [eq_div_iff hden, Format.ulpStepsNum, Format.ulpStepsDen, ulp]
+  push_cast
+  rw [← zpow_natCast (2 : ℚ) (-e).toNat, ← zpow_natCast (10 : ℚ) k.toNat,
+    ← zpow_natCast (2 : ℚ) e.toNat, ← zpow_natCast (10 : ℚ) (-k).toNat,
+    show (2 : ℚ) ^ e * 10 ^ (-k) * (2 ^ ((-e).toNat : ℤ) * 10 ^ (k.toNat : ℤ))
+        = (2 ^ e * 2 ^ ((-e).toNat : ℤ)) * (10 ^ (-k) * 10 ^ (k.toNat : ℤ))
+      from by ring,
+    ← zpow_add₀ (by norm_num : (2 : ℚ) ≠ 0),
+    ← zpow_add₀ (by norm_num : (10 : ℚ) ≠ 0), he, hk]
+
+/-- Multiplying one ULP in grid steps by its denominator clears the ratio. -/
+theorem Format.ulp_steps_mul_den (fmt : Format) (e : ℤ) :
+    ulp e * 10 ^ (-fmt.decimalExponent e) * (fmt.ulpStepsDen e : ℚ)
+      = (fmt.ulpStepsNum e : ℚ) := by
+  rw [fmt.ulp_steps_exact_ratio e, div_mul_cancel₀]
+  exact Nat.cast_ne_zero.mpr (fmt.ulp_steps_den_pos e).ne'
+
+/-- That the reported decimal exponent brackets one ULP at every exponent the
+    format reaches. Outside that range the approximation eventually drifts from
+    `⌊e·log₁₀2⌋`, so this is a fact about the format's `log10Two` and not a
+    consequence of the other fields. Each format supplies it as an instance. -/
+class Format.DecimalExponentTight (fmt : Format) : Prop where
+  /-- In ratio form the check is two comparisons of naturals per exponent. -/
+  ratio : ∀ e ∈ Finset.Icc fmt.emin fmt.emax,
+    fmt.ulpStepsDen e ≤ fmt.ulpStepsNum e
+      ∧ fmt.ulpStepsNum e < 10 * fmt.ulpStepsDen e
+
+/-- The ratio bounds at an exponent the format reaches. -/
+theorem Format.ulp_steps_ratio_tight (fmt : Format)
+    [h : fmt.DecimalExponentTight]
+    {e : ℤ} (hlo : fmt.emin ≤ e) (hhi : e ≤ fmt.emax) :
+    fmt.ulpStepsDen e ≤ fmt.ulpStepsNum e
+      ∧ fmt.ulpStepsNum e < 10 * fmt.ulpStepsDen e :=
+  h.ratio e (Finset.mem_Icc.mpr ⟨hlo, hhi⟩)
 
 /-! ### The power of ten
 
@@ -678,6 +750,11 @@ instance : binary64.Power10Normalized where
   -- exponentiation guards it would otherwise trip.
   ratio := by decide +kernel
 
+/-- The reported decimal exponent brackets one ULP at every binary64
+    exponent. -/
+instance : binary64.DecimalExponentTight where
+  ratio := by decide +kernel
+
 /-! ## Certified exact comparisons
 
 An implementation works with integers, but its decisions are about exact
@@ -755,6 +832,18 @@ theorem ulp_steps_of_int_eq {scale u' : ℕ} {u : ℚ} (hscale : 0 < scale)
     (mul_lt_mul_iff_of_pos_right hscaleq).mp ?_⟩
   · rw [one_mul, hu]; exact_mod_cast hlo
   · rw [hu]; exact_mod_cast hhi
+
+/-- The same two bounds for the grid a format reports, which is the pair
+    `exact_candidate_correct` asks for. An algorithm that converts at
+    `decimalExponent e` therefore never argues about the size of the grid: it
+    names its exponent and reads them off. -/
+theorem Format.ulp_steps (fmt : Format) [fmt.DecimalExponentTight]
+    {e : ℤ} (hlo : fmt.emin ≤ e) (hhi : e ≤ fmt.emax) :
+    1 ≤ ulp e * 10 ^ (-fmt.decimalExponent e) ∧
+      ulp e * 10 ^ (-fmt.decimalExponent e) < 10 := by
+  obtain ⟨h1, h2⟩ := fmt.ulp_steps_ratio_tight hlo hhi
+  exact ulp_steps_of_int_eq
+    (fmt.ulp_steps_den_pos e) (fmt.ulp_steps_mul_den e) h1 h2
 
 /-! ### Modular window certificates
 
