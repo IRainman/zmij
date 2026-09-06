@@ -36,6 +36,12 @@
 #  define ZMIJ_CONSTEXPR20
 #endif
 
+#ifdef __cpp_consteval
+#  define ZMIJ_CONSTEVAL consteval
+#else
+#  define ZMIJ_CONSTEVAL
+#endif
+
 // Disabling C++14 relaxed constexpr costs ~2x, so it is opt-in, not detected.
 #ifndef ZMIJ_USE_CONSTEXPR
 #  define ZMIJ_USE_CONSTEXPR 1
@@ -360,7 +366,7 @@ inline ZMIJ_CONSTEXPR auto compute_pow10(int exp) noexcept -> uint128 {
 }
 
 // Converts the nonzero finite binary value bin_sig * 2**bin_exp using yy.
-inline ZMIJ_CONSTEXPR20 auto to_decimal(uint64_t bin_sig, int bin_exp) noexcept
+inline ZMIJ_CONSTEVAL auto to_decimal(uint64_t bin_sig, int bin_exp) noexcept
     -> dec_fp<> {
   constexpr uint64_t implicit_bit = float_traits<double>::implicit_bit;
   assert(bin_sig != 0 && bin_exp >= -1074 && bin_exp <= 971);
