@@ -21,6 +21,10 @@ char* zmij_detail_write_general_f(float value, char* buffer, int precision);
 char* zmij_detail_write_general(double value, char* buffer, int precision);
 size_t zmij_detail_write_general_big(char* out, size_t n, double value,
                                      int precision);
+char* zmij_detail_write_fixed_f(float value, char* buffer, int precision);
+char* zmij_detail_write_fixed(double value, char* buffer, int precision);
+size_t zmij_detail_write_fixed_big(char* out, size_t n, double value,
+                                   int precision);
 
 enum {
   // Minimum buffer sizes for zmij_write and zmij_write_f.
@@ -31,6 +35,10 @@ enum {
   // to 18; higher precision needs `precision + 8` bytes.
   zmij_float_scientific_buffer_size = 24,
   zmij_double_scientific_buffer_size = 25,
+  // Buffer sizes that always suffice for the zmij_write_fixed functions with
+  // precision up to 18.
+  zmij_float_fixed_buffer_size = 59,
+  zmij_double_fixed_buffer_size = 329,
 };
 
 /// Writes the shortest correctly rounded decimal representation of `value` to
@@ -134,6 +142,46 @@ static inline char* zmij_write_general_f(char* out, size_t n, float value,
     return zmij_detail_write_general_f(value, out, precision);
   char buffer[zmij_float_scientific_buffer_size];
   size_t size = zmij_detail_write_general_f(value, buffer, precision) - buffer;
+  if (size > n) size = n;
+  memcpy(out, buffer, size);
+  return out + size;
+}
+
+/// Writes `value` in fixed notation with exactly `precision` digits after the
+/// decimal point (e.g. 1.500) to `out`, without a null terminator. The result
+/// is the exact value correctly rounded (ties to even), matching printf's %f.
+/// A negative `precision` defaults to 6.
+///
+/// Returns a pointer past the last character written; if the representation
+/// exceeds `n` characters, only the first `n` are written.
+static inline char* zmij_write_fixed(char* out, size_t n, double value,
+                                     int precision) {
+  if (precision < 0) precision = 6;
+  if (precision > 18) {
+    size_t size = zmij_detail_write_fixed_big(out, n, value, precision);
+    return out + (size < n ? size : n);
+  }
+  if (n >= zmij_double_fixed_buffer_size)
+    return zmij_detail_write_fixed(value, out, precision);
+  char buffer[zmij_double_fixed_buffer_size];
+  size_t size = zmij_detail_write_fixed(value, buffer, precision) - buffer;
+  if (size > n) size = n;
+  memcpy(out, buffer, size);
+  return out + size;
+}
+
+static inline char* zmij_write_fixed_f(char* out, size_t n, float value,
+                                       int precision) {
+  if (precision < 0) precision = 6;
+  if (precision > 18) {
+    // A float is exact as a double, so both produce the same digits.
+    size_t size = zmij_detail_write_fixed_big(out, n, (double)value, precision);
+    return out + (size < n ? size : n);
+  }
+  if (n >= zmij_float_fixed_buffer_size)
+    return zmij_detail_write_fixed_f(value, out, precision);
+  char buffer[zmij_float_fixed_buffer_size];
+  size_t size = zmij_detail_write_fixed_f(value, buffer, precision) - buffer;
   if (size > n) size = n;
   memcpy(out, buffer, size);
   return out + size;

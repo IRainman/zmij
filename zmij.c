@@ -2017,6 +2017,15 @@ static char* write_inf_nan(char* buffer, bool is_nan) {
   return buffer + 3;
 }
 
+// Writes zero in fixed notation, e.g. "0.000" (or "0" when precision is 0).
+static ZMIJ_INLINE char* write_zero(char* buffer, int precision) {
+  *buffer++ = '0';
+  if (precision == 0) return buffer;
+  *buffer = '.';
+  memset(buffer + 1, '0', (size_t)precision);
+  return buffer + 1 + precision;
+}
+
 // Writes the exponent as 'e', a sign and at least two digits (e.g. e+05).
 // Only double reaches a third digit.
 static ZMIJ_INLINE char* write_exp(char* buffer, int dec_exp,
@@ -2274,6 +2283,35 @@ static ZMIJ_INLINE uint64_t scale_pow10(uint64_t bin_sig, int bin_exp,
 // nearest integral, half to even, off the two guard bits.
 static ZMIJ_INLINE uint64_t round_even(uint64_t x) {
   return (x + 1 + ((x >> 2) & 1)) >> 2;
+}
+
+typedef struct {
+  uint64_t integral;
+  uint64_t fraction;
+  uint64_t fraction_tail;
+} fixed_scaled_value;
+
+// Scales bin_sig * 2**bin_exp by 10**-dec_exp, retaining the fractional part.
+static ZMIJ_INLINE fixed_scaled_value scale_fixed(uint64_t bin_sig, int bin_exp,
+                                                  int dec_exp,
+                                                  const zmij_data* d) {
+  const int shift = 64 - DBL_MANT_DIG;
+  int point_shift = shift - compute_exp_shift(bin_exp, dec_exp);
+  assert(point_shift >= 1 && point_shift < 64);
+  uint128 pow10 = get_pow10_significand(-dec_exp, d);
+  uint128 p = umul192_hi128(pow10.hi, pow10.lo + 1, bin_sig << shift);
+  fixed_scaled_value result = {p.hi >> point_shift, p.hi << (64 - point_shift),
+                               p.lo};
+  return result;
+}
+
+// Rounds a retained fixed-point value to nearest, ties to even.
+static ZMIJ_INLINE uint64_t round_fixed_even(fixed_scaled_value value) {
+  const uint64_t half = (uint64_t)1 << 63;
+  bool round_up = half < value.fraction ||
+                  (value.fraction == half &&
+                   (value.fraction_tail != 0 || (value.integral & 1) != 0));
+  return value.integral + round_up;
 }
 
 // A value rounded to `precision` significant digits.
@@ -2675,6 +2713,101 @@ static ZMIJ_INLINE char* do_write_general(uint64_t bin_sig, int64_t bin_exp,
   return buffer + num_digits + 1;
 }
 
+// Shared implementation of the public write_fixed entry points.
+static ZMIJ_INLINE char* do_write_fixed(double value, char* buffer,
+                                        int precision) {
+  assert(precision >= 0 && precision <= 18);
+  const zmij_data* d = &static_data;
+  uint64_t bits = double_to_bits(value);
+  int64_t bin_exp = double_get_exp(bits);
+  uint64_t bin_sig = double_get_sig(bits);
+  char* start = buffer;
+
+  *buffer = '-';
+  buffer += double_is_negative(bits);
+
+  bool is_normal = (unsigned)(bin_exp - 1) < (unsigned)(double_exp_mask - 1);
+  if (ZMIJ_UNLIKELY(!is_normal)) {
+    if (bin_exp != 0) return write_inf_nan(buffer, bin_sig != 0);
+    if (bin_sig == 0) return write_zero(buffer, precision);  // e.g. 0.000
+    normalize(&bin_sig, &bin_exp, double_num_sig_bits);
+  }
+
+  int value_exp = (int)(bin_exp - double_exp_offset);
+  bin_sig |= double_implicit_bit;
+
+  // Scale to 18 significant digits, retaining the fraction for later rounding.
+  int dec_exp = compute_dec_exp(value_exp + double_num_sig_bits, true) - 17;
+  fixed_scaled_value scaled = scale_fixed(bin_sig, value_exp, dec_exp, d);
+  // A one-too-small dec_exp estimate leaves 19 significant digits, so derive
+  // the count (and the exact leading exponent) from the truncated integral.
+  uint64_t integral = scaled.integral;
+  bool has_fraction = (scaled.fraction | scaled.fraction_tail) != 0;
+  int num_scaled_digits = 18 + (integral >= pow10s[18]);
+  int lead_exp = dec_exp + num_scaled_digits - 1;
+  int num_digits = lead_exp + 1 + precision;  // significant digits to emit
+
+  if (ZMIJ_UNLIKELY(num_digits <= 0)) {
+    // |value| < 10**-precision, so it rounds to 0, or up to 10**-precision iff
+    // |value| > 0.5 * 10**-precision (a tie rounds to even, i.e. 0).
+    char* end = write_zero(buffer, precision);
+    uint64_t half = 5 * pow10s[17];
+    if (num_scaled_digits == 18 && lead_exp == -precision - 1 &&
+        (half < integral || (half == integral && has_fraction))) {
+      end[-1] = '1';
+    }
+    return end;
+  }
+
+  if (ZMIJ_UNLIKELY(num_digits > 18)) {
+    // The largest result is -DBL_MAX with 18 fractional digits: 329 chars.
+    size_t size = do_write_big(start, 329, value, precision, zmij_format_fixed);
+    return start + size;
+  }
+
+  uint64_t dec_sig;
+  if (num_digits < num_scaled_digits) {
+    // Round the dropped decimal digits and retained fraction in one pass.
+    uint64_t pow = pow10s[num_scaled_digits - num_digits];
+    dec_sig = integral / pow;
+    uint64_t remainder = integral - dec_sig * pow;
+    uint64_t half = pow / 2;
+    bool round_up = half < remainder ||
+                    (half == remainder && (has_fraction || (dec_sig & 1) != 0));
+    dec_sig += round_up;
+  } else {
+    dec_sig = round_fixed_even(scaled);
+  }
+  if (dec_sig >= pow10s[num_digits]) {  // carry to next power of ten
+    ++lead_exp;
+    dec_sig /= 10;
+  }
+  dec_sig *= pow10s[18 - num_digits];
+  unsigned lo = (unsigned)(dec_sig % 100);
+  dec_digits_double dig = to_digits_double(dec_sig / 100, d);
+
+  int num_int_digits = lead_exp + 1;
+  int total = num_int_digits + precision;  // significant digits + zero padding
+
+  if (num_int_digits <= 0) {  // |value| < 1: "0." + leading zeros + digits
+    write2(buffer, '0', '.');
+    memset(buffer + 2, '0', (size_t)-num_int_digits);
+    buffer += 2 - num_int_digits;
+    write_digits_double(buffer, dig.digits, false, d);
+    memcpy(buffer + 16, digits2(lo), 2);
+    return buffer + total;
+  }
+
+  write_digits_double(buffer, dig.digits, false, d);
+  memcpy(buffer + 16, digits2(lo), 2);
+  buffer[18] = '0';  // at most one carry digit
+  if (precision == 0) return buffer + total;
+  memmove(buffer + num_int_digits + 1, buffer + num_int_digits,
+          (size_t)precision);
+  buffer[num_int_digits] = '.';
+  return buffer + total + 1;
+}
+
 // Shared implementation of the public write entry points. `num_bits` is a
 // compile-time constant after ZMIJ_INLINE; the few branches on it fold away.
 static ZMIJ_INLINE char* do_write(uint64_t bin_sig, int64_t bin_exp,
@@ -2884,4 +3017,18 @@ char* zmij_detail_write_general(double value, char* buffer, int precision) {
 size_t zmij_detail_write_general_big(char* out, size_t n, double value,
                                      int precision) {
   return do_write_big(out, n, value, precision, zmij_format_general);
+}
+
+char* zmij_detail_write_fixed_f(float value, char* buffer, int precision) {
+  // A float is exact as a double, so both produce the same digits.
+  return do_write_fixed((double)value, buffer, precision);
+}
+
+char* zmij_detail_write_fixed(double value, char* buffer, int precision) {
+  return do_write_fixed(value, buffer, precision);
+}
+
+size_t zmij_detail_write_fixed_big(char* out, size_t n, double value,
+                                   int precision) {
+  return do_write_big(out, n, value, precision, zmij_format_fixed);
 }

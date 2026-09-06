@@ -24,9 +24,11 @@ enum {
 template <typename Float> struct buffer_sizes;
 template <> struct buffer_sizes<float> {
   static const size_t scientific = zmij_float_scientific_buffer_size;
+  static const size_t fixed = zmij_float_fixed_buffer_size;
 };
 template <> struct buffer_sizes<double> {
   static const size_t scientific = zmij_double_scientific_buffer_size;
+  static const size_t fixed = zmij_double_fixed_buffer_size;
 };
 
 auto write(char* out, size_t n, double value) noexcept -> char* {
@@ -50,6 +52,14 @@ auto write_general(char* out, size_t n, double value, int precision) noexcept
 auto write_general(char* out, size_t n, float value, int precision) noexcept
     -> char* {
   return zmij_write_general_f(out, n, value, precision);
+}
+auto write_fixed(char* out, size_t n, double value, int precision) noexcept
+    -> char* {
+  return zmij_write_fixed(out, n, value, precision);
+}
+auto write_fixed(char* out, size_t n, float value, int precision) noexcept
+    -> char* {
+  return zmij_write_fixed_f(out, n, value, precision);
 }
 }  // namespace zmij
 #endif
@@ -136,6 +146,16 @@ static auto to_general(double value, int precision) -> std::string {
   char buffer[zmij::buffer_sizes<double>::scientific];
   return {buffer,
           zmij::write_general(buffer, sizeof(buffer), value, precision)};
+}
+
+// Writes `value` with exactly `precision` digits after the point.
+static auto to_fixed(float value, int precision) -> std::string {
+  char buffer[zmij::buffer_sizes<float>::fixed];
+  return {buffer, zmij::write_fixed(buffer, sizeof(buffer), value, precision)};
+}
+static auto to_fixed(double value, int precision) -> std::string {
+  char buffer[zmij::buffer_sizes<double>::fixed];
+  return {buffer, zmij::write_fixed(buffer, sizeof(buffer), value, precision)};
 }
 
 #if !ZMIJ_C
@@ -238,6 +258,15 @@ TEST(float_test, write_precision) {
             "3.40282347e+38");
 }
 
+TEST(float_test, write_fixed) {
+  EXPECT_EQ(to_fixed(1.5f, 2), "1.50");
+  EXPECT_EQ(to_fixed(2.5f, 0), "2");       // round half to even
+  EXPECT_EQ(to_fixed(3.5f, 0), "4");       // round half to even
+  EXPECT_EQ(to_fixed(-0.0f, 2), "-0.00");  // sign preserved
+  EXPECT_EQ(to_fixed(std::numeric_limits<float>::denorm_min(), 18),
+            "0.000000000000000000");
+}
+
 // Big precision (> 18) routes write_scientific, write_general, and write_fixed
 // through write_big; all must match printf's %e, %g, and %f.
 TEST(float_test, write_big) {
@@ -251,12 +280,10 @@ TEST(float_test, write_big) {
     snprintf(ref, sizeof(ref), "%.*g", precision, double(value));
     EXPECT_EQ(std::string(buf, end), std::string(ref))
         << "general value=" << value << " precision=" << precision;
-#if !ZMIJ_C  // The C API has no write_fixed yet.
     end = zmij::write_fixed(buf, sizeof(buf), value, precision);
     snprintf(ref, sizeof(ref), "%.*f", precision, double(value));
     EXPECT_EQ(std::string(buf, end), std::string(ref))
         << "fixed value=" << value << " precision=" << precision;
-#endif
   };
   const float values[] = {1.0f, 0.1f, 1.5f, 3.14159f, 3.4028235e38f, 1.4e-45f};
   for (float value : values) {
@@ -617,6 +644,25 @@ TEST(double_test, write_precision) {
   EXPECT_EQ(to_scientific(6.62607015e-34, 8), "6.62607015e-34");
 }
 
+TEST(double_test, write_fixed) {
+  EXPECT_EQ(to_fixed(1.5, 2), "1.50");
+  EXPECT_EQ(to_fixed(0.5, 0), "0");  // round half to even
+  EXPECT_EQ(to_fixed(std::nextafter(0.5, 1.0), 0), "1");
+  EXPECT_EQ(to_fixed(1.25, 1), "1.2");
+  EXPECT_EQ(to_fixed(std::nextafter(1.25, 2.0), 1), "1.3");
+  EXPECT_EQ(to_fixed(9.99, 1), "10.0");  // carry
+
+  char buf[zmij::buffer_sizes<double>::fixed + 1], ref[sizeof(buf)];
+  memset(buf, '?', sizeof(buf));
+  double value = -std::numeric_limits<double>::max();
+  char* end =
+      zmij::write_fixed(buf, zmij::buffer_sizes<double>::fixed, value, 18);
+  snprintf(ref, sizeof(ref), "%.18f", value);
+  EXPECT_EQ(std::string(buf, end), std::string(ref));
+  EXPECT_EQ(end, buf + zmij::buffer_sizes<double>::fixed);
+  EXPECT_EQ(buf[zmij::buffer_sizes<double>::fixed], '?');
+}
+
 TEST(double_test, negative_precision) {
   // Pass the same negative/zero precision to printf, which defaults it to 6
   // (and treats 0 as 1 for %g), and check we produce identical output.
@@ -625,11 +671,9 @@ TEST(double_test, negative_precision) {
   char* end = zmij::write_scientific(buf, sizeof(buf), value, -1);
   snprintf(ref, sizeof(ref), "%.*e", -1, value);
   EXPECT_EQ(std::string(buf, end), ref);
-#if !ZMIJ_C  // The C API has no write_fixed yet.
   end = zmij::write_fixed(buf, sizeof(buf), value, -5);
   snprintf(ref, sizeof(ref), "%.*f", -5, value);
   EXPECT_EQ(std::string(buf, end), ref);
-#endif
   end = zmij::write_general(buf, sizeof(buf), value, -1);
   snprintf(ref, sizeof(ref), "%.*g", -1, value);
   EXPECT_EQ(std::string(buf, end), ref);
@@ -665,12 +709,10 @@ TEST(double_test, write_big) {
     snprintf(ref, sizeof(ref), "%.*g", precision, value);
     EXPECT_EQ(std::string(buf, end), std::string(ref))
         << "general value=" << value << " precision=" << precision;
-#if !ZMIJ_C  // The C API has no write_fixed yet.
     end = zmij::write_fixed(buf, sizeof(buf), value, precision);
     snprintf(ref, sizeof(ref), "%.*f", precision, value);
     EXPECT_EQ(std::string(buf, end), std::string(ref))
         << "fixed value=" << value << " precision=" << precision;
-#endif
   };
   const double values[] = {1.0,
                            2.0,
@@ -709,13 +751,11 @@ TEST(double_test, write_big_truncated) {
   EXPECT_EQ(end, buf + 5);
   EXPECT_EQ(buf[5], '?');
 
-#if !ZMIJ_C  // The C API has no write_fixed yet.
   memset(buf, '?', sizeof(buf));
   end = zmij::write_fixed(buf, 5, 1.5, 30);
   EXPECT_EQ(std::string(buf, end), "1.500");  // first 5 of 1.5000...
   EXPECT_EQ(end, buf + 5);
   EXPECT_EQ(buf[5], '?');
-#endif
 }
 
 #if !ZMIJ_C
