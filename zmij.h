@@ -365,6 +365,28 @@ inline ZMIJ_CONSTEXPR auto compute_pow10(int exp) noexcept -> uint128 {
   return result;
 }
 
+// Computes a shift so that, after scaling by a power of 10, the intermediate
+// result always has a fixed 128-bit fractional part (for double).
+//
+// Different binary exponents can map to the same decimal exponent, but place
+// the decimal point at different bit positions. The shift compensates for this.
+//
+// For example, both 3 * 2**59 and 3 * 2**60 have dec_exp = 2, but dividing by
+// 10^dec_exp puts the decimal point in different bit positions:
+//   3 * 2**59 / 100 = 1.72...e+16  (needs shift = 1 + 1)
+//   3 * 2**60 / 100 = 3.45...e+16  (needs shift = 2 + 1)
+inline ZMIJ_CONSTEXPR auto compute_exp_shift(int bin_exp,
+                                             int dec_exp) noexcept
+    -> signed char {
+  assert(dec_exp >= -350 && dec_exp <= 350);
+  // log2_pow10_sig = round(log2(10) * 2**log2_pow10_exp) + 1
+  constexpr int log2_pow10_sig = 217707, log2_pow10_exp = 16;
+  // pow10_bin_exp = floor(log2(10**-dec_exp))
+  int pow10_bin_exp = -dec_exp * log2_pow10_sig >> log2_pow10_exp;
+  // pow10 = ((pow10_hi << 64) | pow10_lo) * 2**(pow10_bin_exp - 127)
+  return bin_exp + pow10_bin_exp + 1;
+}
+
 // Converts the nonzero finite binary value bin_sig * 2**bin_exp using yy.
 inline ZMIJ_CONSTEVAL auto to_decimal(uint64_t bin_sig, int bin_exp) noexcept
     -> dec_fp<> {
@@ -372,7 +394,7 @@ inline ZMIJ_CONSTEVAL auto to_decimal(uint64_t bin_sig, int bin_exp) noexcept
   constexpr uint64_t implicit_bit = float_traits<double>::implicit_bit;
   bool irregular = bin_sig == implicit_bit;
   int dec_exp = compute_dec_exp(bin_exp, !irregular);
-  int shift = bin_exp + ((-dec_exp * 217707) >> 16);
+  int shift = compute_exp_shift(bin_exp, dec_exp) - 1;
   uint128 pow10 = compute_pow10(-dec_exp);
   uint128 p = umul192_hi128(pow10.hi, pow10.lo, bin_sig << (shift + 1));
 

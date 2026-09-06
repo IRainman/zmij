@@ -226,6 +226,7 @@ ZMIJ_INLINE auto select(uint64_t condition, int64_t true_value,
 }
 
 using zmij::detail::compute_dec_exp;
+using zmij::detail::compute_exp_shift;
 using zmij::detail::float_traits;
 using zmij::detail::umul128;
 using zmij::detail::umul192_hi128;
@@ -423,28 +424,6 @@ struct pow10_significand_table {
     return {p[~dec_exp], p[~dec_exp + num_pow10s]};
   }
 };
-
-// Computes a shift so that, after scaling by a power of 10, the intermediate
-// result always has a fixed 128-bit fractional part (for double).
-//
-// Different binary exponents can map to the same decimal exponent, but place
-// the decimal point at different bit positions. The shift compensates for this.
-//
-// For example, both 3 * 2**59 and 3 * 2**60 have dec_exp = 2, but dividing by
-// 10^dec_exp puts the decimal point in different bit positions:
-//   3 * 2**59 / 100 = 1.72...e+16  (needs shift = 1 + 1)
-//   3 * 2**60 / 100 = 3.45...e+16  (needs shift = 2 + 1)
-ZMIJ_CONSTEXPR ZMIJ_INLINE auto compute_exp_shift(int bin_exp,
-                                                  int dec_exp) noexcept
-    -> signed char {
-  assert(dec_exp >= -350 && dec_exp <= 350);
-  // log2_pow10_sig = round(log2(10) * 2**log2_pow10_exp) + 1
-  constexpr int log2_pow10_sig = 217707, log2_pow10_exp = 16;
-  // pow10_bin_exp = floor(log2(10**-dec_exp))
-  int pow10_bin_exp = -dec_exp * log2_pow10_sig >> log2_pow10_exp;
-  // pow10 = ((pow10_hi << 64) | pow10_lo) * 2**(pow10_bin_exp - 127)
-  return bin_exp + pow10_bin_exp + 1;
-}
 
 struct exp_shift_table {
   static constexpr bool enable = ZMIJ_OPTIMIZE_SIZE == 0 && ZMIJ_USE_CONSTEXPR;
