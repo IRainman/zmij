@@ -1373,30 +1373,31 @@ ZMIJ_INLINE auto to_decimal(UInt bin_sig, int64_t raw_exp, bool regular,
   return {integral, dec_exp, digit, (round_up + round_down) == 0};
 }
 
-// Scales bin_sig * 2**bin_exp by 10**-dec_exp and packs the result into an
-// integer above two guard bits (bit 1 is the 1/2 place, bit 0 the sticky bit),
-// Schubfach-style.
+struct scaled_value {
+  uint64_t integral;
+  uint64_t fraction;
+  uint64_t fraction_tail;
+};
+
+// Scales bin_sig * 2**bin_exp by 10**-dec_exp, retaining the fractional part.
 template <typename Float>
 ZMIJ_INLINE auto scale(uint64_t bin_sig, int bin_exp, int dec_exp) noexcept
-    -> uint64_t {
+    -> scaled_value {
   constexpr int shift = 64 - float_traits<Float>::digits;
   int point_shift = shift - compute_exp_shift(bin_exp, dec_exp);
+  assert(point_shift >= 1 && point_shift < 64);
   uint128 pow10 = static_data.pow10_significands[-dec_exp];
-  // Bump the entry so it never falls below the exact power of ten and so can't
-  // mimic an exact tie; the +1 stays in the low word, never carrying.
   uint128 p = umul192_hi128(pow10.hi, pow10.lo + 1, uint64_t(bin_sig) << shift);
-  // One shifted read carries the integral part, the 1/2 bit and one bit below
-  // it, which the sticky bit may keep: bit 0 only says that something below 1/2
-  // is set. The ceiling makes the low 64 product bits unreliable, so they are
-  // not among the bits it reads.
-  return (p.hi >> (point_shift - 2)) |
-         ((p.hi << (66 - point_shift) | p.lo) != 0);
+  return {p.hi >> point_shift, p.hi << (64 - point_shift), p.lo};
 }
 
-// Rounds a packed scaled value (integral << 2 | half << 1 | sticky) to the
-// nearest integral, half to even, off the two guard bits.
-ZMIJ_INLINE auto round_even(uint64_t x) noexcept -> uint64_t {
-  return (x + 1 + ((x >> 2) & 1)) >> 2;
+// Rounds a retained fixed-point value to nearest, ties to even.
+ZMIJ_INLINE auto round_even(scaled_value value) noexcept -> uint64_t {
+  constexpr uint64_t half = uint64_t(1) << 63;
+  bool round_up = half < value.fraction ||
+                  (value.fraction == half &&
+                   (value.fraction_tail != 0 || (value.integral & 1) != 0));
+  return value.integral + round_up;
 }
 
 // A value rounded to `precision` significant digits.
@@ -1410,16 +1411,20 @@ struct precision_decimal {
 template <typename Float>
 ZMIJ_INLINE auto to_decimal(uint64_t bin_sig, int bin_exp,
                             int precision) noexcept -> precision_decimal {
-  // Choose dec_exp so the scaled integer part (dec_sig) has precision digits.
   constexpr int num_sig_bits = float_traits<Float>::num_sig_bits;
   int dec_exp = compute_dec_exp(bin_exp + num_sig_bits) - (precision - 1);
-  uint64_t scaled = scale<Float>(bin_sig, bin_exp, dec_exp);
+  scaled_value scaled = scale<Float>(bin_sig, bin_exp, dec_exp);
   uint64_t dec_sig = round_even(scaled);
-  if (dec_sig >= pow10s[precision]) {  // One digit too many (overshoot/carry).
-    // Drop one decimal digit and reround from the same guard bits in a single
-    // pass, folding the dropped digit into the sticky bit (idea by Russ Cox).
-    // A multiple of ten is even, so the old sticky bit needs no term.
-    dec_sig = round_even(scaled / 10 | (scaled % 10 != 0));
+
+  if (dec_sig >= pow10s[precision]) {
+    // Round one decimal place coarser; the fraction disambiguates a trailing 5.
+    dec_sig = scaled.integral / 10;
+    uint64_t last_digit = scaled.integral - dec_sig * 10;
+    bool has_fraction = (scaled.fraction | scaled.fraction_tail) != 0;
+    bool round_up =
+        5 < last_digit ||
+        (last_digit == 5 && (has_fraction || (dec_sig & 1) != 0));
+    dec_sig += round_up;
     ++dec_exp;
   }
   return {dec_sig * pow10s[18 - precision], dec_exp + precision - 1};
@@ -2082,12 +2087,13 @@ auto write_fixed(char* buffer, Float value, int precision) noexcept -> char* {
   bin_exp -= traits::exp_offset;
   bin_sig |= traits::implicit_bit;
 
-  // Scale to 18 significant digits, keeping guard bits for a later re-round.
+  // Scale to 18 significant digits, retaining the fraction for later rounding.
   int dec_exp = compute_dec_exp(bin_exp + traits::num_sig_bits) - 17;
-  uint64_t scaled = scale<Float>(bin_sig, bin_exp, dec_exp);
+  scaled_value scaled = scale<Float>(bin_sig, bin_exp, dec_exp);
   // A one-too-small dec_exp estimate leaves 19 significant digits, so derive
   // the count (and the exact leading exponent) from the truncated integral.
-  uint64_t integral = scaled >> 2;
+  uint64_t integral = scaled.integral;
+  bool has_fraction = (scaled.fraction | scaled.fraction_tail) != 0;
   int num_scaled_digits = 18 + (integral >= pow10s[18]);
   int lead_exp = dec_exp + num_scaled_digits - 1;
   int num_digits = lead_exp + 1 + precision;  // significant digits to emit
@@ -2097,8 +2103,9 @@ auto write_fixed(char* buffer, Float value, int precision) noexcept -> char* {
     // |value| > 0.5 * 10**-precision (a tie rounds to 0). A 19-digit scale has
     // leading digit 1 (< 5), so only the 18-digit case rounds up.
     char* end = write_zero(buffer, precision);
+    uint64_t half = 5 * pow10s[17];
     if (num_scaled_digits == 18 && lead_exp == -precision - 1 &&
-        round_even(scaled) > 5 * pow10s[17]) {
+        (half < integral || (half == integral && has_fraction))) {
       end[-1] = '1';
     }
     return end;
@@ -2107,18 +2114,20 @@ auto write_fixed(char* buffer, Float value, int precision) noexcept -> char* {
   if (num_digits > 18) [[ZMIJ_UNLIKELY]]
     return write_fixed_big(buffer, bin_sig, int(bin_exp), precision);
 
-  // Round to num_digits significant digits from the retained guard bits in one
-  // pass, avoiding a second conversion.
+  uint64_t dec_sig = 0;
   if (num_digits < num_scaled_digits) {
-    // Fold the dropped low digits into the guard bits so the round_even below
-    // is correct; discarding them first would double-round.
+    // Round the dropped decimal digits and retained fraction in one pass.
     uint64_t pow = pow10s[num_scaled_digits - num_digits];
-    uint64_t r = integral % pow;
-    uint64_t half = r >= pow / 2;
-    uint64_t sticky = (r != pow / 2) | ((scaled & 3) != 0);
-    scaled = (integral / pow) << 2 | half << 1 | sticky;
+    dec_sig = integral / pow;
+    uint64_t remainder = integral - dec_sig * pow;
+    uint64_t half = pow / 2;
+    bool round_up =
+        half < remainder ||
+        (half == remainder && (has_fraction || (dec_sig & 1) != 0));
+    dec_sig += round_up;
+  } else {
+    dec_sig = round_even(scaled);
   }
-  uint64_t dec_sig = round_even(scaled);
   if (dec_sig >= pow10s[num_digits]) {  // carry to next power of ten
     ++lead_exp;
     dec_sig /= 10;

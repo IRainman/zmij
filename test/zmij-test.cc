@@ -461,6 +461,10 @@ TEST(double_test, to_chars_format) {
   };
   EXPECT_EQ(fmt(zmij::chars_format::fixed, 2, 1.5), "1.50");
   EXPECT_EQ(fmt(zmij::chars_format::fixed, 0, 2.5), "2");  // ties to even
+  EXPECT_EQ(fmt(zmij::chars_format::fixed, 0, 0.5), "0");
+  EXPECT_EQ(fmt(zmij::chars_format::fixed, 0, std::nextafter(0.5, 1.0)), "1");
+  EXPECT_EQ(fmt(zmij::chars_format::fixed, 1, 1.25), "1.2");
+  EXPECT_EQ(fmt(zmij::chars_format::fixed, 1, std::nextafter(1.25, 2.0)), "1.3");
   EXPECT_EQ(fmt(zmij::chars_format::scientific, 4, 1234.5678), "1.2346e+03");
   EXPECT_EQ(fmt(zmij::chars_format::scientific, 0, 2.5), "2e+00");
   EXPECT_EQ(fmt(zmij::chars_format::general, 6, 1234.5678), "1234.57");

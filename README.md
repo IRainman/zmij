@@ -164,9 +164,6 @@ We would like to express our gratitude to the individuals who have made
   Dragonbox algorithm, which informed design and benchmarking comparisons for
   Żmij, as well as the `to_decimal` API.
 
-* Russ Cox ([@rsc](https://github.com/rsc)) - Described the guard-bit rerounding
-  technique used in Żmij's fixed-precision conversion.
-
 * Community contributors who provided feedback, issues, suggestions, and
   occasional commits, helping improve the robustness and performance of Żmij.
 
