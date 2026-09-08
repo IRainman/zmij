@@ -421,6 +421,12 @@ inline ZMIJ_CONSTEXPR20 auto to_decimal(uint64_t bin_sig, int bin_exp) noexcept
   return {round_d0 || round_u0 ? dec_ten : dec_one, dec_exp, false};
 }
 
+inline ZMIJ_CONSTEXPR20 auto copy_n(char* out, const char* in,
+                                    size_t count) noexcept -> char* {
+  for (size_t i = 0; i < count; ++i) *out++ = *in++;
+  return out;
+}
+
 inline ZMIJ_CONSTEXPR20 auto write_constexpr(char* out, double value) noexcept
     -> char* {
   using traits = float_traits<double>;
@@ -429,13 +435,8 @@ inline ZMIJ_CONSTEXPR20 auto write_constexpr(char* out, double value) noexcept
   uint64_t bin_sig = traits::get_sig(bits);
 
   if (traits::is_negative(bits)) *out++ = '-';
-  if (raw_exp == traits::exp_mask) {
-    const char* text = bin_sig != 0 ? "nan" : "inf";
-    *out++ = text[0];
-    *out++ = text[1];
-    *out++ = text[2];
-    return out;
-  }
+  if (raw_exp == traits::exp_mask)
+    return copy_n(out, bin_sig != 0 ? "nan" : "inf", 3);
   if (raw_exp == 0 && bin_sig == 0) {
     *out++ = '0';
     return out;
@@ -477,7 +478,7 @@ inline ZMIJ_CONSTEXPR20 auto write_constexpr(char* out, double value) noexcept
   *out++ = first[0];
   if (num_digits > 1) {
     *out++ = '.';
-    for (int i = 1; i < num_digits; ++i) *out++ = first[i];
+    out = copy_n(out, first + 1, size_t(num_digits - 1));
   }
   *out++ = 'e';
   *out++ = lead_exp >= 0 ? '+' : '-';
@@ -674,8 +675,7 @@ inline ZMIJ_CONSTEXPR20 auto write(char* out, size_t n, double value) noexcept
     char buffer[double_buffer_size] = {};
     size_t size = size_t(detail::write_constexpr(buffer, value) - buffer);
     size_t count = size < n ? size : n;
-    for (size_t i = 0; i < count; ++i) out[i] = buffer[i];
-    return out + count;
+    return detail::copy_n(out, buffer, count);
   }
 #endif
   char buffer[double_buffer_size];
