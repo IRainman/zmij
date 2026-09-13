@@ -1008,8 +1008,9 @@ ZMIJ_INLINE void write_digits(char* buffer, dec_digits<64>::digits_type digits,
 
 ZMIJ_INLINE void write_digits(char* buffer, uint64_t digits,
                               bool drop_leading_zero, const data&) noexcept {
+  unsigned shift = unsigned(drop_leading_zero) * 8;
+  digits = is_big_endian ? digits << shift : digits >> shift;
   memcpy(buffer, &digits, sizeof(digits));
-  memmove(buffer, buffer + drop_leading_zero, sizeof(digits));
 }
 
 ZMIJ_INLINE auto write_scientific_simd(char* buffer, const dec_digits<32>& dig,
